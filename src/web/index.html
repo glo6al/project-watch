@@ -1,0 +1,1574 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>W.A.T.C.H.</title>
+<link rel="icon" href="/static/favicon.ico?v=fleet-3" sizes="any"><link rel="icon" type="image/png" sizes="32x32" href="/static/favicon-32.png?v=fleet-3"><link rel="apple-touch-icon" href="/static/apple-touch-icon-180.png?v=fleet-3">
+<style>
+:root{--ink:#e8e9ec;--mute:#8c94a3;--panel:#1b1f27;--line:#343a46;--mon:#0d1016;--monink:#d7dbe4;--mondim:#7d8596;--add:#4ade80;--del:#f87171;--corr:#ff4f9a;--warn:#f0a020}
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+html,body{height:100%;margin:0;overflow:hidden;overscroll-behavior:none;background:#07090d;color:var(--ink);font:14px/1.45 system-ui,-apple-system,"Segoe UI",sans-serif}
+code,pre{font:12.5px/1.5 ui-monospace,Menlo,monospace}
+#hud{position:fixed;top:0;left:0;right:0;z-index:10;display:flex;flex-wrap:nowrap;gap:8px 10px;align-items:center;padding:10px 14px 6px;pointer-events:none;font:600 11px ui-monospace,Menlo,monospace;letter-spacing:.1em;text-transform:uppercase;color:#7fa6c2}
+#hud>*{pointer-events:auto}
+#live{display:inline-flex;align-items:center;gap:7px;color:#7fa6c2;border:1px solid #1f3a52;background:#0a1420;border-radius:3px;padding:4px 10px;white-space:nowrap}
+#live::before{content:"";width:7px;height:7px;border-radius:50%;background:var(--add);box-shadow:0 0 6px var(--add)}
+#hud.on #live::before{animation:breathe 2.4s ease-in-out infinite}
+@keyframes breathe{0%,100%{box-shadow:0 0 6px var(--add)}50%{box-shadow:0 0 1px var(--add)}}
+#live.off{color:var(--del)}#live.off::before{background:var(--del);box-shadow:0 0 6px var(--del);animation:none}
+#hud button{font:inherit;letter-spacing:inherit;text-transform:inherit;color:var(--ink);background:#0d1a2b;border:1px solid #1f3a52;border-radius:3px;padding:5px 12px;cursor:pointer;white-space:nowrap}
+#hud button:hover{border-color:var(--hl)}
+/* the instrument strip: the mark and wordmark, a link pill whose lamp breathes while connected, one lit cell per agent, and a bank of switches */
+#mark{height:22px;width:auto;margin-right:10px;vertical-align:-6px}
+#fleetS,#console{display:inline-flex;align-items:center;gap:6px;border:1px solid #1f3a52;border-radius:3px;padding:3px 8px 3px 10px;background:#0a1420;flex:none}
+#fleetS{flex:1 1 auto;min-width:min(300px,34vw);overflow:hidden;position:relative}      /* keeps a usable slice of the bar even on a narrow window; the rest scrolls */#projs{min-width:0;max-width:100%}
+/* one row on a wide screen; a narrow or portrait window gets two tidy rows: the brand, lamp and controls on the first,
+   the fleet strip on its own full-width row beneath, rather than wrapping wherever it happens to break */
+@media (max-width:1180px){#hud{flex-wrap:wrap}#fleetS{order:10;flex:1 1 100%;min-width:0;max-width:none}#console{margin-left:auto}}
+#fleetS.more::after{content:"";position:absolute;right:0;top:0;bottom:0;width:28px;background:linear-gradient(90deg,transparent,#0a1420);pointer-events:none}      /* there is more to the right: swipe */
+#projs button{flex:none}#projs button span.n{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:190px}      /* chips keep their names; the strip scrolls instead of squeezing them */
+#brand,#live,#needN,#acts,#back,#demoTag{flex:none}
+#demoTag{color:#ffd166;border:1px dashed #ffd166;border-radius:3px;padding:3px 8px;letter-spacing:.1em}
+#fleetS b,#console b{font-weight:600;color:#4f7590;margin-right:4px}
+#projs{display:inline-flex;gap:5px;align-items:center;overflow-x:auto;overflow-y:hidden;scrollbar-width:none;overscroll-behavior-x:contain}#projs::-webkit-scrollbar{display:none}      /* a long fleet scrolls sideways (two-finger swipe over it), with no scrollbar in the instrument */
+#projs .cells i:focus-visible{outline:2px solid var(--hl);outline-offset:1px}
+#projs button{display:inline-flex;align-items:center;gap:7px;padding:3px 8px 3px 7px;color:#7fa6c2;border-color:transparent;background:transparent}
+#projs button.on{color:var(--ink);border-color:#1f3a52;background:#0d1a2b}
+#projs button:hover{border-color:var(--hl)}
+#projs button em{width:8px;height:8px;border-radius:1px;background:var(--pc);flex:none}
+#projs .cells{display:inline-flex;gap:3px;align-items:flex-end;height:12px}
+#projs .cells i{display:block;width:7px;height:7px;background:#2b3a4d;border-radius:1px;transition:height .2s}
+#projs .cells i.busy{background:var(--add)}#projs .cells i.need{background:var(--warn);height:12px;box-shadow:0 0 5px var(--warn)}#projs .cells i.alarm{background:var(--del)}
+#projs .cells i:hover{outline:1px solid var(--hl)}
+#acts{display:inline-flex;gap:6px;align-items:center}
+.pband{position:absolute;left:-2px;right:-2px;top:-2px;height:5px;background:var(--pc,transparent)}
+#hud .sw,#hud .ic{display:inline-flex;align-items:center;gap:6px;background:#0d1a2b;border-color:#1f3a52;padding:4px 9px;color:#7fa6c2}
+#hud .sw svg,#hud .ic svg{width:15px;height:15px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round;flex:none}
+#hud .sw::before{content:"";width:7px;height:7px;border-radius:50%;background:#26303f;box-shadow:inset 0 0 0 1px #0a1420;flex:none}
+#hud .sw.on::before{background:var(--add);box-shadow:0 0 7px var(--add)}
+#hud .sw.on{color:var(--ink)}#hud .sw.blocked{color:var(--del)}
+#hud .ic b{font-weight:600}
+#helpW{position:relative}
+#help{width:28px;padding:5px 0;text-align:center;color:#4f7590}
+#hint{display:none;position:absolute;right:0;top:34px;width:300px;padding:10px 12px;background:var(--hbg);border:1px solid var(--hl);text-transform:none;letter-spacing:0;font:12.5px/1.5 system-ui;color:var(--ink);z-index:11}
+#helpW:hover #hint,#hint.show{display:block}
+#hud .sp{flex:1}
+#empty{position:fixed;inset:0;display:grid;place-items:center;color:var(--mute);font-size:16px;text-align:center;padding:30px}
+
+#room{position:fixed;inset:0;perspective:1300px;perspective-origin:50% 46%;overflow:hidden;cursor:grab;
+  background:radial-gradient(ellipse at 50% 38%,#1a2030 0,#0b0e14 55%,#05070a 100%)}
+#room.drag{cursor:grabbing}
+#world{position:absolute;left:50%;top:50%;width:0;height:0;transform-style:preserve-3d}
+#world.fly{transition:transform 1.1s cubic-bezier(.45,.05,.15,1)}      /* the camera glide: unhurried, easing in and out, so a step up reads as one calm move */
+/* The floor is a 3000 px image, never larger (a bigger textured plane makes the browser re-rasterise it every frame
+   while the camera moves, and past ~8000 px it drops it): to cover a wider ring it is SCALED in its transform and
+   slid toward the ring's middle (see layout), the GPU stretching the same small texture. Its lines are drawn thin
+   so they come out at the usual weight once stretched. */
+#floor{position:absolute;width:3000px;height:3000px;left:-1500px;top:-1500px;transform:translateY(330px) rotateX(90deg) scale(2);pointer-events:none;
+  background:linear-gradient(#46527a 1.5px,transparent 1.5px) 0 0/75px 75px,linear-gradient(90deg,#46527a 1.5px,transparent 1.5px) 0 0/75px 75px;
+  /* the grid dissolves into the room before the square ends, so there is no edge to stand at: the room's own backdrop
+     shows through where the floor fades, instead of a darker square stopping against it */
+  mask-image:radial-gradient(circle,#000 0,#000 36%,transparent 74%);-webkit-mask-image:radial-gradient(circle,#000 0,#000 36%,transparent 74%)}
+
+.st{position:absolute;width:640px;height:520px;left:-320px;top:-260px;background:var(--panel);border:2px solid var(--line);border-radius:3px;padding:14px;
+  display:flex;flex-direction:column;gap:9px;cursor:pointer}
+.st.busy{border-color:var(--c)}
+.st.idle>*{opacity:.5}   /* dim the contents, not the 3D panel: opacity on the panel itself mis-sorts in the 3D scene */
+.st.wait{border-color:var(--warn)}
+.st.wait>*,.st.maybe>*{opacity:1}
+.st.maybe{border-color:var(--warn)}
+.st.alarm{border-color:var(--del)}
+.flag{flex:none;display:flex;align-items:stretch;margin:-14px -14px 0;min-height:38px;overflow:hidden}
+.flag+.flag{margin-top:-9px}
+.flag .tag{flex:none;display:flex;align-items:center;gap:8px;padding:0 16px;font:700 12px ui-monospace,Menlo,monospace;letter-spacing:.16em;text-transform:uppercase;
+  clip-path:polygon(0 0,100% 0,calc(100% - 12px) 100%,0 100%);padding-right:26px}
+.flag .tag::before{content:"";width:8px;height:8px;background:currentColor}
+.flag .msg{flex:1;min-width:0;display:flex;align-items:center;padding:0 12px 0 6px;font:500 15px system-ui;white-space:nowrap;overflow:hidden}
+.flag .msg span{overflow:hidden;text-overflow:ellipsis}
+.flag button{flex:none;align-self:center;margin-right:8px;font:700 12px ui-monospace,Menlo,monospace;letter-spacing:.12em;text-transform:uppercase;border:1px solid;border-radius:3px;padding:6px 16px;cursor:pointer;background:transparent}
+/* Allow and Deny in the HUD's own idiom: dark fill, thin frame, key-style type; colour only in the word and on hover */
+.flag .yes,.flag .no{font-weight:600;letter-spacing:.14em;border-color:#1f3a52;padding:4px 12px;background:#0d1a2b}
+.flag .yes{color:var(--add)}.flag .yes:hover{border-color:var(--add);background:#0e2418}
+.flag .no{color:var(--del)}.flag .no:hover{border-color:var(--del);background:#2a1214}
+.flag.w{background:linear-gradient(90deg,rgba(240,160,32,.22),rgba(240,160,32,.06));border-bottom:1px solid var(--warn);color:#ffdca3}
+.flag.w .tag{background:var(--warn);color:#161000}
+.flag.w.soft .tag{background:repeating-linear-gradient(135deg,rgba(240,160,32,.34) 0 7px,rgba(240,160,32,.14) 7px 14px);color:var(--warn)}
+.flag.r{background:linear-gradient(90deg,rgba(248,113,113,.22),rgba(248,113,113,.06));border-bottom:1px solid var(--del);color:#ffd0d0}
+.flag.r .tag{background:var(--del);color:#1a0505}
+#needs{position:fixed;top:44px;left:0;right:0;z-index:10;display:flex;flex-direction:column;align-items:flex-start;gap:6px;padding:0 14px;pointer-events:none}
+#needs button{pointer-events:auto;display:flex;align-items:stretch;gap:0;padding:0;max-width:min(980px,100%);min-height:30px;cursor:pointer;border:1px solid var(--del);border-radius:2px;background:linear-gradient(90deg,rgba(60,14,14,.96),rgba(22,10,14,.96));color:#ffd0d0;font:500 13.5px system-ui;text-align:left;overflow:hidden}
+#needs button b{flex:none;display:flex;align-items:center;gap:8px;background:var(--del);color:#1a0505;font:700 11px ui-monospace,Menlo,monospace;letter-spacing:.16em;text-transform:uppercase;padding:0 22px 0 12px;clip-path:polygon(0 0,100% 0,calc(100% - 10px) 100%,0 100%)}
+#needs button b::before{content:"";width:7px;height:7px;background:currentColor}
+#needs button span{flex:none;align-self:center;padding:0 10px 0 4px;white-space:nowrap}
+#needs button code{flex:1;min-width:0;align-self:center;color:#ff9d9d;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;padding-right:10px}
+#needs button small{flex:none;align-self:center;font:600 10.5px ui-monospace,Menlo,monospace;letter-spacing:.1em;text-transform:uppercase;color:#c98a8a;padding-right:10px;white-space:nowrap}
+.st.focus{cursor:default}
+.st.focus>*{opacity:1}
+.st::after{content:"";position:absolute;left:50%;top:100%;width:10px;margin-left:-5px;height:72px;background:var(--line)}
+.st header{display:flex;gap:12px;align-items:center;flex:none}
+.av{flex:none;width:52px;height:52px;border-radius:50%;background:transparent;position:relative}
+.av svg{width:100%;height:100%;display:block;overflow:visible}
+.av .scan{animation:avscan 1.4s ease-in-out infinite alternate}      /* the visor light scans only while a step is open; nothing else on the face ever moves */
+@keyframes avscan{to{transform:translateX(var(--sw))}}
+.id{flex:1;min-width:0}
+.id b{font-size:25px;line-height:1.15;color:var(--c);display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.id .doing{font-size:18px;font-weight:650}
+.fuel{display:flex;align-items:center;gap:8px;margin-top:5px;font:11.5px ui-monospace,Menlo,monospace;color:var(--mute);white-space:nowrap}
+.fuel i{flex:none;width:120px;height:4px;background:#232a38;display:block}.fuel u{display:block;height:100%;background:var(--hl);text-decoration:none}
+.fuel em{font-style:normal;overflow:hidden;text-overflow:ellipsis}
+.fuel.warm u{background:var(--warn)}.fuel.hot u{background:var(--del)}.fuel.hot em{color:var(--del)}
+.st.slow .doing{color:var(--warn)}
+.story .dv.cp{color:var(--warn)}
+.id .sub{font-size:13px;color:var(--mute);margin-left:8px}
+/* the context line: which project, and the goal as you first stated it, so the room answers "this one is for what?" */
+.id .ctx{display:block;font-size:13px;line-height:1.3;color:var(--mute);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:1px}
+.id .ctx .pj{font-style:normal;font-weight:650;color:var(--pc,var(--mute))}.id .ctx .pj:not(:empty)::after{content:" · ";color:var(--mute);font-weight:400}
+.st.focus .id .ctx{white-space:normal;font-size:14px}
+.go{font:600 12px ui-monospace,Menlo,monospace;letter-spacing:.08em;text-transform:uppercase;border:1px solid var(--line);border-radius:3px;padding:6px 12px;color:var(--ink);background:#262b36;align-self:flex-start;cursor:pointer;white-space:nowrap}
+.st:not(.focus) .go,.st:not(.focus) .x,.st:not(.focus) .pinb{visibility:hidden}
+#room:not(.stepped) .st:hover .go,#room:not(.stepped) .st:hover .x,#room:not(.stepped) .st:hover .pinb,#room:not(.stepped) .st.pinned .pinb{visibility:visible}
+.pinb{font:600 12px ui-monospace,Menlo,monospace;letter-spacing:.08em;text-transform:uppercase;color:var(--ink);background:#262b36;border:1px solid var(--line);border-radius:3px;padding:6px 10px;align-self:flex-start;cursor:pointer;white-space:nowrap}
+.pinb:hover{border-color:var(--c);color:var(--c)}
+.st.pinned .pinb{color:#07090d;background:var(--c);border-color:var(--c)}
+.st.focus .pinb{display:none}
+.st{transition:transform .18s ease-out}
+.st.behind{visibility:hidden}
+/* bays: the project's name set into the floor in front of its seats (one vector overlay, see bays()) */
+#bays{position:absolute;pointer-events:none;overflow:visible;font-family:ui-monospace,Menlo,monospace;text-transform:uppercase}
+/* subtitles: one caption per idle monitor in view, in a band along the bottom at a fixed size, aligned under it */
+/* the instrument ledge: a rule and a fade, not a bar; captions are text set on it, parted by ticks, one line that fades
+   at the right; hovering one opens it upward with the whole message on a quiet panel */
+#subs{position:fixed;left:0;right:0;bottom:0;height:66px;z-index:9;background:linear-gradient(180deg,rgba(9,14,22,0),rgba(9,14,22,.72));border-top:1px solid rgba(127,166,194,.22);pointer-events:none;contain:layout;isolation:isolate}      /* the ledge lays out on its own (no paint containment: an opened caption rises above the band); the sweep has its own layer */
+#subs button{position:absolute;bottom:8px;width:240px;box-sizing:border-box;text-align:left;background:linear-gradient(180deg,rgba(9,14,22,0),rgba(9,14,22,0));border:0;border-left:1px solid rgba(127,166,194,.22);padding:1px 10px 0;color:var(--ink);font:11.5px/1.45 ui-monospace,Menlo,monospace;pointer-events:auto;cursor:pointer;border-radius:0;overflow:hidden;transition:padding .35s cubic-bezier(.2,.7,.2,1),border-left-color .25s,border-left-width .25s,background .3s}
+/* two lines on the ledge, the second fading; hovering slides the caption open upward like a drawer, to nine lines */
+#subs button span{white-space:normal;overflow:hidden;max-height:2.9em;margin-top:0;mask-image:linear-gradient(180deg,#000 55%,rgba(0,0,0,.3));-webkit-mask-image:linear-gradient(180deg,#000 55%,rgba(0,0,0,.3));transition:max-height .35s cubic-bezier(.2,.7,.2,1),margin-top .35s cubic-bezier(.2,.7,.2,1)}
+/* opened: the same ledge idiom, taller — a wash the room shows through, the project's tick down the side, no box */
+#subs button:hover{background:linear-gradient(180deg,rgba(9,14,22,.7),rgba(9,14,22,.92));border-left:2px solid var(--sc,#7fa6c2);padding:8px 12px 7px;z-index:2}      /* no blur: it made the compositor repaint the top bar oddly */
+#subs button:hover span{max-height:13.1em;margin-top:4px;mask-image:linear-gradient(180deg,#000 92%,transparent);-webkit-mask-image:linear-gradient(180deg,#000 92%,transparent)}
+/* a working monitor's slot: a rail with a light sweeping along it for as long as the turn is on, then the
+   same doing-label as the monitor; nothing quoted, nothing to open */
+#subs button.live .rail{display:block;position:relative;height:5px;margin:5px 0 4px;background:color-mix(in srgb,var(--sc,#7fa6c2) 16%,transparent);overflow:hidden;border-radius:1px}
+#subs button.live .rail s{position:absolute;top:0;left:0;width:18%;height:100%;background:linear-gradient(90deg,transparent,var(--sc,#7fa6c2),transparent);opacity:0;transform:translateX(-100%);will-change:transform}
+#subs button.live .rail s{opacity:1;animation:railscan 1.4s linear infinite}      /* sweeping the whole time the turn is on: that is what working looks like from here */
+@keyframes railscan{to{transform:translateX(560%)}}      /* across the rail (100% / 18% ≈ 5.6 of its own width) and off the end; transform only, so the room is never re-laid-out for it */
+#subs button.live span{color:#8fa6b8;max-height:1.5em;-webkit-line-clamp:1}
+#subs button.live:hover{padding:1px 10px 0;border-left:1px solid rgba(127,166,194,.22);background:linear-gradient(180deg,rgba(9,14,22,0),rgba(9,14,22,0))}
+#subs button.live:hover span{max-height:1.5em;margin-top:0}
+@media (prefers-reduced-motion:reduce){#subs button,#subs button span{transition:none}#subs button.live .rail s{animation:none;transform:translateX(230%)}}
+#subs b{display:flex;justify-content:space-between;gap:8px;font-size:9.5px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--sc,#7fa6c2);white-space:nowrap;overflow:hidden}
+#subs b em{font-style:normal;font-weight:400;letter-spacing:0;text-transform:none;font-size:10px;color:#4f7590;flex:none}
+#subs b u{text-decoration:none;overflow:hidden;text-overflow:ellipsis}
+#subs span{color:#b7c7d4;display:block}
+#subs span i{font-style:normal;color:#4f7590}
+#subs span.q{color:var(--warn)}#subs span.bad{color:var(--del)}
+.st.approach{transition:transform .4s cubic-bezier(.2,.7,.2,1)}   /* coming to hand: it eases forward */
+.st.held{transition:none}                                        /* in hand, once arrived: it follows the camera exactly, with no lag to wobble */
+.st.stepup{transition:none}      /* stepping up: the box takes its desk size at once and the pose is driven frame by frame in screen space (stepUp), scaled so the picture never jumps */
+.st.release{transition:transform .6s cubic-bezier(.3,.6,.25,1)}   /* let go: it turns and settles back into its seat */
+.st.dim>*{opacity:.28}
+.st.kid::after{display:none}
+.st.kid:not(.focus){border-width:4px}
+.st.peek>*{opacity:1}
+.st.peek{border-color:var(--c)}
+.x{font:700 18px/1 system-ui;color:var(--mute);background:transparent;border:1px solid var(--line);border-radius:3px;width:30px;height:30px;align-self:flex-start;cursor:pointer;padding:0}
+.x:hover{color:var(--del);border-color:var(--del)}
+.st.focus .x{display:none}
+.go:hover{border-color:var(--c);color:var(--c)}
+.mon{flex:1;min-height:0;background:var(--mon);color:var(--monink);border-radius:2px;overflow:hidden;display:flex;flex-direction:column}
+.tab{font:600 12.5px ui-monospace,Menlo,monospace;padding:6px 11px;background:#171b24;color:var(--mondim);display:flex;gap:10px;justify-content:space-between}
+.tab .what{color:var(--monink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;direction:rtl;text-align:left}
+.tab .how{white-space:nowrap}
+.split{flex:1;min-height:0;display:flex}
+.code{flex:1;min-width:0;margin:0;padding:9px 11px;white-space:pre-wrap;word-break:break-word;overflow:hidden}
+.st.focus .code{overflow:auto}
+/* narration: in the room and in hand a monitor shows what the agent has said, newest at the bottom, as the log records it; the desk keeps the terminal view */
+.st:not(.focus) .code.say{display:flex;flex-direction:column;gap:9px;font:15px/1.45 -apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-serif;white-space:normal}
+.st:not(.focus) .code.say p{margin:0;color:#9aa4b2}
+.st:not(.focus) .code.say p.now{color:#eef2f7}
+.st:not(.focus) .code p.you{margin:0 0 6px;color:#8fb6ff;font:13px/1.4 -apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-serif;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}      /* your last message to it, one line, first in a terminal view */
+.tab.you .what{direction:ltr;color:#8fb6ff}      /* on a narrating monitor the tab itself carries your last message */
+/* the desk's Said screen: the narration drawn the same way as in the room and in hand */
+.st.focus .code.say{display:flex;flex-direction:column;gap:9px;font:15px/1.45 -apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-serif;white-space:normal}
+.st.focus .code.say p{margin:0;color:#9aa4b2}.st.focus .code.say p.now{color:#eef2f7}
+.split.pv .code{flex:0 0 44%;border-right:1px solid #232834}
+.pvw{flex:1;min-width:0;position:relative;background:#fff;overflow:hidden}
+.pvw iframe{position:absolute;left:0;top:0;width:250%;height:250%;border:0;transform:scale(.4);transform-origin:0 0;pointer-events:none}
+.pvn{position:absolute;right:0;bottom:0;font:600 11px ui-monospace,Menlo,monospace;background:#171b24;color:var(--monink);padding:2px 8px;border-radius:8px 0 0 0}
+.a{color:var(--add);background:rgba(74,222,128,.09);display:block}
+.d{color:var(--del);background:rgba(248,113,113,.09);display:block}
+.k{color:var(--mondim)}.bad{color:var(--del)}.ok{color:var(--add)}
+.mon{position:relative}
+.plan{flex:none;display:flex;align-items:center;gap:4px;padding:5px 11px;background:#12161e;font-size:12.5px;color:var(--mondim);white-space:nowrap;overflow:hidden}
+.plan i{flex:1;min-width:6px;max-width:44px;height:5px;border-radius:3px;background:#2c3342}
+.plan i.d{background:var(--add)}.plan i.n{background:var(--c)}
+.plan span{margin-left:8px;overflow:hidden;text-overflow:ellipsis;color:var(--monink)}
+.pin{flex:none;background:var(--warn);color:#141000;font:600 13px system-ui;padding:4px 11px;cursor:pointer}
+#room.stepped .st:not(.focus){visibility:hidden}
+:root{--hl:#39c8ff;--hbg:rgba(7,14,24,.9)}
+.hud{--cut:16px;background:var(--hl);clip-path:polygon(var(--cut) 0,100% 0,100% calc(100% - var(--cut)),calc(100% - var(--cut)) 100%,0 100%,0 var(--cut));padding:1.5px}
+.hud>.in{height:100%;background:linear-gradient(180deg,#0b1626 0,#070d17 100%);clip-path:inherit;padding:12px 14px;display:flex;flex-direction:column;min-height:0;
+  background-image:linear-gradient(180deg,#0b1626 0,#070d17 100%),repeating-linear-gradient(0deg,transparent 0 3px,rgba(57,200,255,.03) 3px 4px)}
+.hud h3,.lbl{margin:0 0 8px;font:600 11px ui-monospace,Menlo,monospace;letter-spacing:.16em;text-transform:uppercase;color:var(--hl);flex:none;display:flex;align-items:center;gap:8px}
+.hud h3::before{content:"";width:8px;height:8px;background:var(--hl)}
+.hud h3::after{content:"";flex:1;height:1px;background:linear-gradient(90deg,var(--hl),transparent)}
+.hud .scroll{overflow:auto;min-height:0;flex:1;scrollbar-width:thin;scrollbar-color:#1f3a52 transparent}
+.desk{position:fixed;top:92px;bottom:118px;z-index:8}
+#deskL{left:14px;transform:perspective(1600px) rotateY(9deg);transform-origin:0 50%}
+#deskR{right:14px;transform:perspective(1600px) rotateY(-9deg);transform-origin:100% 50%;--cut:16px;clip-path:polygon(0 0,calc(100% - var(--cut)) 0,100% var(--cut),100% 100%,var(--cut) 100%,0 calc(100% - var(--cut)))}
+#deskB{position:fixed;left:14px;right:14px;bottom:14px;height:92px;z-index:8;clip-path:polygon(22px 0,calc(100% - 22px) 0,100% 22px,100% 100%,0 100%,0 22px)}
+#deskB>.in{flex-direction:row;align-items:stretch;gap:18px;padding:10px 18px}
+#room.stepped~#needs{display:none}
+#deskT{position:fixed;top:48px;left:14px;right:14px;z-index:8;display:flex;gap:12px;align-items:center}
+.lbl{margin:0;flex:none}
+#crumb{display:flex;gap:6px;align-items:center;flex-wrap:wrap;min-width:0}
+#crumb i{color:var(--hl);font-style:normal}
+.pill{font:600 12px ui-monospace,Menlo,monospace;letter-spacing:.06em;text-transform:uppercase;color:var(--ink);background:#0b1626;border:1px solid #1f3a52;border-radius:3px;padding:6px 12px;cursor:pointer;max-width:260px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.pill:hover{border-color:var(--hl)}
+.pill.me{border-color:var(--hl);color:var(--hl);cursor:default;box-shadow:inset 0 -2px 0 var(--hl)}
+.pill.off{color:var(--mute);cursor:default}
+.views{display:none;gap:6px;flex:none;align-self:center}
+.st.focus .views{display:flex;justify-content:flex-end;align-items:center}
+.views span{font:600 10px ui-monospace,Menlo,monospace;letter-spacing:.16em;text-transform:uppercase;color:#4f7590;margin-right:4px}
+.views button{font:600 12px ui-monospace,Menlo,monospace;letter-spacing:.14em;text-transform:uppercase;white-space:nowrap;color:#7fa6c2;background:#0d1a2b;border:1px solid #1f3a52;border-radius:3px;padding:4px 12px;cursor:pointer;display:flex;flex-direction:row;align-items:center;gap:7px}
+.views button i{font-style:normal;font-size:10px;color:#4f7590;border:1px solid #1f3a52;border-radius:2px;padding:0 5px}
+.views button:hover{border-color:var(--hl)}
+.views button.on{color:#04121c;background:var(--hl);border-color:var(--hl)}
+.views button.on i{color:#04121c;border-color:#04121c}
+#bay{flex:0 1 40%;min-width:0;display:flex;flex-direction:column;gap:6px;overflow:hidden}
+#bayH{display:flex;align-items:center;gap:8px;flex:none}
+#bayH button{font:700 15px/1 ui-monospace,Menlo,monospace;color:var(--hl);background:#0d1a2b;border:1px solid #1f3a52;border-radius:3px;width:24px;height:20px;cursor:pointer;padding:0}
+#bayH button:hover{border-color:var(--hl)}
+#bayT{font:600 10px ui-monospace,Menlo,monospace;letter-spacing:.16em;text-transform:uppercase;color:var(--hl);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
+#crumb i.soft{font-style:normal;font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--warn)}
+#bayH{flex-wrap:nowrap}
+#bayD{flex:1;display:flex;gap:4px;justify-content:flex-end}
+#bayD i{width:14px;height:3px;background:#1f3a52}#bayD i.on{background:var(--hl)}
+#fleet{flex:1;min-height:0;overflow:hidden;display:flex;flex-direction:column;gap:4px}
+#fleet .al{font:12px ui-monospace,Menlo,monospace;color:var(--del);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;cursor:pointer;background:none;border:0;padding:1px 0;text-align:left;max-width:100%;display:block}
+#fleet .al small{color:var(--mute)}
+#fleet svg{width:100%;height:26px;display:block;flex:none}
+#comms{overflow-x:hidden}
+#comms .u{white-space:normal;overflow-wrap:anywhere}
+#comms .u.jump{cursor:pointer}#comms .u.jump:hover{border-color:var(--hl)}
+#comms .u u{text-decoration:none;font:600 10.5px ui-monospace,Menlo,monospace;letter-spacing:.1em;text-transform:uppercase;color:var(--hl);cursor:pointer;white-space:nowrap}#comms .u u:hover{text-decoration:underline}
+.story .dv.hit{color:#04121c;background:var(--hl);transition:none}
+#fleet .axis{display:flex;gap:12px;font:12px ui-monospace,Menlo,monospace;color:var(--mute);white-space:nowrap;flex:none}
+#fleet .axis b{flex:none;font-weight:600;color:#7fa6c2}#fleet .axis span{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;text-align:center}
+#fleet .axis i{display:inline-block;width:8px;height:8px;margin:0 4px 0 6px}
+#fleet .cap2{font:12px ui-monospace,Menlo,monospace;color:var(--mute);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:none}
+#fleet .t{font:600 10px ui-monospace,Menlo,monospace;letter-spacing:.16em;text-transform:uppercase;color:var(--hl)}
+#fleet .row{display:flex;gap:6px;flex-wrap:nowrap;overflow-x:auto;overflow-y:hidden;padding-bottom:6px;scrollbar-width:thin;scrollbar-color:#1f3a52 transparent}
+#fleet .row button{flex:none}
+#fleet button{font:600 12px ui-monospace,Menlo,monospace;color:var(--ink);background:#0d1a2b;border:1px solid #1f3a52;border-radius:3px;padding:5px 10px;cursor:pointer;display:flex;align-items:center;gap:7px;max-width:210px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#fleet button:hover{border-color:var(--hl)}
+#fleet button i{flex:none;width:9px;height:9px;border-radius:50%;background:#3a4a5c}
+#fleet button.b i{background:#5fd38a}
+#fleet button.n{border-color:var(--warn);color:var(--warn)}#fleet button.n i{background:var(--warn)}
+#fleet button small{color:var(--mute);font-weight:400}
+#badge{flex:1;min-width:0;display:flex;align-items:stretch;gap:0}
+#badge span{flex:1 1 0;min-width:0;border-left:1px solid #1f3a52;padding:2px 12px;display:flex;flex-direction:column;justify-content:center;gap:4px;font:14px ui-monospace,Menlo,monospace;color:var(--ink);overflow:hidden}
+#badge b{font:600 10px ui-monospace,Menlo,monospace;letter-spacing:.16em;text-transform:uppercase;color:var(--hl);margin:0}
+#badge em{font-style:normal;white-space:normal;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;line-height:1.25;overflow-wrap:anywhere}
+@media (max-width:1300px){#badge span{font-size:12px;padding:2px 8px}.views button{padding:6px 9px;letter-spacing:.06em}}
+#chan{flex:none;margin-top:10px;border-top:1px solid #1f3a52;padding-top:10px;font:600 12px ui-monospace,Menlo,monospace;letter-spacing:.08em;text-transform:uppercase;color:#5fd38a}
+#chan.warn{color:var(--warn)}#chan.q{color:var(--corr)}
+#chan p{margin:6px 0 0;font:14px/1.4 system-ui;letter-spacing:0;text-transform:none;color:var(--ink)}
+.story .dv{font:600 10px ui-monospace,Menlo,monospace;letter-spacing:.14em;text-transform:uppercase;color:#4f7590;display:flex;align-items:center;gap:8px;margin:14px 0 8px}
+.story .dv::after{content:"";flex:1;height:1px;background:#1f3a52}
+.st.focus{border-radius:3px;border-width:2px;box-shadow:0 0 0 1px rgba(57,200,255,.15),0 0 40px -12px var(--c)}
+.st.focus .code{font-size:14px}
+.st.focus::after{display:none}
+.lk{position:absolute;left:22px;bottom:100%;font:700 13px system-ui;color:#07090d;padding:3px 12px 2px;border-radius:7px 7px 0 0;white-space:nowrap;max-width:80%;overflow:hidden;text-overflow:ellipsis}
+.lk.hot{font-size:15px;padding:5px 14px 4px;animation:blink .5s 6 alternate}
+@keyframes blink{to{filter:brightness(1.6)}}
+.st.focus .lk{display:none}
+@media (prefers-reduced-motion:reduce){.lk.hot{animation:none}}
+.split.full .code{display:none}
+.split{--zm:1}
+.split.full .pvw iframe{width:calc(166.7%/var(--zm));height:calc(166.7%/var(--zm));transform:scale(calc(.6*var(--zm)))}
+.code img{width:calc(var(--zm,1)*100%);max-width:none;display:block;margin:0 auto;border-radius:2px}
+.story .sum{cursor:pointer;border:1px solid #1f3a52;border-left:3px solid var(--hl);border-radius:2px;background:#0d1a2b;padding:5px 9px;color:var(--ink)}
+.story .sum:hover{border-color:var(--ink)}
+.story .qd{color:var(--corr);border:1.5px dashed var(--corr);border-radius:8px;padding:6px 9px;font-weight:600}
+.story .nd{color:#141000;background:var(--warn);border-radius:8px;padding:6px 9px;font-weight:600}
+.story .as{background:transparent;border:1px solid var(--line);color:var(--mute)}
+.story p{margin:0 0 7px;font-size:13px;line-height:1.4;color:var(--mute);overflow-wrap:anywhere}
+.story p small{opacity:.7;margin-left:4px;white-space:nowrap}
+.story .v{font:15px/1.4 Georgia,'Times New Roman',serif;color:var(--ink);margin-top:10px}
+/* the log as a timeline: what it said is one muted line in sequence with the steps; click it and the monitor's Said screen goes to that message */
+.story .sv{cursor:pointer;padding-left:12px;border-left:2px solid #2a3a5a;color:#8a95a6;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.story .sv b{font-weight:600;color:#8fb6ff;margin-right:4px}
+.story .sv:hover{color:var(--ink);border-left-color:#8fb6ff}
+.story .end{font:600 10px ui-monospace,Menlo,monospace;letter-spacing:.12em;text-transform:uppercase;color:#4f7590;margin:6px 0 2px 12px}
+.story .nowm{font:600 10px ui-monospace,Menlo,monospace;letter-spacing:.12em;text-transform:uppercase;color:var(--hl);margin:6px 0 2px 12px}
+.story .nowm::before{content:'';display:inline-block;width:6px;height:6px;border-radius:50%;background:var(--hl);margin-right:6px;animation:nowblink 1.4s ease-in-out infinite}
+@keyframes nowblink{50%{opacity:.25}}
+.code.say p.hl{background:#162136;box-shadow:inset 0 0 0 1px #8fb6ff;border-radius:3px;transition:background 1.2s,box-shadow 1.2s}
+.story .u{color:#fff;background:#10243a;border:1px solid #1f3a52;border-radius:3px;padding:7px 10px}
+.story .sd{cursor:pointer;padding-left:12px;border-left:2px solid var(--line)}
+.story .sd:hover{color:var(--ink);border-left-color:var(--c)}
+.story .sd.on{color:var(--ink);border-left-color:var(--warn)}
+.story .bad{color:var(--del)}.story .w{color:var(--warn)}
+@media (prefers-reduced-motion:reduce){#world{transition:none}.av .scan{animation:none;transform:translateX(calc(var(--sw)/2))}}
+
+/* ---- added after the second review ---- */
+#needN{background:rgba(240,160,32,.12)!important;color:var(--warn)!important;border-color:var(--warn)!important}
+/* steady mode: everything a screen-capture is known to struggle with in a 3D scene is switched off */
+body.steady *,body.steady *::before,body.steady *::after{transition:none!important;animation:none!important}
+body.steady #floor,body.steady .st::after{display:none!important}
+body.steady .st>*{opacity:1!important}
+body.steady .st.idle,body.steady .st.dim{border-color:#1b202b}
+
+
+#needs button u{flex:none;display:grid;place-items:center;width:32px;text-decoration:none;font:700 15px system-ui;color:#ffd0d0;border-left:1px solid rgba(248,113,113,.45)}
+#needs button u:hover{background:var(--del);color:#1a0505}
+body.portrait .desk{transform:none!important;clip-path:polygon(var(--cut) 0,100% 0,100% calc(100% - var(--cut)),calc(100% - var(--cut)) 100%,0 100%,0 var(--cut))}
+body.portrait #deskB{height:270px}
+body.portrait #deskB>.in{flex-direction:column;gap:14px;padding:16px 20px}
+body.portrait #bay{flex:none;height:136px;gap:10px;border-bottom:1px solid #1f3a52;padding-bottom:12px}
+body.portrait #bayT{font-size:12px}
+body.portrait #fleet{gap:8px}
+body.portrait #fleet .row{flex-wrap:wrap;overflow:hidden auto;gap:8px;padding-bottom:0;align-content:flex-start}
+body.portrait #fleet button{font-size:13.5px;padding:7px 12px;max-width:260px}
+body.portrait #fleet .al{font-size:13.5px;padding:4px 0}
+body.portrait #fleet svg{height:58px}
+body.portrait #fleet .cap2{font-size:13px}
+body.portrait #badge{flex:1;display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:6px 0;align-content:center}
+body.portrait #badge span{border-left:1px solid #1f3a52;padding:0 12px;font-size:13.5px;gap:4px}
+body.portrait #badge em{-webkit-line-clamp:1;white-space:nowrap;text-overflow:ellipsis;display:block}
+body.portrait .story p{font-size:14px}
+body.portrait .story .v{font-size:16px}
+body.portrait #helpW{display:none}
+#brand{font:700 13px ui-monospace,Menlo,monospace;letter-spacing:.22em;color:#36d879;padding-right:10px}
+#lock{position:fixed;inset:0;z-index:50;display:grid;place-items:center;background:#07090d;text-align:center;padding:30px}
+#lock div{max-width:520px;color:var(--mute);font-size:15px;line-height:1.5}
+#lock h1{font:600 22px system-ui;color:var(--ink);margin:0 0 10px}
+#lock button{margin:18px 0 12px;font:700 13px ui-monospace,Menlo,monospace;letter-spacing:.14em;text-transform:uppercase;color:#04121c;background:var(--hl);border:0;border-radius:3px;padding:12px 26px;cursor:pointer}
+.flag .fx{color:#ffdca3;border-color:transparent;padding:6px 10px;font-size:15px}.flag .fx:hover{border-color:#ffdca3}
+.flag.w.held .tag{cursor:pointer}
+.flag .off{flex:none;align-self:center;margin-right:10px;font:600 11px ui-monospace,Menlo,monospace;letter-spacing:.08em;text-transform:uppercase;color:#ffdca3;white-space:nowrap;border:1px solid #ffdca366;border-radius:3px;padding:2px 7px;cursor:help}
+body.portrait.short #fleet svg{height:16px}body.portrait.short #fleet{gap:3px}body.portrait.short #fleet .axis{font-size:10.5px}body.portrait.short #bay{gap:4px}
+body.portrait.short #deskB{height:176px}body.portrait.short #bay{height:64px;padding-bottom:6px}body.portrait.short #deskB>.in{gap:8px;padding:10px 16px}
+@media (max-width:700px){.views{flex-wrap:wrap}}
+.flag .rev{color:#ffdca3;border-color:#ffdca3}.flag .rev:hover{background:#ffdca3;color:#161000}
+.views [data-side]{margin-right:auto}
+.views [data-side]+[data-side]{margin-left:-2px}
+.desk.over{z-index:9;transform:none!important;top:150px}
+#deskL.over{left:14px}#deskR.over{right:14px}
+#bayN{font:700 10px ui-monospace,Menlo,monospace;letter-spacing:.1em;text-transform:uppercase;color:#161000;background:var(--warn);border:0;border-radius:2px;padding:2px 8px;cursor:pointer;width:auto!important;height:auto!important;white-space:nowrap}
+.st.idle>*{transition:opacity .5s}
+</style>
+</head>
+<body>
+<div id="room"><div id="world"><div id="floor"></div></div></div>
+<div id="hud">
+  <span id="brand" title="Window on Agents, Tools, Changes and Hand-offs"><img id="mark" src="/static/icon.svg?v=fleet-3" alt="">W.A.T.C.H.</span>
+  <span id="live" class="off">connecting…</span>
+  <span id="fleetS" hidden><b>Fleet</b><span id="projs"></span></span>
+  <button id="needN" hidden></button>
+  <span class="sp"></span>
+  <span id="console"><b>Console</b>
+    <button id="notify" class="sw" aria-label="Notify me"><svg viewBox="0 0 24 24"><path d="M6 16V11a6 6 0 0 1 12 0v5l2 2H4zM10 20a2 2 0 0 0 4 0"/></svg><span>Notify</span></button>
+    <button id="appr" class="sw" aria-label="Answer prompts here"><svg viewBox="0 0 24 24"><path d="M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6z"/><path d="M8.5 12l2.5 2.5 4.5-5"/></svg><span>Answer here</span></button>
+  </span>
+  <span id="acts"><button id="clearQ" class="ic" hidden title="Dismiss every agent that is idle and not waiting on you; pinned ones stay" aria-label="Dismiss idle agents"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="12" rx="1"/><path d="M9 20h6M12 16v4M9 8l6 4M15 8l-6 4"/></svg></button><button id="bringB" class="ic" hidden aria-label="Bring back dismissed agents"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="12" rx="1"/><path d="M9 20h6M12 16v4M12 7v6M9 10h6"/></svg><b></b></button><span id="helpW"><button id="help" title="Gestures and keys" aria-label="Gestures and keys">?</button><span id="hint">pinch out on a screen to step up · two-finger scroll or ← → to turn along the row · pinch to move closer · double-click empty space to reset · hover a screen to lean in</span></span></span>
+  <button id="back" hidden>← Back to the room</button>
+</div>
+<div id="needs"></div>
+<div id="deskL" class="desk hud" hidden><div class="in"><h3>Agent log</h3><div class="scroll story"></div></div></div>
+<div id="deskR" class="desk hud" hidden><div class="in"><h3>Comms · you to this agent</h3><div class="scroll story" id="comms"></div><div id="chan"></div></div></div>
+<div id="subs" hidden></div>
+<div id="deskT" hidden><span class="lbl">Chain of command</span><div id="crumb"></div></div>
+<div id="deskB" class="hud" hidden><div class="in"><div id="bay"><div id="bayH"><button data-pg="-1" aria-label="Previous panel">‹</button><span id="bayT"></span><button id="bayN" hidden></button><span id="bayD"></span><button data-pg="1" aria-label="Next panel">›</button></div><div id="fleet"></div></div><div id="badge"></div></div></div>
+<div id="empty" hidden></div>
+<div id="lock" hidden><div><img src="/static/icon.svg?v=fleet-3" alt="" style="height:72px;margin-bottom:14px"><h1>W.A.T.C.H. is locked</h1><b style="color:var(--hl);letter-spacing:.06em">Window on Agents, Tools, Changes and Hand-offs.</b><br><br>This window has no key. Press Unlock and the server will open a new tab in your default browser with the room unlocked. The key is kept on this Mac in <code>~/.live-room/key</code> and is never sent to a window that merely asks for it.<br><button id="unlock">Unlock</button><br><span id="lockMsg"></span></div></div>
+
+<script>
+'use strict';
+const $=s=>document.querySelector(s);
+/* escapes quotes too, so a value is safe inside an attribute as well as in text */
+/* a log value as text: a string as it is, nothing for null, and a JSON rendering for anything structured — String() on an
+   arbitrary object can throw (a crafted toString), and one bad field must never take the whole page down with it */
+const str=v=>typeof v==='string'?v:v==null?'':typeof v==='object'?(()=>{try{return JSON.stringify(v)}catch(err){return '[unreadable value]'}})():String(v);
+const esc=s=>str(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const put=(e,h)=>{if(e._h!==h){e._h=h;e.innerHTML=h}};
+const hid=(e,h)=>{if(e.hidden!==h)e.hidden=h};
+const txt=(e,t)=>{if(e._t!==t){e._t=t;e.textContent=t}};   /* never touch the DOM unless something changed */
+const short=p=>{p=String(p||'');const h=p.split('/');return h.length>4?'…/'+h.slice(-3).join('/'):p};
+const tail2=p=>String(p||'').split('/').slice(-2).join('/');
+const one=s=>String(s||'').replace(/\s+/g,' ');
+const dur=s=>s<90?Math.max(0,Math.floor(s))+'s':s<5400?Math.floor(s/60)+' min':Math.floor(s/3600)+' h';
+const ago=s=>s<10?'just now':dur(s<90?Math.floor(s/10)*10:s)+' ago';
+const clock=ts=>new Date(ts*1000).toLocaleTimeString([],{hour:'numeric',minute:'2-digit'});
+const plain=t=>str(t).replace(/\[([^\]]*)\]\([^)]*\)/g,'$1').replace(/\*\*|__|`/g,'').replace(/^#+\s*/gm,'');      /* a link shows its text, not its address */
+const world=$('#world'), room=$('#room'), A={}, order=[];
+/* activity strip: what kind of log entry each one was */
+const TICK={write:'e',edit:'e',patch:'e',run:'c',read:'r',search:'r',web:'r',say:'s',user:'u'};
+const TICKS=[['e','#7ff0a4','edits'],['c','#f0a020','commands'],['r','#39c8ff','reads'],['s','#c9a7ff','said'],['u','#ffffff','you'],['o','#4a6a85','other']];
+const MAT=['read','write','edit','run','search','web','tool','spawn','patch','ask'];
+const LABEL={deploy:'a deploy',push:'a push',publish:'a publish',delete:'a delete',send:'sending something out'}, spawns={}, ALERTS=[];
+const DOING={read:'reading',write:'writing a file',edit:'editing',run:'running a command',search:'searching',web:'on the web',tool:'using a tool',ask:'asking you a question',spawn:'handing off work',patch:'editing'};
+
+/* ---------- demo decided first: a ?demo window never authenticates, connects, or posts (see the demo section below) ---------- */
+const DEMO=/[?&]demo\b/.test(location.search);
+/* shared browser storage (pins, dismissed agents, project names and colours, the chosen project, notify, the per-tab
+   answering preference, the first-visit hint flag) is this browser's live state; a demo window neither reads nor writes
+   any of it, so nothing of yours can show in a demo and nothing from the demo leaks into your room. */
+const store=(()=>{const inert={getItem:()=>null,setItem(){},removeItem(){}}; if(DEMO) return inert; try{const l=window.localStorage; if(l) return l}catch(err){} return inert})();      /* a browser that refuses storage still gets a working room, just one that remembers nothing */
+/* ---------- the key: every request to the server carries it ---------- */
+let KEY='', claiming=false; try{KEY=DEMO?'':(localStorage.getItem('liveRoomKey')||'')}catch(err){}
+function takeKey(){const h=new URLSearchParams(location.hash.slice(1)), k=h.get('k'), p=h.get('p'); if(!k&&!p) return false;
+  history.replaceState(null,'',location.pathname+location.search);
+  if(DEMO) return false;                          /* a credential in a demo window's address is dropped, never claimed or kept */
+  const keep=v=>{KEY=v; try{localStorage.setItem('liveRoomKey',v)}catch(err){}};
+  if(k){keep(k); return true}
+  /* an unlock link carries a one-time code, traded here for the key */
+  claiming=true;                                   /* nothing else checks or connects until this settles */
+  fetch('/claim',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({code:p})}).then(r=>r.ok?r.text():Promise.reject())
+    .then(v=>{keep(v)}).catch(()=>{if(!KEY) txt($('#lockMsg'),'That unlock link has expired or was already used. Press Unlock again.')})
+    .finally(()=>{claiming=false; start()});
+  return false}
+takeKey();
+addEventListener('hashchange',()=>{if(takeKey())start()});
+const post=(path,body)=>DEMO?Promise.reject(new Error('demo window')):fetch(path,{method:'POST',headers:{'Content-Type':'application/json','X-Live-Room-Key':KEY},body:JSON.stringify(body||{})});
+$('#unlock').onclick=()=>{if(DEMO) return; fetch('/pair',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({steady:/[?&]steady\b/.test(location.search)})}).then(r=>{txt($('#lockMsg'),r.ok?'A new tab has opened in your default browser with the room unlocked. You can close this one.':'Asked too recently. Wait a minute and press Unlock again.')}).catch(()=>txt($('#lockMsg'),'Could not reach the W.A.T.C.H. server. Is it running?'))};
+
+function agent(id){
+  if(A[id]) return A[id];
+  const el=document.createElement('div'); el.className='st'; el.dataset.id=id;
+  const color=`hsl(${(Object.keys(A).length*67+200)%360} 80% 68%)`; el.style.setProperty('--c',color);
+  el.innerHTML=`<div class="flag w" hidden><b class="tag"></b><div class="msg"><span></span></div><span class="off" hidden></span><button class="rev" hidden>Review</button><button class="yes" hidden>Allow</button><button class="no" hidden>Deny</button><button class="fx" hidden title="Dismiss this notice" aria-label="Dismiss this notice">×</button></div><div class="flag r" hidden><b class="tag">Alert</b><div class="msg"><span></span></div></div>
+    <div class="pband"></div><header><span class="av">?</span><div class="id"><b></b><span class="doing"></span><span class="ctx"><em class="pj"></em><span class="goal"></span></span><span class="sub"></span><span class="fuel" hidden><i><u></u></i><em></em></span></div><button class="go" title="Open this session in its desktop app"></button><button class="pinb" title="Keep this agent in the room when you dismiss the quiet ones">Pin</button><button class="x" title="Dismiss from the room. It comes back if it does something new." aria-label="Dismiss this agent from the room">×</button></header>
+    <div class="mon"><div class="tab"><span class="what"></span><span class="how"></span></div><div class="pin" hidden>Showing an earlier step — click to go back to live. Any rendered page beside it is the file as it is on disk now.</div><div class="plan" hidden></div><div class="split"><pre class="code"></pre><div class="pvw" hidden><iframe sandbox="allow-scripts" title="Rendered preview"></iframe><span class="pvn"></span></div></div></div>
+    <div class="views"><button data-side="L" hidden>Log</button><button data-side="R" hidden>Comms</button><span>Screen</span><button data-v="said"><i>1</i>Saying</button><button data-v="doing"><i>2</i>Doing</button><button data-v="seeing"><i>3</i>Seeing</button><button data-v="changes"><i>4</i>Changing</button></div><div class="lk" hidden></div>`;
+  /* Hover is owned by the pointer's position over the SEAT, not by the element: once in hand the monitor moves to the
+     centre, away from the pointer, so the element's own leave event must not end the hover (that loop is what made
+     the room pulse). A hover is acquired only when the camera is still; a camera gesture never starts one. */
+  /* the hover starts once the pointer has rested HOVER_MS AND the camera has been still for 250 ms: a pan's momentum
+     tail does not drop the hover, it only delays it until the room has settled under the pointer */
+  el.onmouseenter=()=>{clearTimeout(peekT); if(focus||drag) return; const arm=()=>{if(focus||drag||peek===id) return; const still=performance.now()-gT; if(still>250) setPeek(id); else peekT=setTimeout(arm,260-still)}; peekT=setTimeout(arm,HOVER_MS)};
+  el.onmouseleave=ev=>{clearTimeout(peekT); if(peek===id&&!inReach(id,ev.clientX,ev.clientY)) setPeek(null)};
+  el.onclick=ev=>{ev.stopPropagation(); if(moved) return; const a=A[id], t=ev.target;
+    const vb=t.closest('[data-v]'); if(vb){if(focus===id)setView(vb.dataset.v);return}
+    const sb=t.closest('[data-side]'); if(sb){narrow=narrow===sb.dataset.side?null:sb.dataset.side; desk(); return}
+    if(t.closest('.x')){dismiss(id);return}
+    if(t.closest('.pinb')){togglePin(id);return}
+    const heldReq=a.perms&&Object.values(a.perms).some(p=>p&&!p.sent);
+    if(t.closest('.rev')||(t.closest('.flag.w.held .tag')&&heldReq)){narrow=null; if(DEMO&&!APPROVE) APPROVE=true;      /* Review, or the tag of a held request, opens it on Doing; in the demo that also switches answering on, so Allow and Deny are one click away */
+      if(focus===id)setView('doing');else{setFocus(id); setView('doing')}return}
+    const yn=t.closest('.yes,.no');
+    if(yn){const p=a.perms[yn.dataset.pid];        /* exactly the request these buttons were drawn for, and only while it is the one on screen */
+      if(!p||p.sent||focus!==id||a.permScreen!==p.pid||!APPROVE||covered()||!onScreen(a.$.code)||Date.now()-(+yn.dataset.at||0)<450) return;      /* measured now, not when it was last painted */ const allow=yn.classList.contains('yes'); p.sent=true; a.dirty=true;
+      const back=msg=>{p.sent=false; a.dirty=true; a.permMsg=msg};
+      if(DEMO){const now=()=>Date.now()/1000, H=o=>handle(Object.assign({agent:id,ts:now()},o)), after=(ms,f)=>setTimeout(()=>{f(); render()},ms);      /* nothing leaves the page: the request ends here and the fictional agent carries on for a while */
+        a.permMsg=(allow?'Allowed':'Denied')+' from here'; render();
+        after(600,()=>{H({kind:'perm_end',pid:p.pid,how:(allow?'allowed':'denied')+' from the room'});
+          if(allow) H({kind:'run',id:'c9',cmd:'rm -rf build/ && make nightly ARCH=arm64 CRC=soft',why:'rebuild with the soft CRC path'});
+          else{H({kind:'say',text:'Understood, I will not clear the build directory. I will try an out-of-tree build in /tmp instead and report back.'}); H({kind:'turn_end'})}});
+        if(allow){
+          after(4000,()=>{H({kind:'result',id:'c9',text:'…\nlinking nightly (arm64, CRC=soft)\nok'}); H({kind:'say',text:'Linked. The nightly builds on arm64 with CRC=soft. Now making that the default for arm64 targets so the fast path is only used where the symbol exists.'})});
+          after(7000,()=>H({kind:'edit',id:'c10',path:'/Users/demo/Projects/Lighthouse/Makefile',before:'CRC ?= hw',after:'CRC ?= $(if $(filter arm64,$(ARCH)),auto,hw)'}));
+          after(9500,()=>{H({kind:'result',id:'c10',text:'ok'}); H({kind:'run',id:'c11',cmd:'make nightly ARCH=arm64',why:'confirm the default links'})});
+          after(13000,()=>{H({kind:'result',id:'c11',text:'linking nightly (arm64, CRC=auto)\nok'}); H({kind:'say',text:'Done. arm64 now defaults to CRC=auto and the nightly links cleanly; the diff is one line in the Makefile. Ready for a pull request when you are.'}); H({kind:'turn_end'})});
+        }
+        return}
+      post('/decide',{pid:p.pid,allow}).then(r=>{if(!r.ok)back(r.status===409?'Already answered from another window.':'That prompt is no longer waiting; it may have been answered in the app.')}).catch(()=>back('Could not reach the server; nothing was sent. Try again.'));
+      return}
+    if(t.closest('.fx')){for(const k in a.asks) if(a.asks[k].maybe) delete a.asks[k]; if(a.said) a.saidOff=a.said.ts; a.wait=null; a.dirty=true; render(); return}
+    if(t.closest('.go')){if(DEMO) return; post('/open',{agent:id}).then(async r=>{if(!r.ok)alert(await r.text()||'Could not open that session.')}).catch(()=>alert('Could not reach the W.A.T.C.H. server.'));return}
+    if(focus===id) return;                       /* already at this desk: clicks and text selection inside it change nothing */
+    setFocus(id)};
+  world.append(el);
+  const q=s=>el.querySelector(s);
+  A[id]={id,el,color,name:id.slice(-4),task:'',runtime:'',parent:'',cur:null,said:null,user:null,wait:null,calls:{},perms:{},asks:{},q:[],last:0,turn:'',how:'',dirty:true,
+    story:[],msgs:[],edits:[],dropped:0,ticks:[],open:new Set(),tasks:{},taskOrder:[],
+    $:{av:q('.av'),name:q('.id b'),doing:q('.doing'),pj:q('.ctx .pj'),goal:q('.ctx .goal'),fuel:q('.fuel'),fuelBar:q('.fuel u'),fuelTxt:q('.fuel em'),sub:q('.sub'),go:q('.go'),pinb:q('.pinb'),fw:q('.flag.w'),fwt:q('.flag.w .msg span'),fwk:q('.flag.w .tag'),fr:q('.flag.r'),frt:q('.flag.r .msg span'),rev:q('.rev'),yes:q('.yes'),no:q('.no'),fx:q('.fx'),off:q('.flag .off'),what:q('.what'),how:q('.how'),split:q('.split'),code:q('.code'),pvw:q('.pvw'),frame:q('iframe'),pvn:q('.pvn'),plan:q('.plan'),pin:q('.pin'),lk:q('.lk'),sL:q('[data-side="L"]'),sR:q('[data-side="R"]')}};
+  if(GONE[id]){A[id].gone=GONE[id];el.hidden=true}else{order.push(id); layout()}
+  return A[id];
+}
+
+/* Whether a command is a test or build is decided once, by the server's parser, and arrives as e.check. */
+const MASKED=/\|\|\s*(true|:)\s*($|[;&\n])|;\s*true\s*$/;
+function note(a,item){item.n=a.sn=(a.sn||0)+1; a.story.push(item);if(a.story.length>300)a.story.shift()}
+function did(e){
+  const line=s=>String(s||'').split('\n')[0].slice(0,90);
+  switch(e.kind){
+    case 'read': return (e.err?'failed to open ':!e.done?'opening ':e.unknown?'returned ':'opened ')+tail2(e.path);      /* no exit code recorded: returned, not opened */
+    case 'write': return (!e.done?'writing ':e.err?'failed to write ':'wrote ')+tail2(e.path);
+    case 'edit': return (!e.done?'editing ':e.err?'failed to edit ':'edited ')+tail2(e.path);
+    case 'patch': return (e.err?'failed to change ':({add:'wrote ',delete:'deleted '}[e.op]||'edited '))+tail2(e.path);
+    case 'run': return (e.why?line(e.why):(e.done?'ran ':'issued ')+line(e.cmd))+(e.err?' — failed':'');
+    case 'search': return (e.err?'search failed for ':e.done?'searched for ':'searching for ')+line(e.q);
+    case 'web': return (e.err?'look-up failed for ':e.done?'looked up ':'looking up ')+line(e.q);
+    case 'spawn': return 'handed off: '+line(e.name);
+    case 'ask': return 'asked you: '+line(e.text);
+    default: return line(e.name||'used a tool');
+  }
+}
+
+/* ---------- dismissing and pinning ----------
+   A dismissed agent is only hidden. It keeps being followed, and comes back by itself when it does something new. */
+let GONE={}; try{GONE=JSON.parse(store.getItem('liveRoomDismissed')||'{}')}catch(err){}
+let PINS={}; try{PINS=JSON.parse(store.getItem('liveRoomPins')||'{}')}catch(err){}
+const save=(k,v)=>{try{store.setItem(k,JSON.stringify(v))}catch(err){}};
+function dismiss(id){const a=A[id]; if(!a||a.gone) return; a.gone=GONE[id]=Date.now()/1000; save('liveRoomDismissed',GONE); const i=order.indexOf(id); if(i>=0)order.splice(i,1); a.el.hidden=true; if(focus===id)setFocus(null); layout()}
+function revive(id){const a=A[id]; if(!a||!a.gone) return; a.gone=0; delete GONE[id]; save('liveRoomDismissed',GONE); a.el.hidden=false; a.dirty=true; order.push(id); layout()}
+function forget(id){const a=A[id]; if(!a) return; if(focus===id){a.forgetLater=true; return} const i=order.indexOf(id); if(i>=0)order.splice(i,1); a.el.remove(); if(a.nt){try{a.nt.close()}catch(err){}} delete A[id]; delete GONE[id]; delete PINS[id]; save('liveRoomDismissed',GONE); save('liveRoomPins',PINS); layout()}
+function togglePin(id){PINS[id]?delete PINS[id]:PINS[id]=1; save('liveRoomPins',PINS); A[id].dirty=true; keep(); render()}
+/* pinned agents are told to the server, which keeps following their logs for a day, so they come back after a restart */
+let WIN=''; try{if(!DEMO) WIN=sessionStorage.getItem('liveRoomWin')||''; if(!WIN){WIN=Math.random().toString(36).slice(2,10); if(!DEMO) sessionStorage.setItem('liveRoomWin',WIN)}}catch(err){WIN=Math.random().toString(36).slice(2,10)}      /* no storage: still a token of its own, just not kept across reloads */      /* this window's own token, so two windows' pin lists do not overwrite each other */
+const keep=()=>{if(KEY&&connected&&!DEMO) post('/keep',{ids:Object.keys(PINS),win:WIN}).catch(()=>{})};      /* the whole list every time, empty included: the server keeps only what is still pinned */
+$('#clearQ').onclick=()=>{const now=Date.now()/1000; for(const k of [...order]){const a=A[k], s=stateOf(a,now); if(!s.busy&&!s.need&&!PINS[k]) dismiss(k)}};
+$('#bringB').onclick=()=>{for(const k of Object.keys(A)) revive(k)};
+
+/* hovering a monitor in the room: it leans in so you can read it, and its family stays lit while the rest dim */
+let peek=null, peekT=0; const HOVER_MS=320;      /* how long the pointer rests on a monitor before it comes to hand */
+function isDesc(x,root){let p=x,n=0; while(p&&n++<20){if(p===root)return true;p=A[p]&&A[p].parent} return false}
+function family(id){const f=new Set([id]); let p=A[id]&&A[id].parent, n=0; while(p&&A[p]&&n++<20){f.add(p);p=A[p].parent} for(const k of order) if(isDesc(k,id)) f.add(k); return f}
+/* The hover lean-in. The room is real 3D, so "on top" means "nearest the camera": the hovered monitor is brought
+   forward until it is in front of every other monitor (including one raised because it is waiting on you). Coming
+   forward already makes it look bigger, so its scale is set to whatever gives a readable size (about a third of
+   the window wide) and it is nudged to stay inside the window and below the top bar. The candidate position is
+   measured without being painted, so none of this is guessed from the perspective maths alone. */
+function peekFit(id){
+  const a=A[id], q=pos[id]; if(!a||!q) return null;
+  const el=a.el, kid=el.classList.contains('kid'), cur=kid?KS:1, r0=el.getBoundingClientRect(); if(r0.width<4) return null;
+  const th=cam.yaw*Math.PI/180, ti=cam.tilt*Math.PI/180, T=(STACK-600)/2+20+cam.py, D=cam.D||0, now=Date.now()/1000;
+  const cz=p=>(p.y+T)*Math.sin(ti)+turned(p,th).z*Math.cos(ti)-D;          /* depth as the camera sees it: larger = nearer */
+  const sure=k=>{const S=stateOf(A[k],now); return !!(S.need&&S.need.sure)};
+  let front=-1e9; for(const k of order){const p=pos[k]; if(k===id||!p) continue;
+    front=Math.max(front,cz(p)+340*Math.abs(Math.sin(th-p.a*Math.PI/180))+(sure(k)?150:0))}
+  /* where the viewer's eye is, in the room's own coordinates; moving a monitor along the line to the eye enlarges it in place */
+  const ey=-(cam.H||0)-innerHeight*.04, ez0=P+D;        /* the perspective origin sits at 46% of the height */
+  const y1=ey*Math.cos(ti)+ez0*Math.sin(ti), z1=-ey*Math.sin(ti)+ez0*Math.cos(ti);
+  const E={x:-(z1-ARC.R)*Math.sin(th),y:y1-T,z:(z1-ARC.R)*Math.cos(th)+ARC.R}, vx=E.x-q.x, vy=E.y-q.y, vz=E.z-q.z, L=Math.hypot(vx,vy,vz)||1;      /* the turn undone, about the same centre */
+  const gainPer=(cz({x:q.x+vx/L,y:q.y+vy/L,z:q.z+vz/L})-cz(q))||1;                                 /* depth gained per px moved toward the eye */
+  const own=0;                                                                                      /* it turns to face you, so it has no far edge */
+  const d=Math.max(40,Math.min(L-340,(front+70+own-cz(q))/Math.max(.5,gainPer)));
+  /* in your hand it faces you squarely, whichever way its seat points and wherever the camera is looking: the seat's
+     own turn is replaced by the camera's undone */
+  const pre=`translate3d(${(vx/L*d).toFixed(1)}px,${(vy/L*d).toFixed(1)}px,${(vz/L*d).toFixed(1)}px) `, base=`translate3d(${q.x}px,${q.y}px,${q.z}px) rotateY(${(-cam.yaw).toFixed(2)}deg) rotateX(${(-cam.tilt).toFixed(2)}deg)`+(sure(id)?' translateZ(150px)':'');
+  const f=Math.max(.4,Math.min(kid?3:2.2,Math.min(innerWidth*.40,(innerHeight-90)*.68*r0.width/r0.height)/r0.width));      /* the same size in hand wherever it sat: about two fifths of the window wide, smaller if it was nearer than that */
+  const was=el.style.transform, wt=el.style.transition; el.style.transition='none';
+  const probe=t=>{el.style.transform=pre+base+t; return el.getBoundingClientRect()};
+  const r1=probe(` scale(${cur})`), sc=cur*f*r0.width/Math.max(1,r1.width);                          /* cancel what coming forward added */
+  const r2=probe(` scale(${sc.toFixed(4)})`), top=$('#hud').offsetHeight+6;
+  const cx=r2.left+r2.width/2, cy=r2.top+r2.height/2;
+  const dx=innerWidth/2-cx, dy=top+(innerHeight-top)/2-cy;          /* it comes to the middle of the window, below the top bar, wherever its seat is */
+  const per=r2.width/(el.offsetWidth*sc)||1, cs=1;          /* screen px per unit of the monitor's own space; facing you, no foreshortening */
+  const post=` translate(${(dx/per/cs).toFixed(1)}px,${(dy/per).toFixed(1)}px) scale(${sc.toFixed(4)})`;
+  const r3=probe(post), ok=isFinite(r3.width)&&r3.width>0&&r3.width<=innerWidth*.72&&r3.height<=innerHeight&&r3.left>=-12&&r3.right<=innerWidth+12&&r3.top>=top-12&&r3.bottom<=innerHeight+12;
+  el.style.transform=was; el.getBoundingClientRect(); el.style.transition=wt;                                /* put it back unpainted; the real move animates */
+  return ok?{pre,post,base}:null;                /* measured where it would land; if that is out of bounds, it does not lean in at all */
+}
+/* where the pointer is, measured against the seat the hover began on and against the held monitor itself */
+/* the stretch between the seat and the monitor in hand is yours too: the convex hull of both rectangles (with a small
+   margin), so the pointer can travel from where it hovered to where the monitor came, and the hold only ends when
+   the pointer goes off to the side or past either end */
+function inReach(id,x,y){
+  const a=A[id], s0=a&&a.peekSeat; if(!a||!s0) return false; const r=a.el.getBoundingClientRect(), m=14;
+  const pts=[[s0.left-m,s0.top-m],[s0.right+m,s0.top-m],[s0.right+m,s0.bottom+m],[s0.left-m,s0.bottom+m],[r.left-m,r.top-m],[r.right+m,r.top-m],[r.right+m,r.bottom+m],[r.left-m,r.bottom+m]].sort((p,q)=>p[0]-q[0]||p[1]-q[1]);
+  const cross=(o,p,q)=>(p[0]-o[0])*(q[1]-o[1])-(p[1]-o[1])*(q[0]-o[0]);
+  const lo=[], hi=[]; for(const p of pts){while(lo.length>=2&&cross(lo[lo.length-2],lo[lo.length-1],p)<=0) lo.pop(); lo.push(p)} for(const p of pts.slice().reverse()){while(hi.length>=2&&cross(hi[hi.length-2],hi[hi.length-1],p)<=0) hi.pop(); hi.push(p)}
+  const hull=lo.slice(0,-1).concat(hi.slice(0,-1));
+  for(let i=0;i<hull.length;i++){if(cross(hull[i],hull[(i+1)%hull.length],[x,y])<0) return false} return true;
+}
+addEventListener('pointermove',e=>{if(peek&&A[peek]&&!inReach(peek,e.clientX,e.clientY)) setPeek(null)},{passive:true});
+/* a monitor's four corners in camera space (z toward the lens, the lens at z=P), after its own seat transform and the
+   world's; and their projection to the screen, from the room's perspective origin (50%, 46%: the world sits at 50%) */
+function corners(M,q,kid){const E=M.multiply(new DOMMatrix(q.tfF+(kid?` scale(${KS})`:''))); return [[-320,-260],[320,-260],[320,260],[-320,260]].map(([x,y])=>E.transformPoint(new DOMPoint(x,y,0)))}
+function project(pt,rr){const ox=rr.left+rr.width/2, oy=rr.top+rr.height*.46, d=P-pt.z; if(d<=40) return null; const sc=P/d; return {x:ox+pt.x*sc,y:oy+(rr.height*.04+pt.y)*sc}}
+/* While a monitor is hovered it is in your hand: it stays where it is on the screen while the room turns behind it,
+   and slides back to its seat when you let go. The hold is the camera's movement since the hover began, undone:
+   element = now⁻¹ · then · fit, with "then" the world transform at the moment of the hover. */
+function heldTf(id){
+  const a=A[id], pk=a&&a.peekTf, q=pos[id]; if(!pk||!q) return '';
+  const E0=a.peekE0||pk.pre+(pk.base||q.tfF)+pk.post, now=world.style.transform;      /* the pose as fitted when the hover began, not the seat as it is now */
+  if(!a.peekW0||now===a.peekW0) return E0;
+  try{return new DOMMatrix(now).inverse().multiply(new DOMMatrix(a.peekW0)).multiply(new DOMMatrix(E0)).toString()}catch(err){return E0}
+}
+function holdPeek(){if(!peek||!A[peek]||focus) return; const a=A[peek], e=a.el; if(e.classList.contains('approach')){clearTimeout(e._appT); e.classList.remove('approach'); e.classList.add('held')}      /* the camera moved mid-approach: hold exactly from here, no transition to fight it */
+  const tf=heldTf(peek); if(tf&&e._tf!==tf){e._tf=tf; e.style.transform=tf}}
+function setPeek(id,quiet){
+  if(id&&A[id]){const e=A[id].el; e.classList.remove('release'); clearTimeout(e._relT); e.getBoundingClientRect()}      /* a hold cancels a release in progress: never both at once */
+  const fit=id?peekFit(id):null; if(id&&A[id]){const a=A[id], q=pos[id]; a.peekTf=fit; a.peekW0=world.style.transform; a.peekE0=fit&&q?fit.pre+fit.base+fit.post:''; a.peekSeat=a.el.getBoundingClientRect()}
+  if(peek&&peek!==id&&A[peek]){const e=A[peek].el; clearTimeout(e._appT); e.classList.remove('held'); e.classList.remove('approach'); clearTimeout(e._relT); if(!quiet){e.classList.add('release'); e._relT=setTimeout(()=>{e.classList.remove('release'); apply()},650)}}      /* let go: it slides back — unless told to let go quietly (stepping up: the camera moves, the monitor must not also glide) */
+  if(id&&A[id]&&fit){const e=A[id].el; e.classList.remove('held'); e.classList.add('approach'); clearTimeout(e._appT); e._appT=setTimeout(()=>{if(peek===id){e.classList.remove('approach'); e.classList.add('held')}},420)}      /* ease forward first, then hold exactly */
+  peek=id; const fam=id?family(id):null; for(const k of order){A[k].el.classList.toggle('peek',k===id); A[k].el.classList.toggle('dim',!!fam&&fam.size>1&&!fam.has(k)); A[k].dirty=true} render()}
+
+/* ---------- projects: the folder an agent works in, named and coloured ----------
+   The name is the project folder (the part after /Projects/, or the last folder). A folder under a temporary
+   directory whose name is a known project's name followed by "-" or "." is grouped with that project BY NAME ONLY
+   (and labelled so); nothing else is merged, so two folders with similar names stay two projects. A sub-agent with no folder of its own takes its parent's only
+   through a recorded parent link, and is marked as having inherited it. Colours are given in order of first
+   sight and remembered in this browser. Names come from the logs, so they are kept in prototype-free maps and
+   never used as plain object keys. */
+const PCOL=['#39c8ff','#f0a020','#c9a7ff','#4ade80','#ff7eb6','#ffd166','#7fe0d4','#ff9f6e'];
+let PCOLS=Object.create(null);
+try{const d=JSON.parse(store.getItem('liveRoomProjColours')||'{}'); if(d&&typeof d==='object') for(const [k,v] of Object.entries(d)) if(typeof k==='string'&&k.length<=200&&/^#[0-9a-f]{6}$/i.test(String(v))) PCOLS[k]=v}catch(err){}
+let PROJ=null; try{PROJ=store.getItem('liveRoomProj')||null}catch(err){}
+function projName(cwd){
+  if(typeof cwd!=='string'||!cwd) return '';
+  const m=cwd.match(/\/Projects\/([^/]+)/); if(m) return m[1];
+  return cwd.replace(/\/+$/,'').split('/').pop()||'';
+}
+function projInfo(id){
+  const a=A[id]; if(!a) return {n:'',how:''};
+  let n=projName(a.cwd), how='';
+  if(!n){let p=a, g=0; while(!n&&p.parent&&A[p.parent]&&!p.soft&&g++<10){p=A[p.parent]; n=projName(p.cwd)} if(n) how='inherited'}
+  if(!n) return {n:'',how:''};
+  /* a folder under a temporary directory named "<known project>" plus "-rest" or ".XXXXXX" is grouped with that project BY NAME ONLY
+     (Codex and mktemp both make these); the match is on the whole project name with a delimiter after it, never a bare prefix */
+  if(/^(\/private)?\/(var\/folders|tmp)\//.test(String(a.cwd))){
+    const known=[...new Set(order.map(k=>A[k].cwd).filter(c=>typeof c==='string'&&/\/Projects\//.test(c)).map(projName))].sort((x,y)=>y.length-x.length);
+    const low=n.toLowerCase(); for(const k of known){const kl=k.toLowerCase(); if(low!==kl&&low.startsWith(kl)&&/[-.]/.test(n[k.length]||'')){n=k; how=how||'named'; break}}      /* grouped by name only: nothing here proves it is a checkout */
+  }
+  return {n,how};
+}
+const proj=id=>projInfo(id).n;
+/* a display name you give a project folder (double-click its chip): shown everywhere, kept in this browser; grouping stays by folder */
+let PNAMES=Object.create(null); try{const d=JSON.parse(store.getItem('liveRoomProjNames')||'{}'); if(d&&typeof d==='object') for(const [k,v] of Object.entries(d)) if(typeof v==='string'&&v.trim()&&v.length<=60&&k.length<=200) PNAMES[k]=v.trim()}catch(err){}
+let SNAMES=Object.create(null);      /* names from ~/.live-room/projects.json on the server, shared by every window; a name given here overrides */
+const projLabel=n=>n&&(PNAMES[n]||SNAMES[n])||n;
+function renameProj(n){if(!n||n==='—') return; const v=prompt('A name to show for the project folder “'+n+'” in this browser.'+(SNAMES[n]?' Empty: the shared name “'+SNAMES[n]+'”. Type the folder name itself to show that.':' Empty: the folder name.'),PNAMES[n]||''); if(v===null) return; const t=v.trim().slice(0,60); if(t) PNAMES[n]=t; else delete PNAMES[n]; save('liveRoomProjNames',PNAMES); render._fleet=null; for(const k of order) A[k].dirty=true; layout()}
+$('#projs').ondblclick=ev=>{const b=ev.target.closest('[data-p]'); if(b&&b.dataset.p){renameProj(b.dataset.p); ev.preventDefault()}};
+function projColour(n){if(!PCOLS[n]){PCOLS[n]=PCOL[Object.keys(PCOLS).length%PCOL.length]; save('liveRoomProjColours',PCOLS)} return PCOLS[n]}
+function setProj(n){PROJ=n; try{n?store.setItem('liveRoomProj',n):store.removeItem('liveRoomProj')}catch(err){} layout(); for(const k of order)A[k].dirty=true; render()}
+$('#projs').onclick=ev=>{const c=ev.target.closest('[data-go]'); if(c){setFocus(c.dataset.go); return} const b=ev.target.closest('[data-p]'); if(b) setProj(b.dataset.p||null)};
+$('#projs').onkeydown=ev=>{if((ev.key==='Enter'||ev.key===' ')&&ev.target.dataset&&ev.target.dataset.go){setFocus(ev.target.dataset.go); ev.preventDefault(); ev.stopPropagation()}};      /* the cells are focusable: Enter or Space opens one */
+/* ---------- faces ----------
+   Each agent gets a machine head drawn from its id, so it is the same every day and after every restart: head
+   proportions and corner, antenna, ear plates, a visor or two eyes, a grille, a seam. Nothing on it can smile or
+   frown. The only thing that changes is the light in the visor, and it says exactly what the monitor border says:
+   scanning while a step is open, steady and bright while the agent waits on you, dim while a turn is on but
+   nothing is open, dark when the log is silent. */
+try{store.removeItem('liveRoomFaces')}catch(err){}      /* a key from an earlier version; inert in demo */
+function hashBytes(str){let a=2166136261; for(const c of String(str)){a^=c.charCodeAt(0); a=Math.imul(a,16777619)} const b=[]; for(let i=0;i<24;i++){a^=a<<13; a^=a>>>17; a^=a<<5; b.push((a>>>0)%256)} return b}
+function droid(id,col,state){
+  const b=hashBytes(id), dim=state==='idle'?.5:1, s=[], o=v=>(v*dim).toFixed(2);
+  const W=30+(b[0]%8), H=28+(b[1]%8), x=(48-W)/2, y=10, r=b[2]%3===0?3:b[2]%3===1?8:14;
+  s.push(`<rect x="${x}" y="${y}" width="${W}" height="${H}" rx="${r}" fill="${col}" fill-opacity="${o(.22)}" stroke="${col}" stroke-width="1.6" stroke-opacity="${o(1)}"/>`);
+  const ant=b[3]%3;
+  if(ant===1) s.push(`<line x1="24" y1="${y}" x2="24" y2="${y-6}" stroke="${col}" stroke-width="1.6" stroke-opacity="${o(1)}"/><circle cx="24" cy="${y-7}" r="1.8" fill="${col}" fill-opacity="${o(1)}"/>`);
+  else if(ant===2) s.push(`<line x1="${x+5}" y1="${y}" x2="${x+3}" y2="${y-6}" stroke="${col}" stroke-width="1.6" stroke-opacity="${o(1)}"/><line x1="${x+W-5}" y1="${y}" x2="${x+W-3}" y2="${y-6}" stroke="${col}" stroke-width="1.6" stroke-opacity="${o(1)}"/>`);
+  const ear=b[4]%3;
+  if(ear===1) s.push(`<rect x="${x-4}" y="${y+8}" width="4" height="${H-16}" rx="1" fill="${col}" fill-opacity="${o(.8)}"/><rect x="${x+W}" y="${y+8}" width="4" height="${H-16}" rx="1" fill="${col}" fill-opacity="${o(.8)}"/>`);
+  else if(ear===2) s.push(`<circle cx="${x-2}" cy="${y+H/2}" r="3" fill="${col}" fill-opacity="${o(.8)}"/><circle cx="${x+W+2}" cy="${y+H/2}" r="3" fill="${col}" fill-opacity="${o(.8)}"/>`);
+  const vy=y+8+(b[6]%3), vh=6+(b[7]%3), lit=state==='busy'||state==='you'||state==='on', bright=state==='you'?1:state==='on'?.35:.9;
+  if(b[5]%2===0){                                   /* one visor */
+    const vx=x+5, vw=W-10;
+    s.push(`<rect x="${vx}" y="${vy}" width="${vw}" height="${vh}" rx="${vh/2}" fill="#0b0e14" stroke="${col}" stroke-width="1.2" stroke-opacity="${o(1)}"/>`);
+    if(state==='busy') s.push(`<clipPath id="fc${b[12]}${b[13]}${b[14]}"><rect x="${vx+1}" y="${vy+1}" width="${vw-2}" height="${vh-2}" rx="${vh/2}"/></clipPath><rect class="scan" style="--sw:${vw-8}px" x="${vx+1}" y="${vy+1}" width="7" height="${vh-2}" fill="${col}" clip-path="url(#fc${b[12]}${b[13]}${b[14]})"/>`);
+    else if(lit) s.push(`<rect x="${vx+2}" y="${vy+2}" width="${vw-4}" height="${vh-4}" rx="${vh/2}" fill="${col}" fill-opacity="${bright}"/>`);
+  }else{                                            /* two eyes */
+    const ew=3+(b[8]%2), gap=5+(b[9]%4);
+    for(const cx of [24-gap,24+gap]){
+      s.push(`<circle cx="${cx}" cy="${vy+vh/2}" r="${ew+1}" fill="#0b0e14" stroke="${col}" stroke-width="1.2" stroke-opacity="${o(1)}"/>`);
+      if(state==='busy') s.push(`<circle class="scan" style="--sw:${ew}px" cx="${cx-ew/2}" cy="${vy+vh/2}" r="${ew-1}" fill="${col}"/>`);
+      else if(lit) s.push(`<circle cx="${cx}" cy="${vy+vh/2}" r="${ew}" fill="${col}" fill-opacity="${bright}"/>`);
+    }
+  }
+  const gy=y+H-8, gr=b[10]%3;
+  if(gr===0) for(let i=0;i<4;i++) s.push(`<rect x="${20+i*2.6}" y="${gy}" width="1.4" height="4" fill="${col}" fill-opacity="${o(.7)}"/>`);
+  else if(gr===1) s.push(`<rect x="19" y="${gy+1}" width="10" height="2" rx="1" fill="${col}" fill-opacity="${o(.7)}"/>`);
+  else s.push(`<circle cx="24" cy="${gy+2}" r="1.6" fill="${col}" fill-opacity="${o(.7)}"/>`);
+  if(b[11]%2) s.push(`<line x1="${x+4}" y1="${y+4}" x2="${x+W-4}" y2="${y+4}" stroke="${col}" stroke-width="1" stroke-opacity="${o(.5)}"/>`);
+  s.push(`<rect x="20" y="${y+H}" width="8" height="3" fill="${col}" fill-opacity="${o(.6)}"/>`);
+  return `<svg viewBox="0 0 48 48" aria-hidden="true">${s.join('')}</svg>`;
+}
+/* the face's state: what the monitor border already says, and nothing more */
+const faceState=(S,N,w)=>w&&N&&N.sure?'you':S.pend.length?'busy':S.busy?'on':'idle';
+function paintFace(a,id,state){
+  const pc=(a.el.style.getPropertyValue('--pc')||'').trim(), col=pc&&pc!=='transparent'?pc:'#7fa6c2', sig=state+'|'+col;
+  if(a.el._av===sig) return;
+  a.el._av=sig; a.$.av.innerHTML=droid(id,col,state);
+}
+/* ---------- events from the server ---------- */
+let PK='', HEALTH=null, WINDOW_S=1200, ALN=0;
+function handle(e){
+  if(e.kind==='hello'){PK=e.pkey; WINDOW_S=e.window||WINDOW_S; SNAMES=Object.create(null); if(e.names&&typeof e.names==='object') for(const [k,v] of Object.entries(e.names)) if(typeof v==='string'&&v.trim()&&v.length<=60) SNAMES[k]=v.trim(); render._fleet=null; for(const k of order) A[k].dirty=true; if(order.length) layout(); return}
+  if(e.kind==='health'){HEALTH=e; HEALTH.at=Date.now()/1000; return}
+  if(e.kind==='gap'){location.reload(); return}                 /* events were missed: rebuild from a clean snapshot */
+  if(e.kind==='forget'){forget(e.agent); return}
+  if(!e.agent) return;
+  if(!A[e.agent]&&e.kind!=='agent') return;   /* only the server's description of an agent creates a monitor; nothing else conjures one */
+  const a=agent(e.agent); a.dirty=true; a.forgetLater=false;       /* it is doing something again: it stays */
+  const lastBefore=a.last;                                          /* the newest log record known before this event */
+  const act=['say','result','user','perm','waiting'].includes(e.kind)||MAT.includes(e.kind);
+  if(a.gone&&act&&e.ts>a.gone) revive(a.id);
+  if(!['agent','link','partial'].includes(e.kind)&&e.ts){a.last=Math.max(a.last,e.ts); if(act){a.ticks.push({t:e.ts,c:TICK[e.kind]||'o'}); if(a.ticks.length>400)a.ticks.shift()}}
+  if(a.wait&&(act||e.kind==='turn_end')&&e.kind!=='waiting') a.wait=null;      /* a plain notification clears once the log moves on */
+  if(e.alert&&!(a.alert&&a.alert.label===(LABEL[e.alert]||e.alert)&&Math.abs(e.ts-a.alert.ts)<30)){const al={n:++ALN,id:e.agent,label:LABEL[e.alert]||e.alert,text:e.cmd||e.name||'',ts:e.ts};a.alert=al;ALERTS.unshift(al);ALERTS.length=Math.min(ALERTS.length,8)}
+  switch(e.kind){
+    case 'agent':
+      for(const k of ['name','task','runtime','spawn','model','effort','perm','branch','cwd','goal']) if(typeof e[k]==='string'&&e[k]) a[k]=e[k];     /* log data: a string or nothing */
+      if('goal' in e) a.goalEarly=!!e.goalEarly;      /* the goal came from part-way through the log, not its start */
+      for(const k of ['started','looked','partial']) if(e[k]) a[k]=e[k];
+      for(const k of ['ctx','ctxmax','ctxref']) if(k in e) a[k]=num(e[k])?e[k]:null;      /* a count that is not a number is not a count */
+      if('ctx' in e) a.ctxpart=!!e.ctxpart;                                                   /* only some of the usage components were stated: a lower bound, not the figure */
+      /* an agent event carries the whole record: a link it does not name is a link the agent no longer has */
+      a.parent=typeof e.parent==='string'?e.parent:''; a.via=typeof e.via==='string'?e.via:''; a.soft=!!e.soft; a.sub=!!e.sub;
+      a.maybe=(!a.parent&&e.maybe&&typeof e.maybe==='object'&&typeof e.maybe.parent==='string')?{parent:e.maybe.parent,via:str(e.maybe.via)}:null;      /* a guess from script text: shown as 'possibly', never grouped, never followed */
+      {const sig=a.parent+'|'+a.soft+'|'+a.cwd; if(a._par!==sig){a._par=sig; if(order.includes(a.id)) layout()}}      /* family or project changed: lay the room out again */
+      {const sp=a.spawn&&spawns[a.spawn]; if(sp&&!sp.sent&&!e.old){sp.sent=true;pulse(sp.parent,a.id,'handed off')}}
+      break;
+    case 'beat': if(!(a.endTs&&e.ts<a.endTs)) a.turn='in'; break;
+    case 'compact': note(a,{t:'compact',pre:e.pre,post:e.post,trigger:e.trigger,ts:e.ts}); break;
+    case 'perm': a.perms[e.pid]=e; a.permMsg=''; note(a,{t:'wait',text:'asked permission: '+e.tool,ts:e.ts}); break;
+    case 'perm_end': delete a.perms[e.pid]; if(a.permScreen===e.pid){a.permScreen=null; hid(a.$.yes,true); hid(a.$.no,true); a.$.yes.dataset.pid=a.$.no.dataset.pid=''}   /* its buttons die with it, at once */
+      note(a,{t:'wait',text:'permission: '+e.how,ts:e.ts}); break;
+    case 'waiting': if(e.sticky){a.asks[e.qid||e.seq]=e}else a.wait=e; note(a,{t:'wait',text:e.text,ts:e.ts}); break;
+    case 'unask': delete a.asks[e.qid]; break;
+    case 'see': a.seen=e; break;
+    case 'link': if(!e.old)pulse(e.src,e.dst,e.label); break;
+    case 'user': a.user=e; if(!(a.endTs&&e.ts<a.endTs)) a.turn='in';
+      for(const k in a.asks) a.asks[k].maybe=true;          /* the log does not say which question a message answers: they become "probably answered" and stay, marked so, until the log withdraws them or you dismiss the notice */
+      a.msgs.push(e); if(a.msgs.length>40)a.msgs.shift(); note(a,{t:'you',text:e.text,ts:e.ts,key:'u'+(e.seq>=0?e.seq:e.ts)}); break;
+    case 'task': addTask(a,e.num,{text:e.text,status:'pending'}); break;
+    case 'task_upd': {const t=a.tasks[e.num]; if(t){if(e.status)t.status=e.status; if(e.text)t.text=e.text}else if(e.num) addTask(a,e.num,{text:e.text||'step '+e.num+' (created before this view began)',status:e.status||'pending'})} break;
+    case 'assign': a.assign=e; break;
+    case 'queued': a.q.push(e); if(a.q.length>50)a.q.shift(); break;
+    case 'dequeued':
+      if(e.op==='popAll') a.q=[];
+      else if(e.op==='remove'){const i=a.q.findIndex(m=>m.text===e.text); if(i>=0)a.q.splice(i,1)}     /* an unidentified removal changes nothing here */
+      else a.q.shift();
+      break;
+    case 'say': a.said=e; if(!(a.endTs&&e.ts<a.endTs)) a.turn='in'; note(a,{t:'say',text:e.text,ts:e.ts}); break;
+    case 'turn_end':                                  /* the log's own end clears the turn; a hook's is provisional: steps still open stay open until the log agrees */
+      {const confirms=a.endHook&&!e.hook&&lastBefore<=(a.endTs||0);      /* the log confirming a hook's provisional end, and nothing newer since that end */
+      if(a.endTs&&e.ts<a.endTs&&!confirms) break;      /* older than the end we have */
+      if(e.ts<lastBefore&&!confirms) break;}             /* older than the latest record: the log has moved on since */
+      a.turn='ended'; a.endHook=!!e.hook; a.how=e.hook?'turn ended · reported by its hook, not yet in its log':(e.how||''); a.endTs=Math.max(e.ts,a.endTs||0); if(!e.hook) a.calls={}; if(!e.hook) note(a,{t:'end',ts:e.ts}); break;
+    case 'turn_start': if(!(a.endTs&&e.ts<a.endTs)) a.turn='in'; break;
+    case 'file': a.html={path:e.path,v:e.seq>=0?e.seq:Date.now(),ts:e.ts}; break;
+    case 'result': {const c=a.calls[e.id]; if(c){if(e.ts>=c.ts&&!c.guess){const l=((a.durs=a.durs||{})[c.kind]=a.durs[c.kind]||[]); l.push(e.ts-c.ts); if(l.length>40)l.shift()} c.done=true; c.out=e.text; c.err=!!e.error; c.unknown=!!e.unknown; delete a.calls[e.id];
+        if(c.kind==='run'&&c.check&&!c.guess) a.check=c;
+        if(c.kind==='spawn'&&!e.old&&!c.unknown){const kid=order.find(k=>A[k].spawn===e.id); if(kid)pulse(kid,e.agent,e.error?'returned an error':'reported back')}}} break;
+    default: if(MAT.includes(e.kind)){
+      if(!(a.endTs&&e.ts<a.endTs)) a.turn='in';          /* a record older than the turn's recorded end does not reopen it */
+      if(e.kind==='spawn'){const ks=Object.keys(spawns); if(ks.length>300) delete spawns[ks[0]]; const sp=spawns[e.id]={parent:e.agent,sent:e.old}; const kid=order.find(k=>A[k].spawn===e.id); if(kid&&!sp.sent){sp.sent=true;pulse(e.agent,kid,'handed off')}}
+      /* the story takes Claude steps as issued, and Codex steps from its finished, authoritative records */
+      if(!e.guess&&!(e.kind==='tool'&&!e.text&&!e.done)){
+        note(a,{t:'did',e,ts:e.ts});
+        if(e.kind==='run'&&e.done&&e.check) a.check=e;
+        if(['write','edit','patch'].includes(e.kind)){a.edits.push(e); if(a.edits.length>60){a.edits.shift();a.dropped++}}
+        if(e.kind==='web') a.web=e;
+      }
+      if(!(e.guess&&!e.cmd&&a.cur)) a.cur=e;                 /* a bare "step in flight" marker never replaces real content */
+      if(e.done) delete a.calls[e.id]; else a.calls[e.id]=e;
+    }
+  }
+}
+
+/* ---------- what state an agent is in, from what the log actually shows ---------- */
+const ACT=/\b(log ?in|sign ?in|authenticat\w*|authori[sz]e\w*|verification code|2fa|captcha|on your end|manually|you(?:'ll| will)? need to|need(?:s)? you to|i can(?:'|no)t|i'm unable|i am unable|paste (?:it|the|your)|enter your)\b/i;
+const DEC=/\?\s*$|\b(should i|shall i|want me to|do you want me|would you like me|let me know (?:which|if|whether|what)|your call)\b/i;
+/* sure=true is an explicit signal (a permission prompt, a question tool, a notification); sure=false is a reading of
+   the last thing it said before its turn ended, and is always labelled "probably". */
+function need(a){
+  const perms=Object.values(a.perms); if(perms.length) return {kind:'Approve',text:perms[0].tool+': '+perms[0].text,sure:true,perm:perms[0],more:perms.length-1};
+  const ask=Object.values(a.calls).find(c=>c.kind==='ask'); if(ask) return {kind:/approve its plan/.test(ask.text)?'Approve':'Decide',text:ask.text,sure:true};
+  const q=Object.values(a.asks), open=q.filter(x=>!x.maybe); if(open.length) return {kind:'Decide',text:open[0].text,sure:true,more:open.length-1};
+  if(q.length) return {kind:'Decide',text:q[0].text,sure:false};
+  if(a.wait) return {kind:a.wait.why==='permission'?'Approve':'Needs you',text:a.wait.text,sure:true};
+  if(a.turn==='ended'&&!a.parent&&a.said&&a.saidOff!==a.said.ts&&(!a.user||a.said.ts>=a.user.ts)){
+    const tail=one(plain(a.said.text)).split(/(?<=[.?!])\s+/).filter(Boolean).slice(-4);
+    const act=tail.find(x=>ACT.test(x)); if(act) return {kind:'Action',text:act,sure:false};
+    const dec=[...tail].reverse().find(x=>DEC.test(x)); if(dec) return {kind:'Decide',text:dec,sure:false};
+  }
+  return null;
+}
+/* Context in use. A bar is drawn only against a reference the logs actually give: the model's window (Codex states it),
+   or the size at which this same session was last summarised automatically (Claude states no window). */
+const num=n=>typeof n==='number'&&isFinite(n)&&n>=0;          /* a count the log actually gave; anything else is "not recorded" */
+const tok=n=>!num(n)?'not recorded':n>=1e6?(n/1e6).toFixed(2)+'M':n>=1000?Math.round(n/1000)+'k':String(n);
+function fuelOf(a){
+  if(!num(a.ctx)) return null;
+  const at=a.ctxpart?'at least ':'', pq=a.ctxpart?' · a partial count: its log stated only some of the usage figures':'';
+  if(num(a.ctxmax)&&a.ctxmax) return {frac:Math.min(1,a.ctx/a.ctxmax),short:at+tok(a.ctx)+' of '+tok(a.ctxmax)+' context',long:at+tok(a.ctx)+' of '+tok(a.ctxmax)+' tokens (window recorded in its log)'+pq};
+  if(num(a.ctxref)&&a.ctxref) return {frac:Math.min(1,a.ctx/a.ctxref),short:at+tok(a.ctx)+' context · last summarised at '+tok(a.ctxref),long:at+tok(a.ctx)+' tokens · the bar is against the size at which it last summarised itself, which is history, not a limit'+pq};
+  return {frac:null,short:at+tok(a.ctx)+' context',long:at+tok(a.ctx)+' tokens · its log states no limit'+pq};
+}
+const median=l=>{const s=[...l].sort((x,y)=>x-y); return s[Math.floor(s.length/2)]};
+function stateOf(a,now){
+  const pend=Object.values(a.calls), N=need(a), idle=now-a.last;
+  let label, busy=false, slow=false;
+  if(N&&N.sure) label='waiting on you';
+  else if(pend.length){busy=true; const p=pend[0]; label=p.doing||(p.kind==='tool'&&!p.text?'running a step':DOING[p.kind]);
+    /* how long this step has run, and what is usual for this agent's steps of the same kind (from at least five finished ones) */
+    const el=now-p.ts, d=a.durs&&a.durs[p.kind], med=d&&d.length>=5?median(d):0;
+    if(el>30&&!p.guess){label+=' · '+dur(el); if(med&&el>Math.max(60,med*4)){label+=' (usually '+dur(Math.max(1,med))+')'; slow=true}}}
+  else if(a.turn==='ended') label=a.how||'turn ended';
+  else if(a.turn==='in'&&idle<1800){busy=true; label=idle>60?'in a turn · no log entry for '+dur(idle):'between actions'}
+  else label='no log entry for '+dur(idle);
+  return {label,busy,slow,need:N,pend};
+}
+function addTask(a,num,t){
+  if(a.taskOrder.length>=200){                    /* drop a finished or deleted step first; only if none, the oldest */
+    let i=a.taskOrder.findIndex(k=>['completed','deleted'].includes((a.tasks[k]||{}).status)); if(i<0) i=0;
+    delete a.tasks[a.taskOrder[i]]; a.taskOrder.splice(i,1); a.taskDrop=(a.taskDrop||0)+1}
+  a.tasks[num]=t; a.taskOrder.push(num);
+}
+function planOf(a){
+  const list=a.taskOrder.map(k=>a.tasks[k]).filter(t=>t&&t.status!=='deleted'); if(!list.length) return null;
+  return {list,now:list.find(t=>t.status==='in_progress')||list.find(t=>t.status!=='completed')||null};
+}
+
+/* ---------- what is on a screen ---------- */
+function lines(t,cls,max=160){
+  const L=str(t).split('\n'), cut=L.length>max;
+  return L.slice(0,max).map(l=>cls?`<span class="${cls}">${esc(l)||' '}</span>`:esc(l)).join(cls?'':'\n')+(cut?`\n<span class="k">… ${L.length-max} more lines</span>`:'');
+}
+function diff(before,after){
+  const o=String(before||'').split('\n'), n=String(after||'').split('\n'); let p=0,s=0;
+  while(p<o.length&&p<n.length&&o[p]===n[p])p++;
+  while(s<o.length-p&&s<n.length-p&&o[o.length-1-s]===n[n.length-1-s])s++;
+  const ctx=a=>a.map(l=>`<span class="k" style="display:block">${esc(l)||' '}</span>`).join('');
+  return ctx(o.slice(Math.max(0,p-2),p))+lines(o.slice(p,o.length-s).join('\n'),'d')+lines(n.slice(p,n.length-s).join('\n'),'a')+ctx(o.slice(o.length-s,o.length-s+2));
+}
+function screen(c,now){
+  const wait=`no result yet · ${dur(now-c.ts)}`;
+  const done=!c.done?wait:c.err?'<span class="bad">failed</span>':c.unknown?'returned':'<span class="ok">done</span>';
+  const g=c.guess?' <span class="k">(read from Codex’s script; unconfirmed)</span>':'';
+  switch(c.kind){
+    case 'read': return [short(c.path),c.done?(c.err?'<span class="bad">could not read</span>':c.unknown?'returned':'opened'):'opening…',c.done?lines(c.out):'<span class="k">opening…</span>'];
+    case 'write': return [short(c.path),c.done?(c.err?'<span class="bad">write failed</span>':'written'):'writing a new file…',lines(c.content,'a')];
+    case 'edit': return [short(c.path),c.done?(c.err?'<span class="bad">edit failed</span>':'edited'):'editing…',diff(c.before,c.after)];
+    case 'patch': return [short(c.path),c.err?'<span class="bad">change failed</span>':({add:'new file written',delete:'file deleted',update:'edited'}[c.op]||'edited'),String(c.text||'').split('\n').slice(0,200).map(l=>`<span class="${l[0]==='+'?'a':l[0]==='-'?'d':'k'}" style="display:block">${esc(l)||' '}</span>`).join('')];
+    case 'run': return ['Terminal'+(c.why?' — '+c.why:''),done+g,`$ ${esc(c.cmd)}\n`+(c.done&&!c.guess?lines(String(c.out||'').split('\n').slice(-120).join('\n'),c.err?'bad':''):'<span class="k">no output yet</span>')];
+    case 'ask': return ['Question for you',!c.done?'waiting for your answer · '+dur(now-c.ts):c.err?'<span class="bad">not answered (the question failed)</span>':'answered',lines(c.text)+(c.done?`\n\n<span class="k">your answer</span>\n${lines(c.out)}`:'')];
+    case 'search': return ['Search'+(c.path?' in '+short(c.path):''),done,`<span class="k">looking for</span> ${esc(c.q)}\n`+(c.done?lines(c.out):'')];
+    case 'web': return ['Web',done,`<span class="k">looking up</span> ${esc(c.q)}\n`+(c.done?lines(c.out):'')];
+    case 'spawn': return ['Hand-off',!c.done?'no reply yet · '+dur(now-c.ts):c.err?'<span class="bad">failed</span>':c.unknown?'acknowledged':'reported back',`<span class="k">handed to</span> ${esc(c.name)}\n\n${lines(c.text)}`+(c.done&&c.out?`\n\n<span class="k">${c.unknown?'reply':'report'}</span>\n${lines(c.out)}`:'')];
+    default: return [c.name||'Tool',done+g,lines(c.text)+(c.done&&c.out?`\n\n${lines(c.out)}`:'')];
+  }
+}
+/* The rendered page is always the file as it is on disk now. It is fetched once to check it is served, then shown by
+   URL in a sandboxed frame under the server's own preview policy (not srcdoc, which would inherit this page's
+   nonce-only script policy). Each version is a fresh document; a failed version is not retried until the file changes. */
+async function preview(a,path){
+  const f=a.$.frame, tok=f._tok=(f._tok||0)+1, url='/fs/'+PK+path.split('/').map(encodeURIComponent).join('/');
+  try{
+    const res=await fetch(url,{cache:'no-store'}); if(tok!==f._tok) return;
+    if(!res.ok) throw new Error('not available ('+res.status+')');
+    a.pvErr='';
+    /* shown as its own document by URL (not srcdoc, which would inherit this page's nonce-only script policy and so
+       silently break any preview that draws itself with a script): the server's own sandboxed policy applies, and
+       the fetch above only establishes that the file is currently served */
+    f.removeAttribute('srcdoc'); f.src=url+'?v='+Date.now();
+  }catch(err){if(tok===f._tok){a.pvErr=String(err.message||err); /* f._v is kept: this version is not fetched again until the file changes */ f.srcdoc='<p style="font:14px system-ui;padding:20px;color:#555">The rendered page could not be loaded.</p>'}}
+  a.dirty=true;
+}
+function said(a,now){
+  const all=a.story.filter(it=>it.t==='say'), at=a.sayAt?all.findIndex(x=>x.n===a.sayAt):-1;
+  const says=at>=0?all.slice(Math.max(0,at-2),Math.max(at+1,Math.min(all.length,at+10))):all.slice(-12);      /* the chosen message and its neighbours, else the latest twelve */
+  if(STEADY) return ["What it's saying",'hidden in steady mode','<span class="k">(narration hidden in steady mode)</span>','code'];
+  if(!says.length) return ["What it's saying",'nothing yet','<span class="k">Nothing said yet. What it tells you as it works appears here, as the log records it.</span>','code'];
+  const l=says[says.length-1];
+  return ["What it's saying",'spoke '+dur(now-l.ts)+' ago · '+says.length+(says.length===1?' message':' messages'),says.map((it,i)=>{const t=plain(it.text).trim(); return `<p data-n="${it.n}"${i===says.length-1?' class="now"':''}>${esc(t.length>1500?'…'+t.slice(-1500):t)}</p>`}).join(''),'code'];
+}
+function seeing(a){
+  const c=[a.seen&&{ts:a.seen.ts,k:'img'},a.html&&{ts:a.html.ts||0,k:'html'},a.web&&a.web.out&&{ts:a.web.ts,k:'web'}].filter(Boolean).sort((x,y)=>y.ts-x.ts)[0];
+  if(!c) return ["What it's seeing",'nothing visual recorded','<span class="k">Nothing visual recorded: no screenshot, opened image, edited page or search result in what has been read of its log.</span>','code'];
+  if(c.k==='img') return ["What it's seeing · "+a.seen.label+' · '+clock(a.seen.ts)+' · file as it is on disk now',esc(tail2(a.seen.img)),`<img src="/fs/${PK}${a.seen.img.split('/').map(encodeURIComponent).join('/')}" alt="What the agent was looking at">`,'code'];
+  if(c.k==='html') return ["What it's seeing · rendered page · "+tail2(a.html.path),'the file on disk now','','full'];
+  return ["What it's seeing · search results",esc(a.web.q||''),lines(a.web.out),'code'];
+}
+function checkLine(k){
+  if(!k) return '<span class="k">No test or build command seen in what has been read of its log.</span>\n\n';
+  /* the exit code is log data: shown only when it is an integer, and escaped like everything else; an absent result is said to be absent */
+  const code=Number.isInteger(k.code)?k.code:null;
+  const res=code!=null?'exit code '+code:k.err===true?'ended with an error':k.err===false?'ended without an error':'its result was not recorded';
+  return `<span class="${k.err?'bad':(k.err===false||code===0)?'ok':'k'}">Last test or build command, ${clock(k.ts)}: ${esc(res)}</span>${MASKED.test(k.cmd)?' <span class="k">(its result is masked by “|| true”)</span>':''}\n<span class="k">${esc(String(k.cmd).split('\n')[0].slice(0,110))}</span>\n\n`;
+}
+function changes(a){
+  const ok=a.edits.filter(e=>e.done&&!e.err), files=new Set(ok.map(e=>e.path));
+  const tag=e=>!e.done?' · proposed, no result yet':e.err?' · failed, not applied':'';
+  const body=a.edits.slice().reverse().map(e=>`<span class="k" style="display:block">── ${esc(tail2(e.path))} · ${clock(e.ts)}${tag(e)}</span>`+screen(e,0)[2]).join('\n');
+  const cap=a.dropped?`\n<span class="k">… ${a.dropped} earlier edit${a.dropped>1?'s':''} not kept (only the latest 60 are shown)</span>`:(a.partial?'\n<span class="k">Earlier history was not loaded, so earlier edits may be missing.</span>':'');
+  return ["What it's changing",files.size+' file'+(files.size===1?'':'s')+' · '+ok.length+' applied edit'+(ok.length===1?'':'s'),checkLine(a.check)+(body||'<span class="k">No file changes seen.</span>')+cap,'code'];
+}
+
+/* ---------- subtitles ----------
+   In the room, an idle monitor gets a caption in the band along the bottom, under its own position: what the log
+   shows it is waiting for, or else how its turn ended and the last thing it did. Fixed type size, so it reads at
+   any distance; only for monitors in the picture; nothing on the monitor itself. Click one to step up. */
+function subs(now){
+  const el=$('#subs'); if(!el) return;
+  if(focus||!order.length){el.hidden=true; return}
+  const items=[], hidden=!!(STEADY);      /* in steady mode (shared or recorded screens) captions carry no transcript text */
+  /* a caption sits under the monitor's SEAT, projected from the camera, not under the monitor as painted: a monitor in
+     your hand, or gliding back, leaves its caption where it was, and nothing is measured from the painted page */
+  let M; try{M=new DOMMatrix(world.style.transform)}catch(err){return}
+  const rr=room.getBoundingClientRect();
+  const seat=(q,kid)=>{const ps=corners(M,q,kid).map(c=>project(c,rr)); if(ps.some(p=>!p)) return null; const xs=ps.map(p=>p.x), ys=ps.map(p=>p.y); return {x:(Math.min(...xs)+Math.max(...xs))/2,l:Math.min(...xs),r:Math.max(...xs),t:Math.min(...ys),b:Math.max(...ys)}};
+  for(const id of ROOTS){const a=A[id]; if(!a||!pos[id]||a.el.hidden||a.el.classList.contains('behind')) continue;
+    const S=stateOf(a,now);
+    const r=seat(pos[id],false); if(!r||!(r.r-r.l>20&&r.r>0&&r.l<innerWidth&&r.b>0&&r.t<innerHeight)) continue;
+    if(S.busy){items.push({id,x:r.x,name:a.name,live:true,on:S.pend.length>0,idle:S.pend.length?'working':'in a turn',line:S.label,note:'',cls:'',mark:'',pri:2,col:(a.el.style.getPropertyValue('--pc')||'').trim()}); continue}
+    const N=S.need, c=a.cur, last=c?did(c):'';
+    /* one line, the thing that matters most: a request for you, else a failed last step, else its last words */
+    let line, note='', cls='', mark='', pri=3;
+    if(N){line=({Approve:'wants permission',Decide:'asked you',Action:'wants an action',"Needs you":'needs you'}[N.kind]||'waiting')+(N.sure?'':' (probably)')+(hidden?'':': '+one(N.text).slice(0,600)); cls='q'; mark='?'; pri=0}
+    else if(c&&c.done&&c.err){line='last step failed'+(hidden?'':': '+last); cls='bad'; mark='!'; pri=1}
+    else if(c&&!c.done){line='no result seen'+(hidden?'':' for: '+last); mark='…'; pri=2}
+    else{const said=!hidden&&a.said&&(!c||a.said.ts>=c.ts-1)?one(plain(a.said.text)):'';      /* what it said when it stopped: where "next" lives */
+      line=said?'“'+said.slice(0,600)+(said.length>600?'…':'')+'”':hidden?(a.turn==='ended'?'turn ended':'silent'):(last?'last: '+last:'no step seen'); if(a.turn!=='ended') note='· no end recorded'; mark=a.turn==='ended'?(a.endHook?'◧':'■'):''}
+    items.push({id,x:r.x,name:a.name,idle:dur(Math.max(0,now-a.last)),line,note,cls,mark,pri,col:(a.el.style.getPropertyValue('--pc')||'').trim()})}
+  if(!items.length){el.hidden=true; return}
+  /* placement: under its monitor, pushed right only as far as needed; what cannot fit in the band is left out, requests first */
+  const G=8, W=Math.max(240,Math.min(520,Math.floor((innerWidth-G*(items.length+1))/items.length)));      /* the cards share the width there is, up to 520 px each */
+  items.sort((p,q)=>p.pri-q.pri||p.x-q.x);
+  const cap=Math.max(1,Math.floor((innerWidth-G)/(W+G))), shown=items.slice(0,cap).sort((p,q)=>p.x-q.x);
+  let edge=G; for(const it of shown){it.left=Math.max(edge,Math.min(innerWidth-G-W,it.x-W/2)); edge=it.left+W+G}
+  for(let i=shown.length-1, right=innerWidth-G; i>=0; i--){shown[i].left=Math.min(shown[i].left,right-W); right=shown[i].left-G}      /* and never past the right edge */
+  el.hidden=false;
+  const marks={'?':'a request for you','!':'its last step failed','…':'a step with no result yet','■':'turn ended, in its log','◧':'turn ended, reported by its hook, not yet in its log'};
+  const keep=new Set(shown.map(it=>it.id)); for(const b of [...el.children]) if(!keep.has(b.dataset.go)) b.remove();
+  for(const it of shown){
+    let b=el.querySelector(`[data-go="${CSS.escape(it.id)}"]`);
+    if(!b){b=document.createElement('button'); b.dataset.go=it.id; el.appendChild(b)}
+    const sig=[it.name,it.idle,it.line,it.note,it.cls,it.mark,it.col,it.live?'L':'',it.on?'1':''].join('\u0001');
+    if(b._sig!==sig){b._sig=sig; b.style.setProperty('--sc',/^#[0-9a-f]{6}$/i.test(it.col)?it.col:'#7fa6c2'); b.classList.toggle('live',!!it.live); b.classList.toggle('on',!!it.on); b.title=(it.live?(it.on?'a step is open':'in a turn, nothing open'):(marks[it.mark]||'idle'))+' · click to step up';
+      if(b._shape!==(it.live?'live':'idle')){b._shape=it.live?'live':'idle'; b.innerHTML=`<b><u></u><em></em></b>${it.live?'<i class="rail"><s></s></i>':''}<span></span>`}      /* the shape (and the rail's sweep) survives; only the words change */
+      b.querySelector('u').textContent=it.name; b.querySelector('em').textContent=(it.mark?it.mark+' ':'')+it.idle;
+      const sp=b.querySelector('span'); sp.className=it.cls; sp.innerHTML=esc(it.line)+(it.note?' <i>'+esc(it.note)+'</i>':'')}
+    const l=Math.round(it.left)+'px'; if(b.style.left!==l) b.style.left=l; const w=W+'px'; if(b.style.width!==w) b.style.width=w;
+  }
+}
+$('#subs').onclick=ev=>{const b=ev.target.closest('[data-go]'); if(b) setFocus(b.dataset.go)};
+let STEPPING=false;      /* while a monitor is stepping up, periodic repaints wait: nothing competes with the move for frames */
+function render(){
+  if(STEPPING){render._deferred=true; return}
+  const now=Date.now()/1000, sec=Math.floor(now);
+  for(const id of order){ try{
+    const a=A[id], S=stateOf(a,now), N=S.need, c=a.pin||a.cur||S.pend[0];
+    if(!a.dirty&&a.sec===sec) continue;
+    a.sec=sec; a.dirty=false;
+    const at=focus===id, w=N?N.text:'', al=a.alert&&now-a.alert.ts<180?a.alert:null, cl=a.el.classList;
+    cl.toggle('busy',S.busy&&!w); cl.toggle('idle',!S.busy&&!w&&!at);
+    cl.toggle('wait',!!w&&N.sure); cl.toggle('maybe',!!w&&!N.sure); cl.toggle('alarm',!!al&&!w); cl.toggle('pinned',!!PINS[id]);
+    hid(a.$.fw,!w); if(!w) a.permScreen=null;
+    {const heldNow=!!w&&!!N.perm&&!N.perm.sent; a.$.fw.classList.toggle('held',heldNow); const tg=a.$.fw.querySelector('.tag');      /* the tag of a held request is a button: focusable, Enter and Space open it; plain text otherwise */
+      if(heldNow){tg.setAttribute('role','button'); tg.tabIndex=0; tg.title='Open this request at the desk'} else{tg.removeAttribute('role'); tg.removeAttribute('tabindex'); tg.removeAttribute('title')}}
+    if(w){
+      txt(a.$.fwk,({Approve:'Approve',Decide:'Decide',Action:'Action needed','Needs you':'Needs you'}[N.kind])+(N.sure?'':' · probably')+(N.more?' · +'+N.more:''));
+      txt(a.$.fwt,STEADY?'(text hidden in steady mode)':a.permMsg||one(w).slice(0,300)); a.$.fw.classList.toggle('soft',!N.sure);
+      const showing=!!N.perm&&at&&!a.pin&&deskView==='doing'&&!covered()&&onScreen(a.$.code);      /* the request's panel is actually in the window right now, with nothing over it */
+      a.permScreen=showing?N.perm.pid:null;
+      const can=showing&&!N.perm.sent&&APPROVE;
+      if(can&&a.$.yes.dataset.pid!==N.perm.pid){          /* a different request gets different buttons: a press begun on the old pair can never land on these */
+        for(const k of ['yes','no']){const b=a.$[k].cloneNode(true); b.dataset.pid=N.perm.pid; b.dataset.at=Date.now(); a.$[k].replaceWith(b); a.$[k]=b}}
+      hid(a.$.yes,!can); hid(a.$.no,!can); hid(a.$.rev,!(N.perm&&!showing));
+      const offNote=showing&&!APPROVE; hid(a.$.off,!offNote); if(offNote){txt(a.$.off,'not answering here'); a.$.off.title='Answering is off in this window. Answer it in the app, or switch on “Answer here” in the bar.'}      /* two words in the banner; the sentence in the tooltip, so the request keeps its width */
+    }
+    hid(a.$.fx,!(w&&!N.sure)&&!(w&&N.kind==='Needs you'));
+    if(!w||!N.perm) hid(a.$.off,true);
+    hid(a.$.fr,!al); if(al)txt(a.$.frt,'Looks like '+al.label+' · '+one(al.text).slice(0,300));
+    txt(a.$.pinb,PINS[id]?'Pinned':'Pin');
+    {const {n:pn,how}=projInfo(id), pc=pn?projColour(pn):'', pt=pn?'Project: '+projLabel(pn)+(pn!==projLabel(pn)?' (folder '+pn+')':'')+(how==='inherited'?' (its parent\'s folder; none recorded for it)':how==='named'?' (a temporary folder named for it; grouped by name, which proves nothing)':''):'';
+      if(a.el._pc!==pc+'|'+pt){a.el._pc=pc+'|'+pt; a.el.style.setProperty('--pc',pc||'transparent'); a.el.title=pt}}
+    const kid=cl.contains('kid');
+    const pk=peek===id&&!focus&&a.peekTf;
+    const tf=!pos[id]?'':at?pos[id].tfF:pk?heldTf(id):pos[id].tfF+(w&&N.sure?' translateZ(150px)':'')+(kid?` scale(${KS})`:'');
+    if(a.el.classList.contains('stepup')&&!at) a.el.classList.remove('stepup');      /* a step-up that did not finish (focus moved on) must not keep the transform frozen */
+    if(tf&&a.el._tf!==tf&&!a.el.classList.contains('stepup')){a.el._tf=tf;a.el.style.transform=tf}      /* while stepping up, stepUp() owns the transform */
+    paintFace(a,id,faceState(S,N,w)); txt(a.$.name,a.name); txt(a.$.go,'Open in '+(a.runtime||'app')+' ↗');
+    txt(a.$.doing,S.label); cl.toggle('slow',!!S.slow);
+    {const F=fuelOf(a); hid(a.$.fuel,!F); if(F){txt(a.$.fuelTxt,F.short); const w=F.frac==null?'':Math.round(F.frac*100)+'%'; hid(a.$.fuelBar.parentNode,F.frac==null);
+      if(a.$.fuelBar._w!==w){a.$.fuelBar._w=w; a.$.fuelBar.style.width=w} a.$.fuel.className='fuel'+(F.frac>=.92?' hot':F.frac>=.8?' warm':'')}}
+    {const pn=proj(id), early=a.goalEarly; txt(a.$.pj,projLabel(pn)); txt(a.$.goal,STEADY?(a.goal?'(goal hidden in steady mode)':''):(a.goal||(a.task?'':'no first message read'))); a.$.goal.title=a.goal&&!STEADY?(early?'The earliest message read from its log (the log was not read from the start): ':'Your first message to it: ')+a.goal:''}
+    txt(a.$.sub,(a.task||'')+(a.maybe&&!a.parent&&A[a.maybe.parent]?(a.task?' · ':'')+'possibly started by '+A[a.maybe.parent].name:'')+(a.q.length?'  ✉ '+a.q.length+' queued':''));      /* the guess is visible from the room too */
+    let [what,how,body]=c?screen(c,now):['','','<span class="k">nothing opened yet</span>'], mode='split';
+    /* in the room and in hand: narration, the agent's own messages as the log records them (never its reasoning, which the log does not hold); an agent that has said nothing yet keeps the terminal view */
+    let say=false;
+    let youLine='';
+    if(!at){youLine=a.user&&!STEADY?'You, '+dur(now-a.user.ts)+' ago: '+one(plain(a.user.text)).slice(0,300):'';      /* your last message to it, one line, on every room and held monitor */
+      const says=a.story.filter(it=>it.t==='say').slice(-6);
+      if(!says.length){if(youLine) body=`<p class="you" title="${esc(youLine)}">${esc(youLine)}</p>`+body}
+      else{const l=says[says.length-1]; say=true; mode='code'; what=youLine||"What it's saying"; how='spoke '+dur(now-l.ts)+' ago';
+      body=STEADY?'<span class="k">(narration hidden in steady mode)</span>':says.map((it,i)=>{const t=plain(it.text).trim(); return `<p${i===says.length-1?' class="now"':''}>${esc(t.length>700?'…'+t.slice(-700):t)}</p>`}).join('')}}
+    if(at&&deskView==='said'&&!a.pin) say=true;
+    a.$.code.classList.toggle('say',say); a.$.what.parentElement.classList.toggle('you',say&&!!youLine); a.$.what.title=say&&youLine?youLine:'';
+    if(at&&!a.pin&&N&&N.perm&&deskView==='doing') [what,how,body,mode]=['Permission requested · '+N.perm.tool,'held for an answer · '+dur(now-N.perm.ts),`<span class="k">This is the request as the app sent it; scroll to read all of it. ${APPROVE?'Allow and Deny are in the bar above and apply to this request only.':'This window is not answering prompts.'}</span>\n\n`+lines(N.perm.text,'',5000),'code'];
+    else if(at&&deskView!=='doing'&&!a.pin) [what,how,body,mode]=deskView==='seeing'?seeing(a):deskView==='said'?said(a,now):changes(a);
+    else if(at&&!a.pin&&what) what="What it's doing · "+what;
+    txt(a.$.what,what); put(a.$.how,how); put(a.$.code,body);
+    if(say&&a.$.code._tail!==body){a.$.code._tail=body; a.$.code.scrollTop=a.$.code.scrollHeight}      /* in the room and on the Said screen alike */      /* short narration reads from the top; long narration shows its newest lines */
+    const pv=a.html;
+    hid(a.$.pvw,!pv||mode==='code'); a.$.split.classList.toggle('pv',!!pv&&mode==='split'); a.$.split.classList.toggle('full',!!pv&&mode==='full');
+    if(pv){txt(a.$.pvn,(a.pvErr?'not rendered — '+a.pvErr+': ':'on disk now: ')+tail2(pv.path)); if(PK&&a.$.frame._v!==pv.v+pv.path){a.$.frame._v=pv.v+pv.path; preview(a,pv.path)}}
+    hid(a.$.pin,!a.pin);
+    /* a tab on the top edge: who it works for and, for a few seconds, work arriving or leaving */
+    const par=a.parent&&A[a.parent], live=a.lk&&a.lk.until>Date.now()?a.lk:null, tab=live||(par?{text:(/^related/.test(a.via||'')?'related to '+par.name:'for '+par.name+(a.soft?' (inferred)':'')),color:par.color}:null);
+    hid(a.$.lk,!tab); if(tab){txt(a.$.lk,tab.text.slice(0,60)); if(a.$.lk._c!==tab.color){a.$.lk._c=tab.color;a.$.lk.style.background=tab.color} a.$.lk.classList.toggle('hot',!!live)}
+    if(a.lk&&!live) a.lk=null;
+    const P=planOf(a); hid(a.$.plan,!P);
+    if(P) put(a.$.plan,P.list.map(t=>`<i class="${t.status==='completed'?'d':t===P.now?'n':''}"></i>`).join('')+`<span>${P.now?P.list.indexOf(P.now)+1+' of '+P.list.length+' · '+esc(P.now.text):'all '+P.list.length+' steps marked done'}${a.taskDrop?' · '+a.taskDrop+' earlier not kept':''}</span>`);
+  }catch(err){const a=A[id]; if(a){a.dirty=true; txt(a.$.doing,'this monitor could not be drawn: '+str(err&&err.message||err).slice(0,120)); console.error('station',id,err)}}}      /* contained: the next monitor still paints */
+  desk();
+  {const hh=$('#hud').offsetHeight+'|'+$('#deskT').offsetHeight; if(hh!==render._hh){render._hh=hh; apply()}}      /* the top bars wrapped or unwrapped: lay the desk out again */
+  put($('#needs'),focus?'':ALERTS.filter(x=>A[x.id]&&!x.off&&now-x.ts<600).slice(0,4).map(x=>`<button class="r" data-go="${esc(x.id)}" title="Go to this agent"><b>Alert</b><span>${esc(A[x.id].name)} issued what looks like ${x.label}</span><code>${esc(one(x.text).slice(0,160))}</code><small>${ago(now-x.ts)}</small><u data-x="${x.n}" title="Dismiss this alert">×</u></button>`).join(''));
+  {const n=$('#needs'), t=$('#hud').offsetHeight+2+'px'; if(n.style.top!==t) n.style.top=t}      /* always directly under the top bar, however it wraps */
+  attention(now); subs(now);
+  hid($('#needN'),true);      /* the "N may need you" button is hidden at the owner's request (2026-10-06); the tab title count and the monitors' own flags carry this */
+  const ap=$('#appr'); hid(ap,!!locked); ap.classList.toggle('on',APPROVE); ap.setAttribute('aria-pressed',String(!!APPROVE)); ap.title=DEMO?'Demo: switches on and off here only. No prompt is held and nothing is sent.':(APPROVE?'On: while this window is visible, Claude permission prompts wait here for your Allow or Deny.':'Off: Claude asks in its own app as usual.')+' Click to switch.';
+  const all=Object.keys(A).length, goneN=all-order.length;
+  hid($('#bringB'),!goneN||!!focus); txt($('#bringB b'),String(goneN)); $('#bringB').title='Bring back '+goneN+' dismissed agent'+(goneN===1?'':'s'); hid($('#clearQ'),!!focus||order.length<2);
+  /* the fleet: an "All" chip, then one chip per project carrying that project's agents as lit cells */
+  {const st=k=>{const S=stateOf(A[k],now), a=A[k]; return S.need&&S.need.sure?'need':a.alert&&now-a.alert.ts<180?'alarm':S.busy?'busy':'idle'};
+    const groups=Object.create(null); for(const k of order){const pn=proj(k)||'—'; (groups[pn]=groups[pn]||[]).push(k)}      /* project names are log data: no prototype to collide with */
+    const names=Object.keys(groups).sort((x,y)=>x==='—'?1:y==='—'?-1:x.localeCompare(y));
+    const cells=ks=>`<span class="cells">${ks.map(k=>`<i class="${st(k)}" data-go="${esc(k)}" tabindex="0" role="button" title="${esc(A[k].name+' · '+stateOf(A[k],now).label)}" aria-label="${esc(A[k].name)}"></i>`).join('')}</span>`;
+    const sig=names.map(n=>projLabel(n)+':'+groups[n].map(k=>k+st(k)+A[k].name+stateOf(A[k],now).label).join(',')).join('|')+'#'+PROJ;
+    hid($('#fleetS'),!order.length||!!focus);
+    if(render._fleet!==sig){render._fleet=sig;
+      /* chips are kept by folder name and updated in place: a click (which changes the filter) must not replace the chip
+         under a double-click that is still arriving */
+      const pr=$('#projs'), want=(names.length>1?['']:[]).concat(names), have=new Map([...pr.children].map(b=>[b.dataset.p,b]));
+      for(const [k,b] of have) if(!want.includes(k)) b.remove();
+      let prev=null;
+      for(const n of want){let b=have.get(n); if(!b){b=document.createElement('button'); b.dataset.p=n; have.set(n,b)}
+        if(!b.isConnected||b.previousElementSibling!==prev){prev?prev.after(b):pr.prepend(b)} prev=b;      /* new, or out of order: put it in its place */
+        const inner=n===''?`All <small>${order.length}</small>`:`<em></em><span class="n">${esc(projLabel(n))}</span>${cells(groups[n])}`;
+        if(b._inner!==inner){b._inner=inner; b.innerHTML=inner}
+        b.classList.toggle('on',n===''?!PROJ:PROJ===n);
+        if(n!=='') b.style.setProperty('--pc',n==='—'?'#2b3a4d':projColour(n));
+        const t=n===''?'Show every project':n==='—'?'No project folder recorded':(PROJ===n?'Showing only this project':'Show only this project')+' · double-click to rename'; if(b.title!==t) b.title=t}}
+    if(PROJ&&!groups[PROJ]) setProj(null);
+    {const pr=$('#projs'); $('#fleetS').classList.toggle('more',pr.scrollWidth>pr.clientWidth+2&&pr.scrollLeft+pr.clientWidth<pr.scrollWidth-2)}}
+  /* connection and log-watcher health, and an honest empty state */
+  const live=$('#live'), stale=HEALTH?now-HEALTH.at:99, lag=HEALTH?HEALTH.now-HEALTH.scan:0;
+  let short, full, ok=false;
+  if(DEMO){short='demo'; full='Demo: synthetic agents, no server, no logs.'; ok=true}
+  else if(!connected){short=locked?'locked':'offline'; full=locked?'Locked: press Unlock.':'Offline: not connected to the server; retrying.'}
+  else if(stale>12){short='stalled'; full='Connected, but nothing heard from the server for '+dur(stale)+'.'}
+  else if(!HEALTH.ready){short='online · reading logs…'; full='Online; the server is still reading the session logs.'; ok=true}
+  else if(lag>15){short='stalled · log watcher'; full='Connected, but the server\'s log watcher has stalled.'}
+  else if(HEALTH.err||HEALTH.failing){short='online · '+(HEALTH.err?'trouble':HEALTH.failing+' unreadable'); full='Online · '+HEALTH.tails+' logs followed · '+(HEALTH.err||HEALTH.failing+' not readable')}
+  else{short='online'; full='Online · '+HEALTH.tails+' logs followed'; ok=true}
+  txt(live,short); live.className=ok?'':'off'; if(live.title!==full) live.title=full; $('#hud').classList.toggle('on',ok);
+  const em=$('#empty'); let msg='';
+  if(locked) msg=''; else if(!connected) msg='Not connected to the W.A.T.C.H. server.';
+  else if(!HEALTH||!HEALTH.ready) msg='Reading session logs…';
+  else if(!all) msg='No Claude Code or Codex log has changed in the last '+Math.round(WINDOW_S/60)+' minutes.<br>Start a session and it will appear here.'+(HEALTH.err||HEALTH.failing?'<br>The log watcher reports a problem ('+esc(HEALTH.err||HEALTH.failing+' log(s) not readable')+'), so this may be incomplete.':'');
+  else if(!order.length) msg='Every agent is dismissed. Use “Bring back” above, or wait for one to do something.';
+  hid(em,!msg); if(msg) put(em,msg);
+}
+
+/* ---------- the room ---------- */
+const P=1300,R=1500,STEP=26,KS=.47,KW=326,KH=262;
+/* On a tall, narrow window the desk puts the log and comms under the main screen instead of beside it. */
+const portrait=()=>innerHeight>innerWidth*1.15;
+/* Every top-level agent sits on ONE curved row, however many there are: the arc never exceeds 150°, and the radius
+   grows so neighbours never overlap. The camera does NOT move back to take it all in: it stands where it would for
+   FIT monitors, so a monitor never gets smaller than that, and the rest of the row curves round out of frame. You
+   turn to see them (two-finger scroll, drag, or ← →); turning swings the row about the centre of its circle, so
+   whichever monitor you turn to comes to the front facing you. */
+let ARC={R:R,STEP:STEP}, ROOTS=[]; const FIT=5;      /* ROOTS: the top-level monitors as laid out, in row order */
+function arcFor(n){const step=Math.min(STEP,150/Math.max(1,n-1)); return {STEP:step,R:Math.max(R,700/(2*Math.sin(step/2*Math.PI/180)))}}
+const nRoots=()=>ROOTS.length;
+/* bays: one vector overlay laid flat on the floor, a group per project: the project's name set into the floor along
+   the ring in front of its seats (no band: the ordering and the gap are the grouping). The overlay is drawn at
+   1500 px and scaled up in its transform, like the floor, so its texture never grows with the ring. */
+function bays(roots){
+  let svg=document.getElementById('bays'); if(!svg){svg=document.createElementNS('http://www.w3.org/2000/svg','svg'); svg.id='bays'; world.appendChild(svg)}
+  const groups=[]; for(const k of roots){const pj=proj(k)||'—'; const g=groups[groups.length-1]; if(g&&g.pj===pj) g.ks.push(k); else groups.push({pj,ks:[k]})}
+  if(groups.length<1){svg.innerHTML=''; svg.style.display='none'; return} svg.style.display='';
+  const R=ARC.R, H=R+700, S=H/750;                                   /* the overlay covers the ring; 1500 px drawn, stretched by S */
+  svg.setAttribute('viewBox',`${-H} ${-H} ${2*H} ${2*H}`); svg.style.width=svg.style.height='1500px'; svg.style.left=svg.style.top='-750px';
+  svg.style.transform=`translate3d(0px,327px,${R}px) rotateX(90deg) scale(${S.toFixed(4)})`;      /* flat on the floor, centred on the ring's centre */
+  const half=Math.asin(Math.min(1,350/R));                                                           /* half a seat, as an angle */
+  const pt=(ang,r)=>`${(r*Math.sin(ang)).toFixed(1)} ${(-r*Math.cos(ang)).toFixed(1)}`;              /* floor x, and z measured from the ring's centre toward the camera */
+  const arc=(r,a0,a1)=>`M${pt(a0,r)} A${r} ${r} 0 ${a1-a0>Math.PI?1:0} 1 ${pt(a1,r)}`;
+  let body='';
+  groups.forEach((g,i)=>{
+    const a0=pos[g.ks[0]].a*Math.PI/180-half, a1=pos[g.ks[g.ks.length-1]].a*Math.PI/180+half, col=g.pj==='—'?'#3a4a60':projColour(g.pj), id='bay'+i;
+    /* the camera stands near the ring's centre, so "in front" is the smaller radius: a radial gradient from the centre,
+       bright at the band's near edge and gone at its far edge, is right at every angle */
+    const tx=half*0.4;                                                                              /* the name's path runs a little past the band's ends (less than the gap between bays) so a short bay still fits its name without touching the next */
+    const full=g.pj==='—'?'no project folder':projLabel(g.pj), room=(a1-a0+2*tx)*(R-470), per=78*0.62+9, fit=Math.max(3,Math.floor(room/per));      /* what the path can hold, at this font */
+    const label=full.length>fit?full.slice(0,fit-1)+'…':full;
+    body+=`<g style="--pc:${col}"><path id="${id}t" d="${arc(R-470,a0-tx,a1+tx)}" fill="none"/><text font-size="78" font-weight="700" letter-spacing="9" fill="${col}" fill-opacity=".9"><title>${esc(full)}</title><textPath href="#${id}t" startOffset="50%" text-anchor="middle">${esc(label)}</textPath></text></g>`;
+  });
+  svg.innerHTML=body;
+}
+const yawMax=()=>Math.min(80,ROOTS.reduce((m,k)=>Math.max(m,pos[k]?Math.abs(pos[k].a):0),0)+12);          /* a little past the last seat as laid out (gaps included), no further */
+const yawTo=v=>{cam.yaw=Math.max(-yawMax(),Math.min(yawMax(),v))};
+/* a point after the row has been turned by the camera's yaw: a rotation about the circle's centre, (0,0,R) in room space */
+const turned=(p,th)=>({x:p.x*Math.cos(th)+(p.z-ARC.R)*Math.sin(th),z:-p.x*Math.sin(th)+(p.z-ARC.R)*Math.cos(th)+ARC.R});
+/* turn to the next monitor along the row (← →): from whichever is nearest the front now */
+function turn(n){const rs=ROOTS.filter(k=>pos[k]).sort((a,b)=>pos[a].a-pos[b].a); if(!rs.length) return;
+  let i=0; for(let j=1;j<rs.length;j++) if(Math.abs(pos[rs[j]].a-cam.yaw)<Math.abs(pos[rs[i]].a-cam.yaw)) i=j;
+  const d=pos[rs[i]].a-cam.yaw;
+  if(Math.abs(d)<1||(n>0&&d<0)||(n<0&&d>0)) i+=n;          /* at one already, or the nearest is behind the way we are going: go on past it */
+  i=Math.max(0,Math.min(rs.length-1,i)); if(peek)setPeek(null); yawTo(pos[rs[i]].a); fly(); apply()}      /* a keyboard turn is navigation: whatever was in hand is let go first */
+let pos={}, cam={yaw:0,tilt:0,dolly:0,py:0}, focus=null, moved=false, STACK=600, drag=null;
+let FLOOR_S=2, FLOOR_C=0;      /* how far the 3000 px floor image is stretched, and how far it is slid toward the ring's middle */
+/* The room is arranged by family: each top-level agent gets a full-size monitor in a row, centred on however many
+   that row holds (the owner asked for re-centring), with the agents it started as smaller monitors above it. */
+function rootOf(k,within=order){let p=k,n=0; while(n++<20){const q=A[p]&&A[p].parent; if(!q||!A[q]||A[q].gone||!within.includes(q)||q===k) return p; p=q} return p}
+function layout(){
+  if(peek) setPeek(null);                      /* the seats are about to move: whatever is in hand is let go first */
+  const shown=order.filter(k=>!PROJ||(proj(k)||'—')===PROJ); for(const k of order) A[k].el.hidden=!shown.includes(k);     /* a project filter hides the rest */
+  /* roots are found among the agents actually shown: a child whose parent is filtered out stands on its own */
+  /* bays: top-level seats are ordered by project (then as they arrived), with a short gap between projects, so each
+     project is a stretch of the row; the stretch of floor under it is lit in the project's colour and named */
+  const roots=shown.filter(k=>rootOf(k,shown)===k).map((k,i)=>({k,i,pj:proj(k)||'—'})).sort((p,q)=>(p.pj==='—')-(q.pj==='—')||projLabel(p.pj).localeCompare(projLabel(q.pj))||p.pj.localeCompare(q.pj)||p.i-q.i).map(o=>o.k);      /* left to right by the name you see */
+  const kids={}; for(const k of shown){const r=rootOf(k,shown); if(r!==k)(kids[r]=kids[r]||[]).push(k)}
+  ROOTS=roots;
+  const GAP=.45, slot={}; {let sl=0, last=null; for(const k of roots){const pj=proj(k)||'—'; if(last!==null&&pj!==last) sl+=GAP; slot[k]=sl; sl+=1; last=pj}}
+  const nEff=roots.length?slot[roots[roots.length-1]]+1:0;
+  let y=0, z=0; pos={}; ARC=arcFor(nEff);
+  FLOOR_S=Math.max(2,(ARC.R+1500)/1500); FLOOR_C=Math.round(ARC.R*0.45);      /* stretched to reach the end seats, slid to sit under the ring; the image itself never grows */
+  {const fl=$('#floor'), w=Math.max(1,1.5/FLOOR_S), c=150/FLOOR_S;      /* never thinner than one image pixel: a sub-pixel line is dropped by the rasteriser when the camera is far */ fl.style.backgroundImage=`linear-gradient(#46527a ${w.toFixed(2)}px,transparent ${w.toFixed(2)}px),linear-gradient(90deg,#46527a ${w.toFixed(2)}px,transparent ${w.toFixed(2)}px)`; fl.style.backgroundSize=`${c.toFixed(2)}px ${c.toFixed(2)}px`}      /* lines and cells drawn at 1/S so they come out at the usual size */
+
+  {
+    const row=roots; let tall=0;
+    row.forEach((id,j)=>{
+      const a=(slot[id]-(nEff-1)/2)*ARC.STEP, r=a*Math.PI/180, p=pos[id]={a,x:ARC.R*Math.sin(r),y,z:z+ARC.R*(1-Math.cos(r))};
+      p.tfF=`translate3d(${p.x}px,${p.y}px,${p.z}px) rotateY(${-a}deg)`;
+      (kids[id]||[]).forEach((k,n,all)=>{
+        const dx=(n===all.length-1&&n%2===0)?0:(n%2?1:-1)*KW/2, dy=-(260+34+KH/2+Math.floor(n/2)*(KH+14)), q=pos[k]={a,x:p.x+dx*Math.cos(r),y:p.y+dy,z:p.z+dx*Math.sin(r)};
+        q.tfF=`translate3d(${q.x}px,${q.y}px,${q.z}px) rotateY(${-a}deg)`;
+      });
+      tall=Math.max(tall,Math.ceil((kids[id]||[]).length/2));
+    });
+    y-=600+(tall?34+tall*(KH+14):0);
+  }
+  STACK=Math.max(600,-y);
+  bays(roots);
+  for(const id of order){A[id].el.classList.toggle('kid',!!pos[id]&&!roots.includes(id)); A[id].dirty=true}
+  apply(); render();
+}
+const sideW=()=>innerWidth<1000?0:Math.max(250,Math.min(440,innerWidth*.215));
+/* Is this panel really visible: of a usable size, wholly inside the window below the top bar, and the topmost thing
+   at its own centre line? Measured from what is painted, not inferred from the layout maths. */
+function onScreen(el){
+  const r=el.getBoundingClientRect(), top=$('#hud').offsetHeight;
+  if(!(r.width>=200&&r.height>=80&&r.top>=top-1&&r.bottom<=innerHeight+1&&r.left>=-1&&r.right<=innerWidth+1)) return false;
+  for(const y of [r.top+Math.min(30,r.height/2),r.bottom-Math.min(30,r.height/2)]){const hit=document.elementFromPoint(r.left+r.width/2,y); if(!hit||!el.contains(hit)) return false}
+  return true;
+}
+const covered=()=>!!narrow&&!portrait()&&!sideW();      /* the log or comms is open over the monitor */
+let narrow=null;       /* on a narrow window the log and comms open over the monitor, one at a time */
+function apply(){
+  room.classList.toggle('stepped',!!focus); document.body.classList.toggle('portrait',portrait());
+  if(focus&&pos[focus]){
+    const p=pos[focus], pt=portrait(), W=pt?0:sideW(), gap=W?W+34:14, L=$('#deskL'), Rr=$('#deskR'), Tn=$('#deskT');
+    const hudH=Math.max(40,$('#hud').offsetHeight); Tn.style.top=(hudH+4)+'px'; const top=hudH+4+Math.max(36,Tn.offsetHeight)+8;      /* the top bar may wrap: measure it */
+    let w, h;
+    if(pt){                                   /* main screen across the top, log and comms side by side beneath it */
+      const short=innerHeight-top-292-34<420; document.body.classList.toggle('short',short);
+      const bar=short?198:292, avail=innerHeight-top-bar-34;            /* what is left for the screen and the two panels */
+      const panels=Math.max(90,Math.min(460,Math.round(innerHeight*.27),avail-140));
+      w=innerWidth-28; h=Math.max(100,avail-panels);
+      const pw=Math.floor((innerWidth-28-12)/2)+'px', ptop=(top+h+12)+'px';
+      for(const e of [L,Rr]){e.style.width=pw; e.style.top=ptop; e.style.height=panels+'px'; e.style.bottom='auto'}
+    }else{
+      w=Math.max(200,innerWidth-2*gap); h=Math.max(160,innerHeight-top-124);
+      const sw=(W||Math.min(420,innerWidth-28))+'px';
+      document.body.classList.remove('short');
+      for(const e of [L,Rr]){e.style.width=sw; e.style.top=(top-4)+'px'; e.style.height=e.style.bottom=''}
+    }
+    for(const k of order){const e=A[k].el; e.classList.remove('behind'); if(k===focus){e.style.width=w+'px';e.style.height=h+'px';e.style.left=-w/2+'px';e.style.top=-h/2+'px'}else{e.style.width=e.style.height=e.style.left=e.style.top=''}}
+    world.style.transform=`translateY(${(top+h/2)-innerHeight*.5}px) rotateY(${p.a}deg) translate3d(${-p.x}px,${-p.y}px,${-p.z}px)`;
+    $('#floor').style.transform=`translateY(${p.y+h/2+70}px) rotateX(90deg) translateY(${FLOOR_C}px) scale(${FLOOR_S.toFixed(3)})`;      /* the same stretched floor at the desk */
+  }else{
+    const n=Math.min(FIT,Math.max(1,nRoots())), fit=arcFor(n);        /* the camera stands where it would for FIT monitors, however many there are */
+    const r=(n-1)/2*fit.STEP*Math.PI/180, ex=fit.R*Math.sin(r)+340*Math.cos(r), ez=fit.R*(1-Math.cos(r))+340*Math.sin(r), Hh=STACK+80;
+    const hudH=$('#hud').offsetHeight;                     /* the room is fitted below the top bar, not under it */
+    let D=Math.max(0,ex*P/(innerWidth/2-12)-P+ez,P*(Hh/(innerHeight-hudH-36)-1)+ez*.5)+cam.dolly;      /* the ends of a row are nearer and so taller: fit those */
+    yawTo(cam.yaw);                                        /* fewer monitors than a moment ago: the turn may now be past the end */
+    const M0=new DOMMatrix(`translateY(${hudH/2}px) translateZ(${-D}px) rotateX(${cam.tilt}deg) translateZ(${ARC.R}px) rotateY(${cam.yaw}deg) translateZ(${-ARC.R}px) translateY(${(STACK-600)/2+20+cam.py}px)`);      /* the world as it will stand at this distance */
+    /* never let a monitor reach the camera: find the nearest edge after turning, with room for the hover lean-in */
+    const th=cam.yaw*Math.PI/180, ti=cam.tilt*Math.PI/180, T=(STACK-600)/2+20+cam.py, D0=D; let near=-1e9;
+    for(const k of order){const q=pos[k]; if(!q) continue;
+      const t=turned(q,th), z1=t.z+340*Math.abs(Math.sin(th-q.a*Math.PI/180));      /* after turning */
+      /* the row curves round the camera: a monitor behind it, or far out to the side, is not in the picture and
+         must not push the camera back; only one that could be in front of the lens is kept clear of it */
+      const dz=P+D0-(q.y+T)*Math.sin(ti)-z1*Math.cos(ti);      /* depth after tilting too */
+      /* the seat's nearest corner, after every transform: a monitor any corner of which would cross the lens is not painted
+         at all (so no giant back-projected plane); one in hand, or on its way back, is judged by that pose instead */
+      const cz=Math.max(...corners(M0,q,A[k].el.classList.contains('kid')).map(c=>c.z));
+      A[k].el.classList.toggle('behind',k!==peek&&cz>P-120);      /* in hand it is judged by that pose; returning to a seat behind the lens it is hidden, since a glide through the lens is worse than a cut */
+      if(dz<=0||Math.atan2(Math.abs(t.x),dz)>62*Math.PI/180) continue;
+      for(const dy of [-300,300]) near=Math.max(near,(q.y+T+dy)*Math.sin(ti)+z1*Math.cos(ti)+520)}   /* after tilting, with room for the hover lean-in */
+    D=Math.max(D,near-(P-260));
+    for(const k of order){const e=A[k].el; e.style.width=e.style.height=e.style.left=e.style.top=''}
+    $('#floor').style.transform=`translateY(330px) rotateX(90deg) translateY(${FLOOR_C}px) scale(${FLOOR_S.toFixed(3)})`;      /* flat, slid along the floor to the ring's middle, then stretched */
+    cam.D=D; cam.H=hudH/2;
+    world.style.transform=`translateY(${hudH/2}px) translateZ(${-D}px) rotateX(${cam.tilt}deg) translateZ(${ARC.R}px) rotateY(${cam.yaw}deg) translateZ(${-ARC.R}px) translateY(${(STACK-600)/2+20+cam.py}px)`;
+  }
+  for(const id of order) A[id].el.classList.toggle('focus',focus===id);
+  $('#back').hidden=!focus; $('#helpW').hidden=!!focus;
+  holdPeek();                                   /* the camera moved under a hovered monitor: keep it where it is on the screen */
+  subs(Date.now()/1000);                        /* the captions follow their monitors */
+}
+let flyT=0, applyQ=0;
+const queueApply=()=>{if(!applyQ) applyQ=requestAnimationFrame(()=>{applyQ=0; apply()})};      /* many gesture events, one camera update per painted frame */
+const fly=()=>{world.classList.add('fly'); clearTimeout(flyT); flyT=setTimeout(()=>world.classList.remove('fly'),1150)};
+const hands=()=>{world.classList.remove('fly'); clearTimeout(flyT)};       /* your hands on the view end any camera glide at once */
+function setView(v){if(!focus)return; deskView=v; const a=A[focus]; a.pin=null; a.sayAt=null; a.zm=1; a.$.split.style.setProperty('--zm','1'); a.dirty=true; render()}
+/* Stepping up. The monitor must grow from where it is on the screen (in hand, or in its seat) into the desk, as one
+   move. Its own transform and the camera's live in different spaces, so a CSS transition on each makes the monitor
+   dip before it grows. Instead its on-screen pose is interpolated directly, frame by frame, with the camera's glide
+   (read from the world's computed transform) undone beneath it; the box's size eases on the same clock in CSS. */
+const screenPose=el=>{try{return {M:new DOMMatrix(getComputedStyle(world).transform).multiply(new DOMMatrix(getComputedStyle(el).transform)),w:el.offsetWidth||640,h:el.offsetHeight||520}}catch(err){return null}};
+const easeFly=(()=>{const x1=.45,y1=.05,x2=.15,y2=1, bz=(a,b,t)=>3*a*(1-t)*(1-t)*t+3*b*(1-t)*t*t+t*t*t; return p=>{let lo=0,hi=1,t=p; for(let i=0;i<24;i++){t=(lo+hi)/2; if(bz(x1,x2,t)<p) lo=t; else hi=t} return bz(y1,y2,t)}})();      /* the camera's own curve */
+function stepUp(id,P0){
+  const a=A[id], el=a.el; if(!a||!P0||!P0.M) return;
+  const Wend=new DOMMatrix(world.style.transform), P1=Wend.multiply(new DOMMatrix(pos[id].tfF));      /* where the desk pose will be on screen once the camera arrives */
+  const dec=M=>({x:M.m41,y:M.m42,z:M.m43,s:Math.hypot(M.m11,M.m12,M.m13)}), q0=dec(P0.M), q1=dec(P1), t0=performance.now(); stepUp.n=(stepUp.n||0)+1; const N=stepUp.n;
+  /* the box is already its desk size: start from a pose scaled so the picture is exactly where and as big as it was */
+  const bw=el.offsetWidth||640, bh=el.offsetHeight||520, sx0=q0.s*P0.w/bw, sy0=q0.s*P0.h/bh;
+  el.classList.add('stepup'); clearTimeout(el._stepT); STEPPING=true;
+  const done=()=>{STEPPING=false; if(render._deferred){render._deferred=false; render()}};
+  const frame=()=>{if(stepUp.n!==N||focus!==id){el.classList.remove('stepup'); done(); return} const pr=Math.min(1,(performance.now()-t0)/1100), k=pr>=1?1:easeFly(pr);      /* exactly 1 at the end: the curve's solver lands a hair short */
+    const P=new DOMMatrix().translate(q0.x+(q1.x-q0.x)*k,q0.y+(q1.y-q0.y)*k,q0.z+(q1.z-q0.z)*k).scale(sx0+(q1.s-sx0)*k,sy0+(q1.s-sy0)*k,1);
+    let W; try{W=new DOMMatrix(getComputedStyle(world).transform).inverse()}catch(err){W=null}
+    if(k<1&&W){const tf=W.multiply(P).toString(); el._tf=tf; el.style.transform=tf; next(frame)}
+    else{el._tf=pos[id].tfF; el.style.transform=pos[id].tfF; el.classList.remove('stepup'); done()}};
+  const next=f=>document.hidden?setTimeout(f,16):requestAnimationFrame(f);      /* animation frames pause in a hidden tab; the step-up must still finish */
+  next(frame);
+}
+function setFocus(id){
+  if(id&&!A[id]) return;
+  if(id&&PROJ&&(proj(id)||'—')!==PROJ) setProj(null);         /* an agent the project filter hides is brought back into view, never focused unseen */
+  if(focus&&A[focus]){A[focus].zm=1;A[focus].$.split.style.setProperty('--zm','1')}
+  clearTimeout(peekT); if(peek)setPeek(null,true);
+  const P0=id&&A[id]&&!A[id].gone?screenPose(A[id].el):null;      /* where the monitor is on screen right now, before anything moves */
+  const src=id&&A[id]&&!STEADY&&id!==focus&&A[id].$.code.classList.contains('say');      /* stepping up from a narrating monitor lands on the desk's Said screen */
+  if(id&&A[id].gone)revive(id);
+  for(const k of order){A[k].dirty=true;A[k].pin=null}
+  if(id&&A[id]) A[id].sayAt=null;
+  const held=id&&A[id]&&Object.values(A[id].perms||{}).some(p=>p&&!p.sent);      /* a held permission request is answered on Doing, so that is where you land */
+  const was=focus; stick=true; stickC=true; deskView=src&&!held?'said':'doing';      /* otherwise, land on the screen you were reading */ narrow=null; focus=id; glideN++; fly(); apply(); render();
+  apply();                                    /* again, now that the desk's own bars exist and can be measured */
+  if(P0&&pos[id]) stepUp(id,P0);
+  if(was&&was!==id&&A[was]&&A[was].forgetLater) forget(was);
+}
+$('#back').onclick=()=>setFocus(null);
+$('#needs').onclick=e=>{const x=e.target.closest('[data-x]'); if(x){for(const al of ALERTS) if(al.n===+x.dataset.x) al.off=true; render(); return} const b=e.target.closest('[data-go]');if(b)setFocus(b.dataset.go)};
+/* the gesture hint shows once, the first time this browser opens the room; afterwards it lives behind the ? */
+try{if(!DEMO&&!localStorage.getItem('liveRoomHinted')){localStorage.setItem('liveRoomHinted','1'); $('#hint').classList.add('show'); setTimeout(()=>$('#hint').classList.remove('show'),9000)}}catch(err){}      /* the demo shows no hint and touches no flag */
+$('#help').onclick=()=>$('#hint').classList.toggle('show');          /* a click shows the hint too, for keyboards and touch, not only hover */
+addEventListener('keydown',e=>{
+  if((e.key==='Enter'||e.key===' ')&&e.target&&e.target.matches&&e.target.matches('.flag.w.held .tag')){e.preventDefault(); moved=false; e.target.click(); return}      /* the held request's tag, from the keyboard; never a drag's trailing click */
+  if(e.target.closest&&e.target.closest('input,textarea')) return;
+  if(e.key==='Escape')setFocus(null);
+  if(!focus&&(e.key==='ArrowLeft'||e.key==='ArrowRight')){turn(e.key==='ArrowRight'?1:-1); e.preventDefault()}
+  if(focus&&(e.key==='['||e.key===']')){bayPg+=e.key===']'?1:-1;desk()}
+  const v={1:'said',2:'doing',3:'seeing',4:'changes'}[e.key]; if(v&&focus)setView(v);
+});
+let wasPortrait=portrait();
+addEventListener('resize',()=>{if(portrait()!==wasPortrait){wasPortrait=portrait();layout()}else{apply();render()}});
+room.addEventListener('pointerdown',e=>{moved=false;if(!focus){hands();drag={x:e.clientX,y:e.clientY,yaw:cam.yaw,tilt:cam.tilt}}});
+addEventListener('pointermove',e=>{
+  if(!drag) return; const dx=e.clientX-drag.x, dy=e.clientY-drag.y;
+  if(Math.abs(dx)+Math.abs(dy)<=5) return;
+  moved=true;room.classList.add('drag');
+  yawTo(drag.yaw+dx*.08); cam.tilt=Math.max(-18,Math.min(18,drag.tilt-dy*.05)); queueApply();
+});
+const drop=()=>{drag=null;room.classList.remove('drag')};
+addEventListener('pointerup',drop);addEventListener('pointercancel',drop);addEventListener('blur',drop);
+room.addEventListener('click',()=>{if(!moved&&focus)setFocus(null)});
+document.addEventListener('click',ev=>{const b=ev.target.closest('.pin');if(b&&focus){A[focus].pin=null;A[focus].dirty=true;render()}},true);
+room.addEventListener('dblclick',e=>{if(focus||e.target.closest('.st'))return; if(peek)setPeek(null); cam={yaw:0,tilt:0,dolly:0,py:0}; fly(); apply()});
+
+/* ---------- trackpad ----------
+   In Chrome a pinch arrives as a wheel event with ctrlKey set; a two-finger scroll is a plain wheel event.
+   One continuous gesture (including its momentum tail) can trigger at most one step: after a step fires, nothing
+   more fires until the stream of wheel events has actually paused. */
+let gT=0, gz=0, gx=0, gFired=false, gZone=null, gPinch='';
+const VIEWS=['said','doing','seeing','changes'];      /* the four screens, in the order of their buttons and keys */
+function canScrollX(el,dx){for(;el&&el!==document.body;el=el.parentElement){
+  if(el.scrollWidth>el.clientWidth+2&&/(auto|scroll)/.test(getComputedStyle(el).overflowX)){
+    if(dx<0?el.scrollLeft>0:el.scrollLeft+el.clientWidth<el.scrollWidth-1) return true}} return false}
+function step(n){if(order.length){const i=order.indexOf(focus); setFocus(order[(i+n+order.length)%order.length])}}
+addEventListener('wheel',e=>{
+  const now=performance.now(); if(now-gT>180){gz=0;gx=0;gFired=false} gT=now;
+  const st=e.target.closest&&e.target.closest('.st'), horiz=Math.abs(e.deltaX)>Math.abs(e.deltaY);
+  if(e.ctrlKey){                                   /* ---- pinch ---- */
+    e.preventDefault(); hands(); gx=0; gZone=null;
+    const pz=(focus||'room')+'|'+(st?st.dataset.id:'')+'|'+deskView; if(pz!==gPinch){gPinch=pz; gz=0}      /* a pinch gathered over one thing never counts toward another */
+    if(!focus){
+      if(st&&e.deltaY<0){gz-=e.deltaY; if(!gFired&&gz>36){gFired=true;setFocus(st.dataset.id)}}       /* pinch out on a screen: step up */
+      else if(!gFired){cam.dolly=Math.max(-250,Math.min(2500,cam.dolly+e.deltaY*7));queueApply()}          /* otherwise: closer / further */
+    }else if(!gFired){
+      const a=A[focus];
+      if(deskView==='seeing'&&st&&(e.deltaY<0||(a.zm||1)>1.02)){                                       /* enlarge what the agent is looking at */
+        a.zm=Math.max(1,Math.min(5,(a.zm||1)*Math.exp(-e.deltaY*.012))); a.$.split.style.setProperty('--zm',a.zm.toFixed(3));
+      }else{gz-=e.deltaY; if(gz<-36){gFired=true;setFocus(null)}}                                      /* pinch in: step back to the room */
+    }
+    return;
+  }
+  gz=0; gPinch='';                                 /* a scroll between two pinches: the second pinch starts from nothing */
+  if(!focus){                                      /* ---- two-finger scroll in the room: look around ---- */
+    if(horiz&&e.target.closest&&e.target.closest('#projs')&&canScrollX(e.target,e.deltaX)) return;      /* the fleet strip scrolls first */
+    e.preventDefault(); hands();
+    yawTo(cam.yaw-e.deltaX*.06);
+    cam.py=Math.max(-200,Math.min(STACK-400,cam.py-e.deltaY*1.2));
+    queueApply(); return;
+  }
+  if(!horiz) return;                               /* vertical scroll at a desk stays ordinary scrolling */
+  if(canScrollX(e.target,e.deltaX)) return;        /* an enlarged picture or a long row pans sideways, until it reaches its edge */
+  e.preventDefault();                              /* everything else sideways is ours, so the browser never goes "back" */
+  const zone=e.target.closest('#bay')?'bay':(e.shiftKey||e.target.closest('#deskT'))?'walk':st?'view':null;
+  if(zone!==gZone){gZone=zone; gx=0}               /* movement gathered over one area never counts toward another */
+  if(!zone||gFired) return;                        /* over the log or comms a sideways swipe does nothing, and locks nothing */
+  gx+=e.deltaX; if(Math.abs(gx)<90) return;
+  const dir=gx>0?1:-1; gFired=true;
+  if(zone==='bay'){bayPg+=dir;desk()} else if(zone==='walk') step(dir); else setView(VIEWS[(VIEWS.indexOf(deskView)+dir+VIEWS.length)%VIEWS.length]);
+},{passive:false});
+
+/* ---------- stepped up: the desk around one monitor ---------- */
+const storyEl=$('#deskL .story'), commsEl=$('#comms'); let stick=true, stickC=true, deskView='doing', bayPg=0;
+const nearEnd=el=>el.scrollHeight-el.scrollTop-el.clientHeight<40;
+storyEl.addEventListener('scroll',()=>{stick=nearEnd(storyEl)});
+commsEl.addEventListener('scroll',()=>{stickC=nearEnd(commsEl)});
+$('#bayH').onclick=ev=>{const b=ev.target.closest('[data-pg]'); if(b){bayPg+=+b.dataset.pg; desk()} else if(ev.target.closest('#bayN')){bayPg=0; desk()}};
+const capAdd=(set,k)=>{set.add(k); while(set.size>60) set.delete(set.values().next().value)};      /* expanded groups and messages: one bound, every path */
+storyEl.addEventListener('click',ev=>{
+  if(!focus||getSelection().toString()) return; const a=A[focus], c=ev.target.closest('[data-c]'), d=ev.target.closest('[data-i]');
+  const sv=ev.target.closest('[data-say]');
+  if(sv){const n=+sv.dataset.say; a.pin=null; a.sayAt=n; deskView='said'; a.dirty=true; render(); const pEl=a.$.code.querySelector(`[data-n="${n}"]`); if(pEl){pEl.scrollIntoView({block:'center'}); pEl.classList.add('hl'); setTimeout(()=>pEl.classList.remove('hl'),1600)} return}
+  if(c){const k=c.dataset.c; a.open.has(k)?a.open.delete(k):capAdd(a.open,k); stick=false}
+  else if(d){const it=a.story.find(x=>x.n===+d.dataset.i); a.pin=(it&&it.e&&it.e!==a.cur&&a.pin!==it.e)?it.e:null; if(a.pin)deskView='doing'}
+  else return;
+  a.dirty=true; render();
+});
+/* a quick eased scroll (about a third of a second), so you see which way the log moved; instant if you prefer reduced motion */
+let glideN=0;
+function glide(el,to){
+  to=Math.max(0,Math.min(to,el.scrollHeight-el.clientHeight)); const from=el.scrollTop, n=++glideN, t0=performance.now(), ms=Math.min(420,180+Math.abs(to-from)*.08);
+  if(matchMedia('(prefers-reduced-motion:reduce)').matches||Math.abs(to-from)<4){el.scrollTop=to; return}
+  const who=focus; const step=t=>{if(n!==glideN||focus!==who) return; const p=Math.min(1,(t-t0)/ms), e=1-Math.pow(1-p,3); el.scrollTop=from+(to-from)*e; if(p<1) requestAnimationFrame(step)};
+  requestAnimationFrame(step);
+}
+storyEl.addEventListener('wheel',()=>{glideN++},{passive:true});      /* your own scrolling always wins */
+/* click one of your messages: the agent log scrolls to what it did after that message */
+commsEl.addEventListener('click',ev=>{
+  const m=ev.target.closest('[data-k]'); if(!m||!focus||getSelection().toString()) return;
+  const a=A[focus], k=m.dataset.k;
+  if(ev.target.closest('[data-more]')){a.wide=a.wide||new Set(); a.wide.has(k)?a.wide.delete(k):capAdd(a.wide,k); stickC=false; a.dirty=true; render(); return}      /* read the whole message; no jump */
+  const miss=why=>{a.miss=k; a.missWhy=why; a.hit=null; a.dirty=true; render(); setTimeout(()=>{if(a.miss===k){a.miss=null; a.dirty=true}},4000)};
+  if(!a.story.some(it=>it.t==='you'&&(it.key||'t'+it.ts)===k)) return miss('that part of its log is no longer kept here');
+  a.miss=null; capAdd(a.open,k); a.hit=k; stick=false; if(covered()||(!portrait()&&!sideW())) narrow='L';
+  a.dirty=true; render();
+  const h=[...storyEl.querySelectorAll('[data-k]')].find(x=>x.dataset.k===k);
+  if(!h) return miss('nothing was recorded between this message and your next one');
+  glide(storyEl,storyEl.scrollTop+h.getBoundingClientRect().top-storyEl.getBoundingClientRect().top-6);
+  setTimeout(()=>{if(a.hit===k){a.hit=null; a.dirty=true}},2500);
+});
+$('#fleet').onclick=ev=>{const b=ev.target.closest('[data-go]'); if(b) setFocus(b.dataset.go)};
+$('#crumb').onclick=ev=>{const u=ev.target.closest('[data-unlink]'); if(u){if(DEMO) return; post('/unlink',{child:u.dataset.unlink}).catch(()=>{}); return} const b=ev.target.closest('[data-go]'); if(b&&b.dataset.go!==focus) setFocus(b.dataset.go)};
+function lineage(a){const up=[], seen=new Set([a.id]); let p=a.parent; while(p&&!seen.has(p)){seen.add(p); up.unshift(p); p=A[p]&&A[p].parent} return up}
+function desk(){
+  const a=focus?A[focus]:null, pt=portrait(), W=pt?1:sideW();       /* on a tall window both panels are always shown, under the screen */
+  hid($('#deskL'),!a||!(W||narrow==='L')); hid($('#deskR'),!a||!(W||narrow==='R')); hid($('#deskT'),!a); hid($('#deskB'),!a);
+  $('#deskL').classList.toggle('over',!W); $('#deskR').classList.toggle('over',!W);
+  if(!a) return;
+  hid(a.$.sL,!!W); hid(a.$.sR,!!W); a.$.sL.classList.toggle('on',narrow==='L'); a.$.sR.classList.toggle('on',narrow==='R');
+  const now=Date.now()/1000;
+  /* chain of command: who it works for, itself, who works for it */
+  const kids=order.filter(k=>A[k].parent===a.id);
+  const pill=(k,me)=>A[k]?`<button class="pill${me?' me':''}" data-go="${esc(k)}">${esc(A[k].name)}</button>`:'<span class="pill off">an agent that isn’t in the room</span>';
+  const rel=c=>!c.soft?'<i title="recorded by the app">›</i>':/^related/.test(c.via||'')?'<i class="soft" title="related work in the same folder, not a recorded parent">related ›</i>':'<i class="soft" title="inferred, not recorded">inferred ›</i>';
+  const up=lineage(a), links=[a,...up.map(k=>A[k]),...kids.map(k=>A[k])].filter(x=>x&&x.parent), softAny=links.some(x=>x.soft), allSoft=links.length>0&&links.every(x=>x.soft);
+  txt($('#deskT .lbl'),a.maybe&&!a.parent&&!links.length?'Chain of command · a guess':allSoft?'Related work · inferred, not a chain of command':softAny?'Chain of command · partly inferred':'Chain of command');
+  const guess=a.maybe&&!a.parent?(A[a.maybe.parent]?`<button class="pill off" data-go="${esc(a.maybe.parent)}" title="${esc(a.maybe.via)}">${esc(A[a.maybe.parent].name)}</button>`:'<span class="pill off">an agent not in the room</span>')+'<i class="soft" title="a guess from a script\'s text, not a recorded or inferred link">possibly ›</i>':'';
+  put($('#crumb'),guess+up.map((k,i)=>pill(k)+rel(A[up[i+1]]||a)).join('')+pill(a.id,1)+(a.parent&&a.soft?`<button class="pill off" data-unlink="${esc(a.id)}" title="Drop this inferred link. The same evidence can make it again.">unlink</button>`:'')+(kids.length?kids.slice(0,4).map(k=>rel(A[k])+pill(k)).join('')+(kids.length>4?`<span class="pill off">+${kids.length-4} more</span>`:''):''));
+  for(const b of a.el.querySelectorAll('.views [data-v]')) b.classList.toggle('on',b.dataset.v===(a.pin?'doing':deskView));
+  /* the bay: one panel at a time, and a standing count of other agents that need you whichever panel is showing */
+  const others=order.filter(k=>k!==a.id).map(k=>{const o=A[k], s=stateOf(o,now); return {k,o,n:s.need,busy:s.busy,rank:s.need?0:s.busy?1:2}}).sort((x,y)=>x.rank-y.rank);
+  const needy=others.filter(x=>x.n).length;
+  const PAGES=['Other stations','Alerts · all agents','Activity · this agent']; bayPg=(bayPg+PAGES.length)%PAGES.length;
+  txt($('#bayT'),PAGES[bayPg]); put($('#bayD'),PAGES.map((_,i)=>`<i class="${i===bayPg?'on':''}"></i>`).join(''));
+  hid($('#bayN'),!needy||bayPg===0); txt($('#bayN'),'▲ '+needy+' may need you');
+  let bay='';
+  if(bayPg===0) bay='<div class="row">'+(others.map(({k,o,n,busy})=>`<button data-go="${esc(k)}" class="${n?'n':busy?'b':''}" title="${n?esc(n.kind):busy?'active':'not active'}"><i></i>${esc(o.name.slice(0,22))}${n?' <small>'+n.kind.toLowerCase()+(n.sure?'':'?')+'</small>':''}</button>`).join('')||'<span class="cap2">No other agents in the room.</span>')+'</div>';
+  else if(bayPg===1) bay=ALERTS.filter(x=>A[x.id]&&!x.off&&now-x.ts<1800).slice(0,3).map(x=>`<button class="al" data-go="${esc(x.id)}">⚠ ${esc(A[x.id].name.slice(0,16))} issued what looks like ${x.label} <small>${ago(now-x.ts)}</small> — ${esc(one(x.text).slice(0,80))}</button>`).join('')||'<span class="cap2">No alert to show. Only the latest 8 are kept, for agents still in the room, and pattern matching can miss things.</span>';
+  else{
+    const B=30,Wd=10,bk=Array.from({length:B},()=>({n:0})); for(const k of a.ticks){const i=B-1-Math.floor((now-k.t)/Wd); if(i>=0&&i<B){bk[i].n++; bk[i][k.c]=(bk[i][k.c]||0)+1}}
+    const mx=Math.max(3,...bk.map(b=>b.n)), tot=bk.reduce((x,b)=>x+b.n,0);
+    /* each 10-second slot is one stacked bar: its height is how many entries, its colours are what kind */
+    bay=`<svg viewBox="0 0 ${B*10} 30" preserveAspectRatio="none">`+bk.map((b,i)=>{if(!b.n) return `<rect x="${i*10+1}" y="29" width="8" height="1" fill="#1f3a52"/>`; let y=30; return TICKS.map(([c,col])=>{const h=(b[c]||0)/mx*28; y-=h; return h?`<rect x="${i*10+1}" y="${y}" width="8" height="${h}" fill="${col}"/>`:''}).join('')}).join('')
+      +`</svg><span class="axis"><b>◂ 5 min ago</b><span>${TICKS.map(([c,col,name])=>`<i style="background:${col}"></i>${name}`).join(' ')} · ${tot} entr${tot===1?'y':'ies'} · full height = ${mx} in 10s</span><b>now ▸</b></span>`;
+  }
+  put($('#fleet'),bay);
+  /* agent log: what it did and said, grouped under each message of yours (groups are keyed by that message's time) */
+  const ch=[]; let cur={key:'start',you:null,items:[]};
+  a.story.forEach((it,i)=>{if(it.t==='you'){if(cur.you||cur.items.length)ch.push(cur);cur={key:it.key||'t'+it.ts,you:it,items:[]}}else cur.items.push([i,it])}); ch.push(cur);
+  const S=stateOf(a,now);
+  const item=([i,it])=>it.t==='say'?`<p class="sv" data-say="${it.n}" title="${esc(one(plain(it.text)).slice(0,400))}"><b>said</b>${esc(one(plain(it.text)).slice(0,160))}<small>${clock(it.ts)}</small></p>`
+    :it.t==='end'?`<p class="end">■ turn ended · ${clock(it.ts)}</p>`
+    :it.t==='wait'?`<p class="w">⏳ ${esc(one(it.text).slice(0,200))}</p>`
+    :it.t==='compact'?`<p class="dv cp">${esc('context summarised'+(it.trigger==='auto'?' automatically':it.trigger==='manual'?' on request':'')+(num(it.pre)||num(it.post)?' · '+tok(it.pre)+' → '+tok(it.post)+' tokens':'')+' · '+clock(it.ts))}</p>`
+    :`<p class="sd${it.e===a.pin?' on':''}${it.e.err||it.e.alert?' bad':''}" data-i="${it.n}">${it.e.alert?'⚠ ':''}${esc(did(it.e))}<small>${clock(it.ts)}</small></p>`;
+  let h=(a.partial?'<p class="dv">earlier history not loaded</p>':'')+ch.map((c,ci)=>{
+    const dids=c.items.filter(x=>x[1].t==='did'), says=c.items.filter(x=>x[1].t==='say'), open=a.open.has(c.key), last=ci===ch.length-1, live=last&&S.busy&&a.turn==='in';
+    const n={r:0,w:0,x:0}; dids.forEach(([,it])=>{const k=it.e.kind; k==='read'?n.r++:['write','edit','patch'].includes(k)?(it.e.done&&!it.e.err?n.w++:0):k==='run'?n.x++:0});
+    const parts=[n.r&&`read ${n.r}`,n.w&&`edits ${n.w}`,n.x&&`commands ${n.x}`].filter(Boolean).join(', ');
+    const span=c.items.length>1?(c.items[c.items.length-1][1].ts-c.items[0][1].ts):0;      /* how long this group has run, first entry to last */
+    const bad=dids.some(([,it])=>it.e.err||it.e.alert);
+    if(!c.items.length&&!last) return '';        /* a message with nothing recorded after it adds no line here; it is in Comms */
+    const head=c.you?`<p class="dv${a.hit===c.key?' hit':''}" data-k="${esc(c.key)}">after your ${clock(c.you.ts)} message</p>`:'';
+    const sum=dids.length?`<p class="sum${bad?' bad':''}" data-c="${esc(c.key)}">${open?'▾':'▸'} ${dids.length} step${dids.length>1?'s':''}${live?' so far':''}${parts?' · '+parts:''}${span>=60?' · '+dur(span):''}${live&&!open?'<br>latest: '+esc(did(dids[dids.length-1][1].e)):''}</p>`:'';
+    const ls=says.length?says[says.length-1][1]:null, t=ls?one(plain(ls.text)):'';
+    const nowm=live?`<p class="nowm">now · in a turn</p>`:'';
+    return head+sum+(open?c.items.map(item).join(''):c.items.filter(x=>x[1].t==='compact'||x[1].t==='end'||(ls&&x[1]===ls)).map(item).join(''))+nowm;      /* in recorded order, never reordered */
+  }).join('');
+  if(storyEl._h!==h&&!getSelection().toString()){put(storyEl,h||'<p>Nothing recorded yet.</p>'); if(stick) storyEl.scrollTop=storyEl.scrollHeight}
+  /* comms: only what you said to it, and what it seems to need from you */
+  const cm=(a.assign?`<p class="u as">Its assignment: ${esc(one(a.assign.text).slice(0,700))}</p>`:'')
+    +a.msgs.map(m=>{const k='u'+(m.seq>=0?m.seq:m.ts); const t=one(m.text), long=t.length>240, wide=a.wide&&a.wide.has(k);
+      return `<p class="u jump" data-k="${esc(k)}" title="Show what the agent did after this message">${esc(long&&!wide?t.slice(0,200).replace(/\s+\S*$/,'')+'…':t)}${long?` <u data-more>${wide?'show less':'show all'}</u>`:''}<small>${clock(m.ts)}${a.miss===k?' · '+a.missWhy:''}</small></p>`}).join('')
+    +a.q.map(m=>`<p class="qd">✉ Queued in the app<br>${esc(one(m.text).slice(0,300))}</p>`).join('');
+  if(commsEl._h!==cm&&!getSelection().toString()){put(commsEl,cm||'<p>No message from you found in what has been read of its log.</p>'); if(stickC) commsEl.scrollTop=commsEl.scrollHeight}
+  const N=S.need, chan=$('#chan');
+  chan.className=N?'warn':a.q.length?'q':'';
+  put(chan,N?`▲ ${N.sure?'Agent requests':'Agent may be asking'} · ${N.kind}${N.sure?'':' (probably)'}<p>${esc(one(N.text).slice(0,300))}</p>`:a.q.length?`✉ ${a.q.length} message${a.q.length>1?'s':''} queued in the app`:'● No request detected');
+  /* readouts: recorded facts, labelled as what they are */
+  const par=a.parent&&A[a.parent], f=(k,v)=>`<span><b>${k}</b><em>${esc(v)}</em></span>`;
+  put($('#badge'),f('Model',(a.model||'not recorded')+(a.effort?' · '+a.effort+' effort':''))+f('Approval setting',a.perm||'not recorded')
+    +f('Context in use',(fuelOf(a)||{long:'not recorded'}).long)+f('Project',(proj(a.id)?projLabel(proj(a.id))+(projLabel(proj(a.id))!==proj(a.id)?' · folder '+proj(a.id):''):'')||(a.cwd||'').split('/').pop()||'not recorded')+f('Branch',a.branch||'none recorded')
+    +f(a.maybe&&!a.parent?'Possibly started by (a guess from script text)':!a.soft?'Started by':/^related/.test(a.via||'')?'Related to':'Started by (inferred)',par?par.name+(a.via?' · '+a.via:''):a.parent?'an agent not in the room':a.maybe?(A[a.maybe.parent]?A[a.maybe.parent].name:'an agent not in the room')+' · '+a.maybe.via:'no parent recorded')
+    +f('Session created',a.started?clock(a.started)+' · '+ago(now-a.started):'not recorded')
+    +f('You last focused it',a.looked?ago(now-a.looked):a.runtime==='Claude'?'not recorded':'Codex does not record this'));
+}
+
+/* ---------- hand-offs: a tab on each monitor, in the other agent's colour ---------- */
+function pulse(src,dst,label){
+  if(!A[src]||!A[dst]) return; const until=Date.now()+9000;
+  A[src].lk={text:'▶ '+label+' → '+A[dst].name,color:A[dst].color,until}; A[dst].lk={text:'◀ '+label+' ← '+A[src].name,color:A[src].color,until};
+  A[src].dirty=A[dst].dirty=true;
+}
+
+/* ---------- attention outside the page ----------
+   The tab title always carries the number of agents that are certainly waiting on you. With "Notify me" on, an
+   agent that STARTS waiting while you are not looking at it also raises a system notification; clicking it brings
+   you to that agent's desk. Nothing is raised for what was already waiting when the page loaded. */
+let NOTIFY=false; try{NOTIFY=store.getItem('liveRoomNotify')==='1'}catch(err){}
+const canNotify=()=>'Notification' in window&&Notification.permission==='granted';
+function paintNotify(){const b=$('#notify'), blocked='Notification' in window&&Notification.permission==='denied';
+  b.classList.toggle('on',NOTIFY&&(DEMO||canNotify())); b.classList.toggle('blocked',blocked&&!DEMO);
+  b.title=DEMO?'Demo: switches on and off here only. The browser is not asked for anything.':(!('Notification' in window)?'Notifications are not available in this browser.':blocked?'Notifications are blocked for this site in the browser settings.':NOTIFY&&canNotify()?'On: a macOS notification when an agent starts waiting on you and you are not looking at it. It says only the kind of request; neither the agent\'s name nor the request text leaves this page.':'Off: no notifications. The count in the tab title is always on.')+' Click to switch.';
+  b.setAttribute('aria-pressed',String(!!(NOTIFY&&(DEMO||canNotify()))))}
+$('#notify').onclick=async()=>{
+  if(DEMO){NOTIFY=!NOTIFY; paintNotify(); return}      /* demo: a local switch, no permission asked, nothing stored */
+  if(!('Notification' in window)) return;
+  if(NOTIFY&&canNotify()) NOTIFY=false;
+  else{if(Notification.permission==='default'){try{await Notification.requestPermission()}catch(err){}} NOTIFY=canNotify()}
+  try{store.setItem('liveRoomNotify',NOTIFY?'1':'0')}catch(err){} paintNotify()};
+paintNotify();
+function attention(now){
+  let n=0;
+  for(const k of order){const a=A[k], N=need(a), sure=!!(N&&N.sure), sig=sure?N.kind+'|'+N.text:'';
+    if(sure) n++;
+    if(sig&&sig!==a.needSig&&connectedAt&&now-connectedAt>6&&NOTIFY&&!DEMO&&canNotify()&&(document.hidden||focus!==k)){      /* never from a demo window: its agents are fictional */
+      /* nothing from the logs goes to the OS notification surface: not the request, and not the agent's name, which an agent chooses for itself */
+      try{const nt=new Notification('An agent is waiting on you',{body:({Approve:'Permission requested',Decide:'A question for you','Needs you':'Needs your attention',Action:'Action requested'}[N.kind]||'Waiting on you')+' — open W.A.T.C.H. to see which agent and what for',tag:'watch-'+k});
+        nt.onclick=()=>{window.focus(); if(A[k])setFocus(k); nt.close()}; if(a.nt)try{a.nt.close()}catch(err){} a.nt=nt}catch(err){}}
+    if(!sig&&a.nt){try{a.nt.close()}catch(err){} a.nt=null}        /* the request ended: take the notice down */
+    a.needSig=sig}
+  const t=(n?'('+n+') ':'')+'W.A.T.C.H.'; if(document.title!==t) document.title=t;
+}
+/* ---------- connection ---------- */
+let lastSeq=-1, boot='', connected=false, locked=false, connectedAt=0;
+/* Answering permission prompts is off until you switch it on in this window. Only then does the window tell the
+   server it is here, which is what lets the server hold a prompt for you. */
+let APPROVE=false; try{APPROVE=!DEMO&&sessionStorage.getItem('liveRoomApprove')==='1'}catch(err){}
+const here=()=>{if(APPROVE&&KEY&&connected&&!DEMO&&document.visibilityState==='visible')post('/presence',{visible:true}).catch(()=>{})};      /* never from a demo window: it could not show a held prompt */
+$('#appr').onclick=()=>{if(DEMO){APPROVE=!APPROVE; render(); return} APPROVE=!APPROVE; try{sessionStorage.setItem('liveRoomApprove',APPROVE?'1':'0')}catch(err){} here(); render()};
+function lock(on){locked=on; hid($('#lock'),!on)}
+let ES=null, authN=0;       /* one stream at a time; an answer about an older key never touches newer state */
+function connect(){
+  if(DEMO) return;
+  if(ES) ES.close();
+  const es=ES=new EventSource('/events?k='+encodeURIComponent(KEY));
+  es.onopen=()=>{if(es===ES){connected=true; connectedAt=Date.now()/1000; here(); keep()}};
+  es.onmessage=m=>{if(es!==ES) return; try{const e=JSON.parse(m.data); if(boot&&e.boot!==boot){location.reload();return} boot=e.boot; if(e.snap){handle(e);return} if(e.seq<=lastSeq)return; lastSeq=e.seq; handle(e)}catch(err){console.error(err)}};
+  es.onerror=()=>{if(es!==ES) return; connected=false; if(es.readyState===2){es.close(); ES=null; setTimeout(start,3000)}};
+}
+function start(){
+  if(DEMO) return;
+  if(claiming) return;
+  if(!KEY){lock(true);return}
+  const n=++authN, k=KEY;
+  fetch('/check?k='+encodeURIComponent(k)).then(r=>{
+    if(n!==authN||k!==KEY) return;
+    if(r.ok){lock(false);connect()}else{try{localStorage.removeItem('liveRoomKey')}catch(err){} KEY=''; lock(true)}
+  }).catch(()=>{if(n===authN) setTimeout(start,3000)});
+}
+/* tell the server a visible room window exists; permission prompts are only held while one does */
+setInterval(here,4000);
+setInterval(keep,240000);                   /* pins are a lease the server lets lapse after 15 min without this */
+/* steady mode has no switch; open the page with ?steady to use it (for screen sharing that flickers) */
+const STEADY=/[?&]steady\b/.test(location.search);
+document.body.classList.toggle('steady',STEADY);
+/* ---------- demo ----------
+   Open the page with ?demo and the room fills with a SYNTHETIC fleet: fictional agents on fictional projects, scripted
+   so that a sample of what the room can show is on screen at once — working, waiting on you, a question, a hand-off,
+   a sub-agent, last words, a search result, and one held permission request that Allow and Deny answer on the page with
+   a scripted outcome (no rendered preview, no summarisation marker). Beyond the page and its icons the window makes no
+   request to the server, reads no logs, uses no key (the saved key is never read in this window), writes no shared
+   storage, asks the browser for nothing and raises no OS notification; the two bar switches work on this page only.
+   It says so in the bar.
+   Nothing here is real; it exists so the room can be seen (and screenshotted) without anyone's sessions in it.
+   DEMO itself is decided at the top of the script, before the key is read, so no credential path runs in a demo window. */
+function demo(){
+  const now=()=>Date.now()/1000; let t=now()-900;
+  KEY=''; APPROVE=false;      /* the two switches work on this page only: presence, decisions and notification permission are all guarded by DEMO */
+  lock(false); connected=true; connectedAt=now()-30; HEALTH={at:now(),now:now(),scan:now(),ready:true,tails:6};
+  setInterval(()=>{HEALTH.at=now(); HEALTH.now=now(); HEALTH.scan=now()},3000);
+  const tag=document.createElement('span'); tag.id='demoTag'; tag.textContent='DEMO · synthetic agents · nothing here is real'; $('#brand').after(tag);
+  const P={orchard:'/Users/demo/Projects/Orchard',lighthouse:'/Users/demo/Projects/Lighthouse',tidewater:'/Users/demo/Projects/Tidewater'};
+  const ag=(id,o)=>handle(Object.assign({kind:'agent',agent:id,ts:t,started:o.started||t},o));
+  const ev=(id,o)=>handle(Object.assign({agent:id,ts:t},o));
+  /* the fleet */
+  ag('c:demo-ada',{name:'Ada',runtime:'Claude',cwd:P.orchard,model:'claude-opus-5-5',branch:'pricing-table',goal:'Add the seasonal pricing table to the catalogue and wire it to checkout.',ctx:61000,ctxref:140000});
+  ag('x:demo-bram',{name:'Bram',runtime:'Codex',cwd:P.orchard,model:'gpt-6-astra',branch:'pricing-table',goal:"Review Ada's pricing change before it ships. Read-only.",ctx:88000,ctxmax:258000});
+  ag('c:demo-cleo',{name:'Cleo',runtime:'Claude',cwd:P.lighthouse,model:'claude-sonnet-5-5',branch:'main',goal:'Find out why the nightly build fails on arm64 and fix it.',ctx:120000,ctxref:140000});
+  ag('c:demo-dov',{name:'Dov',runtime:'Claude',cwd:P.lighthouse,parent:'c:demo-cleo',sub:true,task:'log search',goal:'Search the build logs for the first arm64 failure and report the line.',ctx:14000});
+  ag('x:demo-esme',{name:'Esme',runtime:'Codex',cwd:P.tidewater,model:'gpt-6-astra',branch:'sessions-migration',goal:'Migrate the sessions table to the new schema without downtime.',ctx:150000,ctxmax:258000});
+  ag('c:demo-fen',{name:'Fen',runtime:'Claude',cwd:P.tidewater,model:'claude-opus-5-5',branch:'docs',goal:'Rewrite the onboarding guide for the new CLI.',ctx:42000,ctxref:140000});
+  /* history, so the desks have something to show */
+  for(const [id,g] of [['c:demo-ada','Add the seasonal pricing table to the catalogue and wire it to checkout.'],['x:demo-bram',"Review Ada's pricing change before it ships. Read-only."],['c:demo-cleo','Find out why the nightly build fails on arm64 and fix it.'],['x:demo-esme','Migrate the sessions table to the new schema without downtime.'],['c:demo-fen','Rewrite the onboarding guide for the new CLI.']]){ev(id,{kind:'user',text:g}); t+=20}
+  ev('c:demo-fen',{kind:'read',id:'f1',path:'/Users/demo/Projects/Tidewater/docs/onboarding.md'}); t+=4; ev('c:demo-fen',{kind:'result',id:'f1',text:'# Onboarding\n\nInstall the CLI…'}); t+=30;
+  ev('c:demo-fen',{kind:'edit',id:'f2',path:'/Users/demo/Projects/Tidewater/docs/onboarding.md',before:'Install the CLI with pip.',after:'Install the CLI with `brew install tidewater`.'}); t+=6; ev('c:demo-fen',{kind:'result',id:'f2',text:'ok'}); t+=40;
+  ev('c:demo-fen',{kind:'say',text:'Done. The onboarding guide now covers the brew install, the first login and the three commands people actually use. Three files changed; the docs build passes.'}); t+=2; ev('c:demo-fen',{kind:'turn_end'});
+  ev('x:demo-bram',{kind:'read',id:'b1',path:'/Users/demo/Projects/Orchard/src/pricing/table.ts'}); t+=5; ev('x:demo-bram',{kind:'result',id:'b1',text:'export const seasons = …'}); t+=90;
+  ev('x:demo-bram',{kind:'say',text:'Verdict: GO, with one caveat — the rounding in cents is done after the discount, so a 15% season on $19.99 is $16.9915: the table shows $16.99, but the cart sums the unrounded cents, so four of them come to $67.97 instead of $67.96. Ada should round once, per line.'}); t+=2; ev('x:demo-bram',{kind:'turn_end'});
+  ev('x:demo-esme',{kind:'run',id:'e1',cmd:'psql -c "\\d sessions"',why:'inspect the current schema'}); t+=3; ev('x:demo-esme',{kind:'result',id:'e1',text:'Table "public.sessions" … 14 columns'}); t+=60;
+  ev('x:demo-esme',{kind:'say',text:'The table has 2.1 million rows and no created_at index. Should I migrate the old rows too, or only new ones from the cut-over?'}); t+=2; ev('x:demo-esme',{kind:'turn_end'});
+  ev('c:demo-cleo',{kind:'web',id:'c0',q:'ld: symbol not found _crc32_hw arm64 linker'}); t+=4;
+  ev('c:demo-cleo',{kind:'result',id:'c0',text:'3 results\n\n1. _crc32_hw undefined when CRC fast path is enabled on arm64 — build-notes.example\n   The hardware CRC32 path is only compiled in when the target advertises the crc feature; on arm64 builds without it the symbol is declared but never defined, so the link fails. Workaround: CRC=soft.\n\n2. Why does the nightly link fail only on arm64? — forum.example/q/18842\n   Same error after enabling the crc32 fast path. The x86 build has the SSE4.2 implementation; arm64 needs the +crc target feature or the soft fallback.\n\n3. CRC32 build flags reference — docs.example/build/crc\n   CRC=hw (default where supported), CRC=soft (portable, slower), CRC=auto (probe at configure time).'}); t+=12;
+  ev('c:demo-cleo',{kind:'run',id:'c1',cmd:'make nightly ARCH=arm64',why:'reproduce the failure'}); t+=40; ev('c:demo-cleo',{kind:'result',id:'c1',text:'…\nld: symbol not found: _crc32_hw\nmake: *** [nightly] Error 1',error:true}); t+=8;
+  ev('c:demo-cleo',{kind:'say',text:'The nightly fails at link time on arm64: _crc32_hw is missing. I will have a sub-agent find the first run that failed while I check whether the crc32 fast path was switched on recently.'}); t+=3;
+  ev('c:demo-cleo',{kind:'spawn',id:'c2',name:'log search'}); ev('c:demo-dov',{kind:'user',text:'Search the build logs for the first arm64 failure and report the line.'}); t+=3;
+  ev('c:demo-dov',{kind:'read',id:'d1',path:'/Users/demo/Projects/Lighthouse/build/nightly-2026-10-05.log'}); t+=4; ev('c:demo-dov',{kind:'result',id:'d1',text:'…'}); t+=10;
+  ev('c:demo-cleo',{kind:'say',text:'The symbol comes from the crc32 fast path; building with CRC=soft should link. I need to clear the build directory first, which is why I am asking before I run it.'}); t+=2;
+  ev('c:demo-cleo',{kind:'perm',pid:'demo-c3',tool:'Bash',text:'rm -rf build/ && make nightly ARCH=arm64 CRC=soft'});      /* a held request: with the switch on, Allow and Deny are shown at the desk and answered on the page */
+  ev('c:demo-ada',{kind:'run',id:'a0',cmd:'npm test -- pricing',why:'run the pricing tests'}); t+=12; ev('c:demo-ada',{kind:'result',id:'a0',text:'12 passing, 1 pending'}); t+=5;
+  ev('c:demo-ada',{kind:'say',text:'Twelve passing and one pending: the four-item cart, which is the rounding case Bram flagged. Rounding once per line instead of once at the end.'}); t+=4;
+  /* and the present: Ada works on, Dov reads on, a hand-off goes back to Cleo now and then */
+  let n=0; const files=['src/pricing/table.ts','src/pricing/season.ts','src/checkout/total.ts','test/pricing.test.ts'], logs=['nightly-2026-10-05.log','nightly-2026-10-04.log','nightly-2026-10-03.log'];
+  const ADA=['Moving the round() into season.ts so the table and the checkout share one rounding rule.','The pending test was the four-item cart. Running the pricing suite again with the per-line rounding.','Thirteen passing. Next: wire the table into the checkout total so the cart uses the rounded line prices.','Checkout total now uses the rounded line prices. One more pass over the test names, then I will summarise what changed.'];
+  const tick=()=>{t=now(); n++;
+    if(n%4===3&&(n/4|0)<ADA.length){ev('c:demo-ada',{kind:'say',text:ADA[n/4|0]})}      /* narration as it unfolds: a synthetic line every fourth tick, each once */
+    if(n===7){ev('c:demo-dov',{kind:'say',text:'The 04 run linked fine, so the break is between the 03 and 05 runs. Checking what changed in the crc32 build flags between them.'})}
+    if(n%2){ev('c:demo-ada',{kind:n%4===1?'edit':'run',id:'a'+n,path:'/Users/demo/Projects/Orchard/'+files[n%4],cmd:'npm test -- pricing',why:n%4===1?'':'run the pricing tests',before:'return price * (1 - season.discount);',after:'return round(price * (1 - season.discount));'})}
+    else{ev('c:demo-ada',{kind:'result',id:'a'+(n-1),text:n%4===2?'ok':'13 passing'})}
+    if(n%3===0){ev('c:demo-dov',{kind:'read',id:'d'+n,path:'/Users/demo/Projects/Lighthouse/build/'+logs[(n/3|0)%3]})} else if(n%3===1){ev('c:demo-dov',{kind:'result',id:'d'+(n-1),text:'… [arm64] ld: symbol not found: _crc32_hw'})}
+    if(n%9===4){if(n===4) ev('c:demo-dov',{kind:'say',text:'First arm64 failure is in nightly-2026-10-03.log line 1142: ld: symbol not found: _crc32_hw. It appears after the crc32 fast path was enabled.'}); pulse('c:demo-dov','c:demo-cleo','reported back')}      /* said once; the hand-off pulse recurs */
+  };
+  tick(); setInterval(tick,3500);
+}
+setInterval(render,STEADY?1000:250);
+if(DEMO) demo(); else start();
+</script>
+</body>
+</html>
