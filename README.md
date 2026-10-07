@@ -82,17 +82,17 @@ If you moved the server with `PORT`, run the installer with the same `PORT` and 
 
 This adds Notification, Stop, SubagentStop and PermissionRequest hooks to your Claude Code settings. The first three only tell the room things sooner than the log would. The fourth lets the room answer permission prompts for you, and is off until you switch it on in a window. Read the [trust boundary](#trust-boundary) first.
 
-**Moving around:** two-finger scroll or drag to turn, or the arrow keys. Hover a monitor and it comes to your hand; click it to step up to its desk. Escape, or "Back to the room", to step back.
+**Moving around:** two-finger scroll or drag to turn, or the arrow keys. Hover a monitor and it comes to your hand; click it to step up to its desk. At the desk, the keys 1 to 4 switch the monitor between Saying, Doing, Seeing and Changing, and a sideways scroll over it does the same. Escape, or "Back to the room", to step back.
 
 ## The room, and the desk
 
-<p align="center"><img src="docs/media/demo-room.png" width="1000" alt="Six monitors in a curved row seated in three bays named Lighthouse, Orchard and Tidewater. Along the bottom, a ledge of captions: one agent wants permission, one is between actions, one is working with a sweeping rail, one reported a verdict, one asked a question, one is about to take an action."></p>
+<p align="center"><img src="docs/media/demo-room.png" width="1000" alt="Six monitors in a curved row seated in three bays named Lighthouse, Orchard and Tidewater. Each monitor shows what its agent is saying. Along the bottom, a ledge of captions: one agent wants permission, one is in a turn, one reported a verdict, one asked a question, one is about to take an action."></p>
 <p align="center"><sub><b>The room.</b> One monitor per agent, seated by project. The ledge along the bottom says where each idle agent stopped and shows a sweeping rail for each one that is working.</sub></p>
 
-<p align="center"><img src="docs/media/demo-held.png" width="1000" alt="One monitor brought forward to the centre of the window, facing the camera: an agent named Cleo waiting on you with an Approve banner across its top, a hand-off line, and an Open in Claude button."></p>
+<p align="center"><img src="docs/media/demo-held.png" width="1000" alt="One monitor brought forward to the centre of the window, facing the camera: an agent named Cleo waiting on you, with an Approve banner across its top and, under your last message to her, what she has been saying."></p>
 <p align="center"><sub><b>In hand.</b> Hover and the monitor comes to you and stays put while you turn the camera, showing what the agent is saying under your last message to it. The banner across its top is the permission request it is waiting on; click its tag to open it at the desk.</sub></p>
 
-<p align="center"><img src="docs/media/demo-desk.png" width="1000" alt="The desk for one agent: the agent log on the left grouped under your messages, the agent's screen in the centre on its Saying screen with Doing, Seeing and Changing beside it, your messages and the request it is waiting on, on the right, and a strip of readouts across the bottom: model, approval setting, context in use, project, branch, started by, session created, when you last focused it."></p>
+<p align="center"><img src="docs/media/demo-desk.png" width="1000" alt="The desk for one agent: the timeline of steps and words on the left grouped under your messages, the agent's screen in the centre on its Saying screen with Doing, Seeing and Changing beside it, your messages and the request it is waiting on, on the right, and a strip of readouts across the bottom: model, approval setting, context in use, project, branch, started by, session created, when you last focused it."></p>
 <p align="center"><sub><b>The desk.</b> Everything the log records about one agent: four screens on the monitor, the timeline of steps and words beside it, the chain of command along the top and the readouts along the bottom. In the live room, Allow and Deny send your decision to the waiting agent; in the demo the page scripts the outcome. "Not recorded" means exactly that.</sub></p>
 
 ## How it works
