@@ -6,8 +6,8 @@ identifiers such as ~/.live-room, the X-Live-Room-Key header and the hook marker
 hooks and saved page settings continue to work.)
 
 What it does
-  * Reads the session logs both runtimes already write (~/.claude/projects, ~/.codex/sessions)
-    and streams what it finds to the page.
+  * Reads the session logs the tools already write (~/.claude/projects, ~/.codex/sessions,
+    ~/.cursor/projects/*/agent-transcripts) and streams what it finds to the page.
   * Optionally answers Claude Code permission prompts from the page (Allow / Deny), through the
     PermissionRequest hook that scripts/install_hooks.py adds. That part is NOT read-only.
   * Can ask macOS to open a session in its desktop app.
@@ -53,7 +53,7 @@ AGENTS = {}
 CODES = {}                   # one-time unlock codes: code -> time issued
 KEEP = {}                    # agents windows have pinned: aid -> {window: when it last said so}. Their logs are followed for a day, not 20 min
 KEEP_DAYS, KEEP_LEASE = 1, 15 * 60      # a window re-sends its whole pin list every few minutes; a list not refreshed in 15 min lapses
-AID_RX = re.compile(r'[cx]:[0-9a-f-]{8,64}\Z')
+AID_RX = re.compile(r'[cxk]:[0-9a-f-]{8,64}\Z')   # c claude, x codex, k cursor
 
 
 def count(v):
@@ -101,6 +101,8 @@ def aid_of(path):
     if '/.codex/' in path:
         m = re.search(r'([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$', stem)
         return 'x:' + (m.group(1) if m else stem)
+    if '/.cursor/' in path:
+        return 'k:' + stem
     return 'c:' + (stem.replace('agent-', '') if os.path.basename(os.path.dirname(path)) == 'subagents' else stem)
 
 
@@ -214,7 +216,7 @@ def load_key():
     return k
 
 
-KEY = load_key()
+KEY = ''                       # set in main(); importing this file must not write ~/.live-room
 
 
 def clip(v, cap):
@@ -450,9 +452,6 @@ def unlink(child):
         return a
 
 
-load_links()
-
-
 def ts_of(d):
     try:
         return datetime.fromisoformat(d['timestamp'].replace('Z', '+00:00')).timestamp()
@@ -496,16 +495,179 @@ def is_html(path):
 
 
 # ---------------------------------------------------------------- outward-facing commands (pattern match only)
-RISKS = [
-    ('deploy', re.compile(r"^(?:npx\s+)?(vercel|netlify|wrangler|firebase|flyctl|fly|railway|amplify)\b.*(\bdeploy\b|--prod\b|\bpublish\b)|^(npm|pnpm|yarn)\s+(run\s+)?deploy\b|^terraform\s+apply\b|^kubectl\s+(apply|delete)\b|^(?:npx\s+)?supabase\s+(db\s+push|functions\s+deploy|migration\s+up)\b", re.I | re.S)),
-    ('push', re.compile(r"^git\s+(?:-\S+\s+\S+\s+)*push\b|^gh\s+(pr\s+(create|merge)|release\s+create|repo\s+(create|delete))\b", re.I)),
-    ('publish', re.compile(r"^(npm|pnpm|yarn)\s+publish\b", re.I)),
-    ('delete', re.compile(r"^(?:sudo\s+)?rm\s+(?:-\w+\s+)*-\w*[rR]\w*\s|^(?:sudo\s+)?rm\s+(?:-\w+\s+)*--recursive|^git\s+(?:-\S+\s+\S+\s+)*(reset\s+--hard|clean\s+-\w*f)", re.S)),
-    ('send', re.compile(r"^(sendmail|mailx|mail\s+-s)\b", re.I)),
-]
+# Shipped patterns live in src/watch.json. The Watch button writes ~/.live-room/watch.json as plain
+# words (extra) and which built-ins are off. curl that writes to another host is still judged here.
 MUTATE = re.compile(r"-X\s*(POST|PUT|PATCH|DELETE)\b|\s(--data\S*|-d|--form|-F|--json)\s", re.I)
-TOOL_RISK = re.compile(r"send|publish|deploy|delete|trash|share|merge|post_|create_scheduled|RemoteTrigger", re.I)
 LOCAL_HOSTS = ('127.0.0.1', 'localhost', '::1')
+WATCH_PATH = os.path.join(HERE, 'watch.json')
+USER_WATCH = os.path.join(HOME, '.live-room', 'watch.json')
+RISKS, NEEDS, WATCH_RULES = [], {}, []
+TOOL_RISK = CHECK_RX = re.compile(r'(?!)')
+WATCH_KINDS = ('deploy', 'push', 'publish', 'delete', 'send', 'check', 'action', 'decide')
+RISK_KINDS = ('deploy', 'push', 'publish', 'delete', 'send')
+SAY_KINDS = ('action', 'decide')
+
+
+def _rx(pat, flags, label):
+    if not isinstance(pat, str) or not pat.strip():
+        return None
+    try:
+        return re.compile(pat, flags)
+    except re.error as e:
+        print('watch rule skipped (%s): %s' % (label, e))
+        return None
+
+
+def phrase_pattern(text, kind):
+    """The words a person typed, as a pattern. A command must start with them. A phrase in what an agent
+    said must contain them. Nothing they type is taken as a regular expression."""
+    words = str(text or '').split()
+    if not words or len(' '.join(words)) > 80:
+        return None
+    body = r'\s+'.join(re.escape(w) for w in words)
+    return (r'\b' if kind in SAY_KINDS else '^') + body + r'\b'
+
+
+def _user_watch():
+    try:
+        with open(USER_WATCH, encoding='utf-8') as f:
+            d = json.load(f)
+        return d if isinstance(d, dict) else {}
+    except FileNotFoundError:
+        return {}
+    except Exception as e:
+        print('~/.live-room/watch.json ignored:', type(e).__name__)
+        return {}
+
+
+def _save_user_watch(d):
+    import tempfile
+    os.makedirs(os.path.dirname(USER_WATCH), mode=0o700, exist_ok=True)
+    fd, tmp = tempfile.mkstemp(dir=os.path.dirname(USER_WATCH), prefix='.watch-')
+    try:
+        with os.fdopen(fd, 'w') as f:
+            json.dump(d, f, indent=2)
+            f.write('\n')
+        os.chmod(tmp, 0o600)
+        os.replace(tmp, USER_WATCH)
+    except OSError:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+        raise
+
+
+def _join(parts):
+    parts = [p for p in parts if p]
+    if len(parts) == 1:
+        return parts[0]
+    return '|'.join('(?:%s)' % p for p in parts)
+
+
+def watch_public():
+    return {'action': NEEDS.get('action') or '', 'decide': NEEDS.get('decide') or '', 'rules': WATCH_RULES}
+
+
+def apply_watch(overlay=False):
+    """Compile src/watch.json. A ~/.live-room/watch.json that still contains risks, checks or needsYou
+    replaces those keys (a hand-edited file). extra and off, which the Watch button writes, add plain
+    phrases and switch built-ins off. A pattern that does not compile is skipped."""
+    global RISKS, TOOL_RISK, CHECK_RX, NEEDS, WATCH_RULES
+    try:
+        with open(WATCH_PATH, encoding='utf-8') as f:
+            data = json.load(f)
+    except Exception as e:
+        print('watch.json unreadable:', type(e).__name__)
+        data = {}
+    if not isinstance(data, dict):
+        data = {}
+    extra, off = [], set()
+    if overlay:
+        user = _user_watch()
+        if any(k in user for k in ('risks', 'checks', 'needsYou', 'toolRisk')):
+            data.update({k: v for k, v in user.items() if k not in ('_comment', 'extra', 'off')})
+        extra = [x for x in (user.get('extra') or []) if isinstance(x, dict) and x.get('label') in WATCH_KINDS
+                 and isinstance(x.get('text'), str) and x['text'].strip()]
+        off = {x for x in (user.get('off') or []) if x in WATCH_KINDS}
+    risks = []
+    for item in data.get('risks') or []:
+        if not isinstance(item, dict) or not isinstance(item.get('label'), str):
+            continue
+        label = item['label'].strip()
+        if label in off:
+            continue
+        rx = _rx(item.get('pattern') or phrase_pattern(item.get('text'), label), re.I | re.S, label)
+        if rx:
+            risks.append((label, rx))
+    for item in extra:
+        if item['label'] not in RISK_KINDS:
+            continue
+        rx = _rx(phrase_pattern(item['text'], item['label']), re.I, item['label'])
+        if rx:
+            risks.append((item['label'], rx))
+    RISKS = risks
+    TOOL_RISK = _rx(data.get('toolRisk'), re.I, 'toolRisk') or re.compile(r'(?!)')
+    parts = [data['checks']] if 'check' not in off and isinstance(data.get('checks'), str) else []
+    parts += [phrase_pattern(x['text'], 'check') for x in extra if x['label'] == 'check']
+    joined = _join(parts)
+    CHECK_RX = _rx(joined, re.I, 'checks') if joined else None
+    CHECK_RX = CHECK_RX or re.compile(r'(?!)')
+    needs = data.get('needsYou') if isinstance(data.get('needsYou'), dict) else {}
+    out = {}
+    for k in SAY_KINDS:
+        bits = [needs[k]] if k not in off and isinstance(needs.get(k), str) else []
+        bits += [phrase_pattern(x['text'], k) for x in extra if x['label'] == k]
+        joined = _join(bits)
+        if joined and _rx(joined, re.I, k):
+            out[k] = joined
+    NEEDS = out
+    WATCH_RULES = [{'label': k, 'on': k not in off, 'shipped': True} for k in WATCH_KINDS]
+    for item in extra:
+        WATCH_RULES.append({'label': item['label'], 'text': ' '.join(item['text'].split())[:80], 'shipped': False})
+
+
+def change_watch(op, label, text, on):
+    """Add or remove a plain phrase, or switch a built-in on or off. Writes ~/.live-room/watch.json and
+    returns the list the page shows. None when the edit is not one of those."""
+    if label not in WATCH_KINDS:
+        return None
+    words = ' '.join(str(text or '').split())[:80]
+    user = _user_watch()
+    extra = [x for x in (user.get('extra') or []) if isinstance(x, dict) and x.get('label') in WATCH_KINDS
+             and isinstance(x.get('text'), str) and x['text'].strip()]
+    off = [x for x in (user.get('off') or []) if x in WATCH_KINDS]
+    if op == 'add':
+        if not phrase_pattern(words, label):
+            return None
+        if not any(x['label'] == label and x['text'] == words for x in extra):
+            extra.append({'label': label, 'text': words})
+        extra = extra[-40:]
+    elif op == 'drop':
+        extra = [x for x in extra if not (x['label'] == label and ' '.join(x['text'].split()) == words)]
+    elif op == 'off':
+        if on is True:
+            off = [x for x in off if x != label]
+        elif on is False:
+            if label not in off:
+                off.append(label)
+        else:
+            return None
+    else:
+        return None
+    user['extra'] = extra
+    user['off'] = off
+    try:
+        _save_user_watch(user)
+    except OSError:
+        return None
+    apply_watch(True)
+    view = watch_public()
+    emit('', 'watch', False, action=view['action'], decide=view['decide'], rules=view['rules'])
+    return view
+
+
+apply_watch(False)
 
 
 PREFIX = re.compile(r'^\s*(?:(?:sudo|env|time|nohup|command|exec)\s+|\w+=\S*\s+)*')
@@ -605,7 +767,6 @@ def segments(cmd, depth=0, mark=False, body=False):
 
 
 SQL_RX = re.compile(r"\b(DROP|TRUNCATE)\s+(TABLE|DATABASE)\b|\bDELETE\s+FROM\b", re.I)
-CHECK_RX = re.compile(r"^((npm|pnpm|yarn|bun|npx)\s+(run\s+)?(test|build|lint|typecheck)\b|(npx\s+)?(pytest|vitest|jest|tsc|eslint)\b|python[\d.]*\s+-m\s+pytest\b|(npx\s+)?playwright\s+test\b|cargo\s+(test|build)\b|go\s+test\b)", re.I)
 
 
 def sql_text(seg):
@@ -713,7 +874,9 @@ def match_guess(aid=None):
         held = a.get('maybe') or {}                     # an earlier guess: only a stronger one (the prompt text itself) may replace it
         start = a.get('started') or t0
         key = re.split(r"['\"`\n]", text.strip())[0][:80]
-        tool = 'codex' if child.startswith('x:') else 'claude'
+        tool = {'x:': 'codex', 'c:': 'claude'}.get(child[:2], '')
+        if not tool:
+            continue
         mine = [c for c in calls if c[0] != child and c[3] == tool and not is_ancestor(child, c[0])
                 and USED_GUESS.get(c[:3], child) == child]
         found = None
@@ -764,7 +927,9 @@ def match_launch(aid=None):
             continue
         start = a.get('started') or t0
         key = re.split(r"['\"`\n]", text.strip())[0][:80]
-        tool = 'codex' if child.startswith('x:') else 'claude'
+        tool = {'x:': 'codex', 'c:': 'claude'}.get(child[:2], '')
+        if not tool:
+            continue
         mine = [c for c in calls if c[0] != child and c[3] == tool and not is_ancestor(child, c[0])
                 and USED_LAUNCH.get(c[:3], child) == child]
         found = None
@@ -1745,6 +1910,140 @@ class CodexTail(Tail):
             emit(self.aid, 'beat', False, ts)
 
 
+_MON = {m: i for i, m in enumerate('Jan Feb Mar Apr May Jun Jul Aug Sep Oct Nov Dec'.split(), 1)}
+CURSOR_CWD = {}
+
+
+def cursor_cwd(slug):
+    """Cursor names a project folder by the workspace path with '/' turned into '-'.
+    A hyphen inside a real folder name can be read more than one way, so a path is returned
+    only when exactly one existing directory unfolds to that name. Otherwise the log did not
+    record the folder, and the page is told nothing."""
+    if slug in CURSOR_CWD:
+        return CURSOR_CWD[slug]
+    hits = []
+
+    def walk(so_far, rest):
+        if len(hits) > 1 or not rest:
+            return
+        try:
+            names = os.listdir(so_far or '/')
+        except OSError:
+            return
+        for name in names:
+            path = os.path.join(so_far, name) if so_far else os.path.join('/', name)
+            if rest == name and os.path.isdir(path):
+                hits.append(path)
+            elif rest.startswith(name + '-') and os.path.isdir(path):
+                walk(path, rest[len(name) + 1:])
+    walk('', slug)
+    CURSOR_CWD[slug] = hits[0] if len(hits) == 1 else ''
+    return CURSOR_CWD[slug]
+
+
+def cursor_time(text, fallback):
+    """The clock on a Cursor user message, from its <timestamp> tag. The transcript has no other clock.
+    The zone in the tag is not applied; the clock is read as this machine's local time."""
+    m = re.search(r'<timestamp>[A-Za-z]+, ([A-Za-z]+) (\d{1,2}), (\d{4}), (\d{1,2}):(\d{2}) ([AP]M)', text or '')
+    if not m or m.group(1) not in _MON:
+        return fallback
+    hour = int(m.group(4)) % 12 + (12 if m.group(6) == 'PM' else 0)
+    try:
+        return datetime(int(m.group(3)), _MON[m.group(1)], int(m.group(2)), hour, int(m.group(5))).timestamp()
+    except ValueError:
+        return fallback
+
+
+def cursor_query(text):
+    """What the person typed, when the transcript wrapped it in <user_query>. Anything else in that record
+    (a timestamp, instructions) is not shown as their message."""
+    m = re.search(r'<user_query>\s*(.*?)\s*</user_query>', text or '', re.S)
+    return m.group(1).strip() if m else ''
+
+
+class CursorTail(Tail):
+    """One Cursor agent transcript (~/.cursor/projects/<slug>/agent-transcripts/<id>/<id>.jsonl).
+    The file records the request to run a tool, not the tool's result, so a step is closed as
+    'returned' when the turn ends. It is not marked done, and it is not treated as a confirmed
+    launch of another agent."""
+
+    def __init__(self, path):
+        stem = os.path.basename(path)[:-6]
+        self.aid = 'k:' + stem
+        m = re.search(r'/\.cursor/projects/([^/]+)/', path)
+        cwd = cursor_cwd(m.group(1)) if m else ''
+        describe(self.aid, True, runtime='Cursor', name='Cursor ' + stem[:4], cwd=cwd)
+        self.turn_ts, self.n = None, 0
+        super().__init__(path)
+
+    def close_open(self, old, ts):
+        had = bool(self.calls) or self.turn_ts
+        for cid in list(self.calls):
+            emit(self.aid, 'result', old, ts, id=cid, text='', unknown=True)
+            self.calls.pop(cid, None)
+        if had:
+            emit(self.aid, 'turn_end', old, ts, how='transcript recorded the turn ended; it does not record each tool’s result')
+            self.turn_ts = None
+
+    def handle(self, d, old):
+        if not isinstance(d, dict):
+            return
+        aid = self.aid
+        if d.get('type') == 'turn_ended':
+            self.close_open(old, self.turn_ts or time.time())
+            return
+        msg = as_dict(d.get('message'))
+        blocks = msg.get('content') if isinstance(msg.get('content'), list) else []
+        text = ''.join(shown(b.get('text')) for b in blocks if isinstance(b, dict) and b.get('type') == 'text')
+        if d.get('role') == 'user':
+            ts = cursor_time(text, os.path.getmtime(self.path) if old else time.time())
+            self.close_open(old, ts)
+            q = cursor_query(text)
+            if q:
+                self.turn_ts = ts
+                remember_prompt(aid, q, ts, old)
+                emit(aid, 'user', old, ts, text=q)
+                emit(aid, 'turn_start', old, ts)
+            return
+        if d.get('role') != 'assistant':
+            return
+        ts = self.turn_ts or (os.path.getmtime(self.path) if old else time.time())
+        for b in blocks:
+            if not isinstance(b, dict):
+                continue
+            if b.get('type') == 'text' and shown(b.get('text')).strip():
+                emit(aid, 'say', old, ts, text=shown(b.get('text')).strip())
+            elif b.get('type') == 'tool_use':
+                self.cursor_tool(b, old, ts)
+
+    def cursor_tool(self, b, old, ts):
+        n, i, aid = shown(b.get('name')), as_dict(b.get('input')), self.aid
+        self.n += 1
+        cid = 'k%d' % self.n
+        self.calls[cid] = n
+        path = shown(i.get('path') or i.get('file_path') or i.get('target_notebook'))
+        if n == 'Read':
+            emit(aid, 'read', old, ts, id=cid, path=path)
+        elif n == 'Write':
+            emit(aid, 'write', old, ts, id=cid, path=path, content=i.get('contents') if i.get('contents') is not None else i.get('content'))
+        elif n in ('StrReplace', 'EditNotebook'):
+            emit(aid, 'edit', old, ts, id=cid, path=path, before=i.get('old_string'), after=i.get('new_string'))
+        elif n == 'Shell':
+            cmd = shown(i.get('command'))
+            emit(aid, 'run', old, ts, id=cid, cmd=cmd, why=i.get('description'), alert=risk(cmd), check=is_check(cmd))
+        elif n in ('Grep', 'Glob'):
+            emit(aid, 'search', old, ts, id=cid, q=i.get('pattern') or i.get('glob_pattern'), path=i.get('path') or i.get('target_directory'))
+        elif n in ('WebSearch', 'WebFetch'):
+            emit(aid, 'web', old, ts, id=cid, q=i.get('search_term') or i.get('query') or i.get('url'))
+        elif n == 'Delete':
+            emit(aid, 'tool', old, ts, id=cid, name='Delete', text=path, alert='delete')
+        elif n == 'Task':
+            emit(aid, 'spawn', old, ts, id=cid, name=i.get('description'), text=i.get('prompt'))
+        else:
+            emit(aid, 'tool', old, ts, id=cid, name=n, text=json.dumps(i, ensure_ascii=False)[:1500],
+                 alert='send' if TOOL_RISK.search(n) else '')
+
+
 def drop_agent(aid, tails):
     if aid and not any(getattr(o, 'aid', None) == aid for o in tails.values()):
         AGENTS.pop(aid, None)
@@ -1787,6 +2086,7 @@ def watch():
                 found = [(p, ClaudeTail) for p in glob.glob(HOME + '/.claude/projects/*/*.jsonl')
                          + glob.glob(HOME + '/.claude/projects/*/*/subagents/*.jsonl')]
                 found += [(p, CodexTail) for p in glob.glob(HOME + '/.codex/sessions/*/*/*/*.jsonl')]
+                found += [(p, CursorTail) for p in glob.glob(HOME + '/.cursor/projects/*/agent-transcripts/*/*.jsonl')]
                 bad = 0
                 prune_keep(now)
                 for p, cls in found:
@@ -2112,6 +2412,11 @@ class H(BaseHTTPRequestHandler):
             return self.send(200, KEY.encode())
         if not self.keyed(self.headers.get('X-Live-Room-Key', '')):
             return self.send(403, b'forbidden')
+        if route == '/watch':                       # add or remove a plain phrase, or switch a built-in off
+            view = change_watch(d.get('op'), d.get('label'), d.get('text'), d.get('on'))
+            if view is None:
+                return self.send(400, b'bad watch edit')
+            return self.send(200, json.dumps(view).encode(), 'application/json')
         if route == '/keep':                         # this window's whole pin list, re-sent every few minutes; an empty list clears it
             ids = d.get('ids')
             if not isinstance(ids, list):
@@ -2200,8 +2505,10 @@ class H(BaseHTTPRequestHandler):
             seen.add(aid)
             aid = a['parent']
             a = AGENTS[aid]
-        if not a or not re.fullmatch(r'[cx]:[0-9a-f-]{8,64}', aid):
+        if not a or not re.fullmatch(r'[cxk]:[0-9a-f-]{8,64}', aid):
             return self.send(404, b'unknown agent')
+        if aid[0] == 'k':
+            return self.send(404, b'Cursor does not record a link that opens this chat.')
         if aid[0] == 'x':
             url = 'codex://threads/' + aid[2:]
         else:
@@ -2297,7 +2604,8 @@ class H(BaseHTTPRequestHandler):
                 expired = nxt is not None and nxt < BASE
                 if nxt is None:
                     nxt = BASE
-            out = line({'kind': 'hello', 'agent': '', 'pkey': PKEY, 'window': WINDOW, 'names': project_names()})
+            apply_watch(True)                    # a reload picks up an edit from the Watch button; no restart
+            out = line({'kind': 'hello', 'agent': '', 'pkey': PKEY, 'window': WINDOW, 'names': project_names(), 'watch': watch_public()})
             if expired:
                 self.wfile.write((out + line({'kind': 'gap', 'agent': ''})).encode())
                 self.wfile.flush()
@@ -2351,6 +2659,9 @@ class Server(ThreadingHTTPServer):
 
 
 if __name__ == '__main__':
+    KEY = load_key()
+    load_links()
+    apply_watch(True)
     threading.Thread(target=watch, daemon=True).start()
     print('W.A.T.C.H. on http://127.0.0.1:%d/  — open it and press Unlock (sessions active in the last %d min)' % (PORT, WINDOW // 60))
     Server(('127.0.0.1', PORT), H).serve_forever()

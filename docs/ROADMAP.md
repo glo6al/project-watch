@@ -4,22 +4,31 @@ W.A.T.C.H. is a working study. This lists what exists, what has not been proven,
 
 ## Built
 
-- A room of monitors, one per Claude Code or Codex agent, grouped by family: an agent, the agents it is recorded or inferred to have started, and runs that are only related to it by working in the same folder. Each kind is labelled.
+- A room of monitors, one per Claude Code, Codex or Cursor agent, grouped by family: an agent, the agents it is recorded or inferred to have started, and runs that are only related to it by working in the same folder. Each kind is labelled.
 - One curved row, however many agents there are. The camera stands where it would for five, so the monitors in front of you keep about that size however many there are (measured in a browser for up to twelve, not beyond); the rest of the row curves round out of frame, and you turn to it (two-finger scroll, drag, or the arrow keys). The fleet strip at the top is the map: one chip per project, one lit cell per agent.
 - Per agent: what it has open, edits as diffs, commands and their output, what it said, your messages, and a rendered preview of HTML it writes.
-- A desk view for one agent: a timeline of what it did and said grouped under each of your messages, your messages (click one to scroll the timeline to that point), chain of command (marked where it is inferred), four screens (Saying / Doing / Seeing / Changing), and recorded facts such as model, branch and approval setting.
+- A desk view for one agent: its log grouped under each of your messages, your messages (click one to scroll the log to that point), chain of command (marked where it is inferred), three screens (Doing / Seeing / Changes), and recorded facts such as model, branch and approval setting.
 - Notices when an agent is waiting on you, alerts when a command looks like a deploy, push, delete or send, and a five-minute activity strip coloured by kind of action.
 - Optional: answering Claude Code permission prompts from the desk (off by default), and opening a session in its desktop app.
 - Trackpad gestures in Chrome; a desk layout for tall, narrow screens.
+- The room in a terminal (`src/watch_tty.py`): a read-only board and event tail from the same stream the page reads, with a bell when an agent starts waiting and a one-line count for a status bar. In iTerm2, `--tab` opens the board in a new tab with its own profile, and the board opens one tab per agent with that agent's log (or, with `--split`, one pane per agent in the board's tab); a tab or pane turns amber while its agent waits on you. Not yet reviewed (see below).
+
+Added on 2026-10-05 and reviewed since (reviews six to sixteen; see the README for what is still open):
+
+- **Attention outside the page**: a count of waiting agents in the browser tab title, and an optional system notification when an agent starts waiting on you.
+- **Context gauge**: tokens in use per agent, from the counts both tools log. A bar is drawn only against a reference the log gives: the model's window (Codex), or, for Claude, the size at which that session last summarised itself, which is history, not a limit. A count the log does not state is shown as not recorded.
+- **Summarisation marker**: where a session was summarised and continued, with the sizes when recorded.
+- **Step timing**: how long the current step has run, flagged when far beyond what is usual for that agent.
+- **Stop and SubagentStop hooks**: Claude Code tells the room when it is about to stop. That is provisional, so the room marks the end as "reported by its hook" until the log agrees.
 
 ## Not yet proven
 
 - Allow and Deny have each been seen working once on a real Claude Code permission prompt (held in the room, the click reached Claude; Allow ran the command, Deny stopped it). What the Claude app shows while the room holds a prompt has not been recorded. While answering is on, every Claude session's permission requests wait in the room first.
 - Trackpad gestures have only been tested with synthetic events, not on a real trackpad.
-- The "Open in Claude / Codex" links have not been tested end to end.
-- Every state that reaches the published repository has been through at least one independent review before publication, read-only: no real server start, unlock, hook install or live permission decision is exercised by those reviews. Anything changed after the latest review has not been independently reviewed. Previews are known not to render inside the Claude desktop app's built-in browser pane, which blocks that frame; they render in Chrome.
+- The "Open in Claude / Codex" links have not been tested end to end, or clicked by the author.
+- The terminal view (`src/watch_tty.py`) reads the key and prints log text. It has had one independent review (one HIGH: the key could reach an HTTP proxy; three MEDIUM; ten LOW), and every finding was fixed; the fixes themselves have not been reviewed again. The amber tab and badge have been checked as the codes it writes, not yet seen on a real waiting agent.
+- The sixteenth review, of the files as first published, returned GO without exercising a real server, unlock, hook install or live permission decision. Anything changed after it has not been independently reviewed. Previews are known not to render inside the Claude desktop app's built-in browser pane, which blocks that frame; they render in Chrome.
 - Rendering performance with many agents and large previews has not been measured.
-- Allow and Deny have been seen end to end on a real prompt once each; what the Claude app shows while the room holds a prompt has not been recorded. The "Open in Claude / Codex" links have not been clicked by the author.
 
 ## Known limits
 
@@ -46,14 +55,6 @@ Each action that reaches an agent widens the trust boundary, so each gets what A
 
 ## Next
 
-Built on 2026-10-05 and reviewed since (reviews six to sixteen; see the README for what is still open):
-
-- **Attention outside the page**: a count of waiting agents in the browser tab title, and an optional system notification when an agent starts waiting on you.
-- **Context gauge**: tokens in use per agent, from the counts both tools log. A bar is drawn only against a reference the log gives: the model's window (Codex), or, for Claude, the size at which that session last summarised itself, which is history, not a limit. A count the log does not state is shown as not recorded.
-- **Summarisation marker**: where a session was summarised and continued, with the sizes when recorded.
-- **Step timing**: how long the current step has run, flagged when far beyond what is usual for that agent.
-- **Stop and SubagentStop hooks**: Claude Code tells the room when it is about to stop. That is provisional, so the room marks the end as "reported by its hook" until the log agrees.
-
 Not started, in this order:
 
 1. **Git state per agent**: branch, uncommitted files, commits made this session; also the honest basis for "two agents are editing the same file".
@@ -69,6 +70,6 @@ Not started, in this order:
 - Rendered Markdown, the way HTML is rendered now.
 - A rough running cost per agent (needs your pricing; the logs give tokens only).
 - A room overview that uses the height of portrait screens.
-- Automated tests for the log readers and the command parser.
+- More automated tests for the log readers: the command parser and a Cursor transcript are covered, Claude and Codex logs are not.
 
 Unknown: whether Codex exposes its permission prompts; what each further provider records.

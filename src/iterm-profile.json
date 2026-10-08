@@ -1,0 +1,60 @@
+{
+  "Profiles": [
+    {
+      "Name": "W.A.T.C.H.",
+      "Guid": "project-watch-room",
+      "Badge Text": "",
+      "Background Color": {
+        "Red Component": 0.03529411764705882,
+        "Green Component": 0.050980392156862744,
+        "Blue Component": 0.07450980392156863,
+        "Color Space": "sRGB"
+      },
+      "Foreground Color": {
+        "Red Component": 0.9568627450980393,
+        "Green Component": 0.9686274509803922,
+        "Blue Component": 0.9607843137254902,
+        "Color Space": "sRGB"
+      },
+      "Bold Color": {
+        "Red Component": 0.21176470588235294,
+        "Green Component": 0.8470588235294118,
+        "Blue Component": 0.4745098039215686,
+        "Color Space": "sRGB"
+      },
+      "Cursor Color": {
+        "Red Component": 0.21176470588235294,
+        "Green Component": 0.8470588235294118,
+        "Blue Component": 0.4745098039215686,
+        "Color Space": "sRGB"
+      },
+      "Selection Color": {
+        "Red Component": 0.09019607843137255,
+        "Green Component": 0.12941176470588237,
+        "Blue Component": 0.16862745098039217,
+        "Color Space": "sRGB"
+      },
+      "Selected Text Color": {
+        "Red Component": 0.9568627450980393,
+        "Green Component": 0.9686274509803922,
+        "Blue Component": 0.9607843137254902,
+        "Color Space": "sRGB"
+      },
+      "Use Tab Color": true,
+      "Tab Color": {
+        "Red Component": 0.21176470588235294,
+        "Green Component": 0.8470588235294118,
+        "Blue Component": 0.4745098039215686,
+        "Color Space": "sRGB"
+      },
+      "Badge Color": {
+        "Red Component": 0.21176470588235294,
+        "Green Component": 0.8470588235294118,
+        "Blue Component": 0.4745098039215686,
+        "Color Space": "sRGB",
+        "Alpha Component": 0.35
+      },
+      "Close Sessions On End": false
+    }
+  ]
+}
