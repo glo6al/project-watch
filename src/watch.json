@@ -1,0 +1,31 @@
+{
+  "_comment": "Shipped patterns. Add and remove from the Watch button in the room; that writes ~/.live-room/watch.json as plain words, not patterns. A pattern here that does not compile is skipped. Launch detection is not here, because a loose pattern would invent who started whom.",
+  "risks": [
+    {
+      "label": "deploy",
+      "pattern": "^(?:npx\\s+)?(vercel|netlify|wrangler|firebase|flyctl|fly|railway|amplify)\\b.*(\\bdeploy\\b|--prod\\b|\\bpublish\\b)|^(npm|pnpm|yarn)\\s+(run\\s+)?deploy\\b|^terraform\\s+apply\\b|^kubectl\\s+(apply|delete)\\b|^(?:npx\\s+)?supabase\\s+(db\\s+push|functions\\s+deploy|migration\\s+up)\\b"
+    },
+    {
+      "label": "push",
+      "pattern": "^git\\s+(?:-\\S+\\s+\\S+\\s+)*push\\b|^gh\\s+(pr\\s+(create|merge)|release\\s+create|repo\\s+(create|delete))\\b"
+    },
+    {
+      "label": "publish",
+      "pattern": "^(npm|pnpm|yarn)\\s+publish\\b"
+    },
+    {
+      "label": "delete",
+      "pattern": "^(?:sudo\\s+)?rm\\s+(?:-\\w+\\s+)*-\\w*[rR]\\w*\\s|^(?:sudo\\s+)?rm\\s+(?:-\\w+\\s+)*--recursive|^git\\s+(?:-\\S+\\s+\\S+\\s+)*(reset\\s+--hard|clean\\s+-\\w*f)"
+    },
+    {
+      "label": "send",
+      "pattern": "^(sendmail|mailx|mail\\s+-s)\\b"
+    }
+  ],
+  "toolRisk": "send|publish|deploy|delete|trash|share|merge|post_|create_scheduled|RemoteTrigger",
+  "checks": "^((npm|pnpm|yarn|bun|npx)\\s+(run\\s+)?(test|build|lint|typecheck)\\b|(npx\\s+)?(pytest|vitest|jest|tsc|eslint)\\b|python[\\d.]*\\s+-m\\s+pytest\\b|(npx\\s+)?playwright\\s+test\\b|cargo\\s+(test|build)\\b|go\\s+test\\b)",
+  "needsYou": {
+    "action": "\\b(log ?in|sign ?in|authenticat\\w*|authori[sz]e\\w*|verification code|2fa|captcha|on your end|manually|you(?:'ll| will)? need to|need(?:s)? you to|i can(?:'|no)t|i'm unable|i am unable|paste (?:it|the|your)|enter your)\\b",
+    "decide": "\\?\\s*$|\\b(should i|shall i|want me to|do you want me|would you like me|let me know (?:which|if|whether|what)|your call)\\b"
+  }
+}

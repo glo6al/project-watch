@@ -4,10 +4,10 @@ W.A.T.C.H. is a working study. This lists what exists, what has not been proven,
 
 ## Built
 
-- A room of monitors, one per Claude Code or Codex agent, grouped by family: an agent, the agents it is recorded or inferred to have started, and runs that are only related to it by working in the same folder. Each kind is labelled.
+- A room of monitors, one per Claude Code, Codex or Cursor agent, grouped by family: an agent, the agents it is recorded or inferred to have started, and runs that are only related to it by working in the same folder. Each kind is labelled.
 - One curved row, however many agents there are. The camera stands where it would for five, so the monitors in front of you keep about that size however many there are (measured in a browser for up to twelve, not beyond); the rest of the row curves round out of frame, and you turn to it (two-finger scroll, drag, or the arrow keys). The fleet strip at the top is the map: one chip per project, one lit cell per agent.
 - Per agent: what it has open, edits as diffs, commands and their output, what it said, your messages, and a rendered preview of HTML it writes.
-- A desk view for one agent: a timeline of what it did and said grouped under each of your messages, your messages (click one to scroll the timeline to that point), chain of command (marked where it is inferred), four screens (Saying / Doing / Seeing / Changing), and recorded facts such as model, branch and approval setting.
+- A desk view for one agent: its log grouped under each of your messages, your messages (click one to scroll the log to that point), chain of command (marked where it is inferred), three screens (Doing / Seeing / Changes), and recorded facts such as model, branch and approval setting.
 - Notices when an agent is waiting on you, alerts when a command looks like a deploy, push, delete or send, and a five-minute activity strip coloured by kind of action.
 - Optional: answering Claude Code permission prompts from the desk (off by default), and opening a session in its desktop app.
 - Trackpad gestures in Chrome; a desk layout for tall, narrow screens.
@@ -17,7 +17,7 @@ W.A.T.C.H. is a working study. This lists what exists, what has not been proven,
 - Allow and Deny have each been seen working once on a real Claude Code permission prompt (held in the room, the click reached Claude; Allow ran the command, Deny stopped it). What the Claude app shows while the room holds a prompt has not been recorded. While answering is on, every Claude session's permission requests wait in the room first.
 - Trackpad gestures have only been tested with synthetic events, not on a real trackpad.
 - The "Open in Claude / Codex" links have not been tested end to end.
-- Every state that reaches the published repository has been through at least one independent review before publication, read-only: no real server start, unlock, hook install or live permission decision is exercised by those reviews. Anything changed after the latest review has not been independently reviewed. Previews are known not to render inside the Claude desktop app's built-in browser pane, which blocks that frame; they render in Chrome.
+- The sixteenth review, of the files as first published, returned GO without exercising a real server, unlock, hook install or live permission decision. Anything changed after it has not been independently reviewed. Previews are known not to render inside the Claude desktop app's built-in browser pane, which blocks that frame; they render in Chrome.
 - Rendering performance with many agents and large previews has not been measured.
 - Allow and Deny have been seen end to end on a real prompt once each; what the Claude app shows while the room holds a prompt has not been recorded. The "Open in Claude / Codex" links have not been clicked by the author.
 

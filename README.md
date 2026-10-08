@@ -10,7 +10,7 @@
 </p>
 
 <p align="center">
-  <a href="LICENSE"><img alt="License: PolyForm Noncommercial 1.0.0" src="https://img.shields.io/badge/license-PolyForm_Noncommercial_1.0.0-36D879?style=flat-square"></a> <a href="COMMERCIAL.md"><img alt="Commercial license available" src="https://img.shields.io/badge/commercial-license_available-36D879?style=flat-square"></a> <img alt="Platform: macOS" src="https://img.shields.io/badge/platform-macOS-informational?style=flat-square"> <img alt="Python 3.9 or later, standard library only" src="https://img.shields.io/badge/python-3.9%2B_%C2%B7_standard_library_only-informational?style=flat-square"> <img alt="Reads Claude Code and Codex CLI session logs" src="https://img.shields.io/badge/reads-Claude_Code_%C2%B7_Codex_CLI-informational?style=flat-square"> <a href="#status"><img alt="Status: working study" src="https://img.shields.io/badge/status-working_study-orange?style=flat-square"></a>
+  <a href="LICENSE"><img alt="License: PolyForm Noncommercial 1.0.0" src="https://img.shields.io/badge/license-PolyForm_Noncommercial_1.0.0-36D879?style=flat-square"></a> <a href="COMMERCIAL.md"><img alt="Commercial license available" src="https://img.shields.io/badge/commercial-license_available-36D879?style=flat-square"></a> <img alt="Platform: macOS" src="https://img.shields.io/badge/platform-macOS-informational?style=flat-square"> <img alt="Python 3.9 or later, standard library only" src="https://img.shields.io/badge/python-3.9%2B_%C2%B7_standard_library_only-informational?style=flat-square"> <img alt="Reads Claude Code, Codex CLI and Cursor session logs" src="https://img.shields.io/badge/reads-Claude_Code_%C2%B7_Codex_%C2%B7_Cursor-informational?style=flat-square"> <a href="#status"><img alt="Status: working study" src="https://img.shields.io/badge/status-working_study-orange?style=flat-square"></a>
 </p>
 
 <p align="center">
@@ -18,7 +18,7 @@
 </p>
 
 <p align="center">
-  <img src="docs/media/watch-demo.gif" width="1000" alt="The room: a curved row of monitors, one per agent, grouped by project, each showing what its agent is saying as it works. One monitor is picked up, then opened into a desk with its timeline, its screens and its readouts; a held permission request is answered with Allow and the agent carries on. In the demo the outcome is scripted and nothing is sent.">
+  <img src="docs/media/watch-demo.gif" width="1000" alt="The room: a curved row of monitors, one per agent, grouped by project. One monitor is picked up, then opened into a desk with the agent's log, the permission request it is waiting on (to be answered in the Claude app) and its readouts.">
 </p>
 
 > **Early.** macOS. Python 3 standard library, no dependencies, one HTML page. Watching is safe to try today; read the [trust boundary](#trust-boundary) before switching on anything that answers prompts.
@@ -35,7 +35,7 @@ Today it watches, and does one thing more: with the hooks installed and a window
 
 Everything on screen comes from the two tools' own records: their session logs, the messages the optional hooks send, and the apps' metadata files (session titles, settings, when you last focused a session). Rendered previews are read from disk at the moment they are shown. Each item is labelled by how it got there.
 
-- **Per agent, as it happens:** what it is saying, as the log records each message; the file it has open, edits shown as diffs, commands and their output; your messages to it; and a rendered preview of any HTML it writes. In the room and in hand, a monitor shows the narration with your last message to that agent pinned above it in one line, so you know what you asked without stepping up.
+- **Per agent, as it happens:** the file it has open, edits shown as diffs, commands and their output, what it said, your messages to it, and a rendered preview of any HTML it writes.
 - **Who is waiting on you**, and for what: a permission prompt, a question, a plan to approve. These are recorded facts, from the log or from a hook message, shown with the request text.
 - **Who is working**, with the step that is open, for as long as the turn runs.
 - **Who stopped, and where:** an idle monitor carries a caption with the agent's last words, a failed last step, or the request it is waiting on.
@@ -45,7 +45,7 @@ Everything on screen comes from the two tools' own records: their session logs, 
 - **Alerts** when a command looks like a deploy, a push, a delete or a send, from a small shell-aware parser.
 - **Readouts** the log states: model, branch, approval setting, context in use, when the session began, when you last spoke to it.
 
-The desk for one agent has four screens on its monitor, Saying, Doing, Seeing and Changing, and you land on the one you were reading. Beside it, a timeline of what the agent did and said, in order, grouped under each of your messages, with each turn's end marked; click a step to see it on the monitor, or a said line to open it on the Saying screen. Then the other agents at a glance and a five-minute activity strip coloured by kind of action.
+The desk for one agent adds its log grouped under each of your messages, three screens (Doing, Seeing, Changes), the other agents at a glance, and a five-minute activity strip coloured by kind of action.
 
 ## What you cannot see
 
@@ -68,9 +68,9 @@ git clone https://github.com/glo6al/project-watch.git && cd project-watch
 python3 src/server.py
 ```
 
-Then open <http://127.0.0.1:8793/> and press **Unlock**. The server asks your default browser to open a new, unlocked tab, and the room fills with whatever Claude Code or Codex sessions have been active in the last twenty minutes (`WINDOW_MIN` to change that, `PORT` to move it).
+Then open <http://127.0.0.1:8793/> and press **Unlock**. The server asks your default browser to open a new, unlocked tab, and the room fills with whatever Claude Code, Codex or Cursor sessions have been active in the last twenty minutes (`WINDOW_MIN` to change that, `PORT` to move it).
 
-**No sessions of your own?** Open <http://127.0.0.1:8793/?demo>. A synthetic fleet of fictional agents on fictional projects plays through a sample of what the room can show: working, waiting on you, a question, a hand-off, a sub-agent, last words. One agent holds a permission request you can answer on the page: click its APPROVE tag, then Allow or Deny, and a scripted outcome follows; nothing is sent anywhere, and the switches in the bar work on the page only. There is no rendered preview and no summarisation marker. The demo page reads no logs and needs no key, and the bar says so. The server behind it is the ordinary one: it still creates its key and follows your real logs in the background, because it is the same process; after loading its page and icons, the demo makes no live-data or action requests to it, and it keeps its own project names rather than this browser's.
+**No sessions of your own?** Open <http://127.0.0.1:8793/?demo>. A synthetic fleet of fictional agents on fictional projects plays through a sample of what the room can show: working, waiting on you, a question, a hand-off, a sub-agent, last words. It has no held permission request, no rendered preview and no summarisation marker. The demo page reads no logs and needs no key, and the bar says so. The server behind it is the ordinary one: it still creates its key and follows your real logs in the background, because it is the same process; after loading its page and icons, the demo makes no live-data or action requests to it, and it keeps its own project names rather than this browser's.
 
 **Optional hooks** (Claude Code only). In a second terminal, while the server is running:
 
@@ -82,27 +82,28 @@ If you moved the server with `PORT`, run the installer with the same `PORT` and 
 
 This adds Notification, Stop, SubagentStop and PermissionRequest hooks to your Claude Code settings. The first three only tell the room things sooner than the log would. The fourth lets the room answer permission prompts for you, and is off until you switch it on in a window. Read the [trust boundary](#trust-boundary) first.
 
-**Moving around:** two-finger scroll or drag to turn, or the arrow keys. Hover a monitor and it comes to your hand; click it to step up to its desk. At the desk, the keys 1 to 4 switch the monitor between Saying, Doing, Seeing and Changing, and a sideways scroll over it does the same. Escape, or "Back to the room", to step back.
+**Moving around:** two-finger scroll or drag to turn, or the arrow keys. Hover a monitor and it comes to your hand; click it to step up to its desk. Escape, or "Back to the room", to step back.
 
 ## The room, and the desk
 
-<p align="center"><img src="docs/media/demo-room.png" width="1000" alt="Six monitors in a curved row seated in three bays named Lighthouse, Orchard and Tidewater. Each monitor shows what its agent is saying. Along the bottom, a ledge of captions: one agent wants permission, one is in a turn, one reported a verdict, one asked a question, one is about to take an action."></p>
+<p align="center"><img src="docs/media/demo-room.png" width="1000" alt="Six monitors in a curved row seated in three bays named Lighthouse, Orchard and Tidewater. Along the bottom, a ledge of captions: one agent wants permission, one is between actions, one is working with a sweeping rail, one reported a verdict, one asked a question, one is about to take an action."></p>
 <p align="center"><sub><b>The room.</b> One monitor per agent, seated by project. The ledge along the bottom says where each idle agent stopped and shows a sweeping rail for each one that is working.</sub></p>
 
-<p align="center"><img src="docs/media/demo-held.png" width="1000" alt="One monitor brought forward to the centre of the window, facing the camera: an agent named Cleo waiting on you, with an Approve banner across its top and, under your last message to her, what she has been saying."></p>
-<p align="center"><sub><b>In hand.</b> Hover and the monitor comes to you and stays put while you turn the camera, showing what the agent is saying under your last message to it. The banner across its top is the permission request it is waiting on; click its tag to open it at the desk.</sub></p>
+<p align="center"><img src="docs/media/demo-held.png" width="1000" alt="One monitor brought forward to the centre of the window, facing the camera: an agent named Cleo waiting on you with an Approve banner across its top, a hand-off line, and an Open in Claude button."></p>
+<p align="center"><sub><b>In hand.</b> Hover and the monitor comes to you and stays put while you turn the camera. The banner across its top is the permission request it is waiting on; in the demo it is a notification, to be answered in the Claude app.</sub></p>
 
-<p align="center"><img src="docs/media/demo-desk.png" width="1000" alt="The desk for one agent: the timeline of steps and words on the left grouped under your messages, the agent's screen in the centre on its Saying screen with Doing, Seeing and Changing beside it, your messages and the request it is waiting on, on the right, and a strip of readouts across the bottom: model, approval setting, context in use, project, branch, started by, session created, when you last focused it."></p>
-<p align="center"><sub><b>The desk.</b> Everything the log records about one agent: four screens on the monitor, the timeline of steps and words beside it, the chain of command along the top and the readouts along the bottom. In the live room, Allow and Deny send your decision to the waiting agent; in the demo the page scripts the outcome. "Not recorded" means exactly that.</sub></p>
+<p align="center"><img src="docs/media/demo-desk.png" width="1000" alt="The desk for one agent: the agent log on the left grouped under your messages, the agent's screen in the centre with Doing, Seeing and Changes tabs, your messages and the request it is waiting on, on the right, and a strip of readouts across the bottom: model, approval setting, context in use, project, branch, started by, session created, when you last focused it."></p>
+<p align="center"><sub><b>The desk.</b> Everything the log records about one agent, with the chain of command along the top and the readouts along the bottom. "Not recorded" means exactly that.</sub></p>
 
 ## How it works
 
-- **The server** (`src/server.py`, one file, standard library only) follows `~/.claude/projects/**.jsonl` and `~/.codex/sessions/**.jsonl`, turns each record into an event, and streams events to the page over server-sent events on 127.0.0.1. It listens on loopback only, talks to nothing but your browser, and reports nothing anywhere. Rendered previews are the one place agent-written code runs; the trust boundary below says what they can and cannot reach.
+- **The server** (`src/server.py`, one file, standard library only) follows `~/.claude/projects/**.jsonl`, `~/.codex/sessions/**.jsonl` and `~/.cursor/projects/*/agent-transcripts/*/*.jsonl`, turns each record into an event, and streams events to the page over server-sent events on 127.0.0.1. A Cursor transcript records the request to run a tool, not the tool's result, so those steps are shown as returned when the turn ends, not as done. It records no link that opens the chat. It listens on loopback only, talks to nothing but your browser, and reports nothing anywhere. Rendered previews are the one place agent-written code runs; the trust boundary below says what they can and cannot reach.
 - **The page** (`src/web/index.html`, one file, no build step) draws the room with CSS 3D transforms. The camera stands where it would for five monitors and never backs away, so the monitors in front of you stay readable however many agents there are; the rest of the row curves out of frame and you turn to it. The fleet strip at the top is the map: one chip per project, one lit cell per agent.
 - **The hooks** (`scripts/install_hooks.py`) are small shell commands Claude Code runs at Notification, Stop, SubagentStop and PermissionRequest. They post to the server with the key from a private header file.
 - **Everything in a log is treated as untrusted.** An agent can write anything into its own transcript. Counts are validated and text is escaped before it reaches the page, and the page's script runs under a per-request nonce so that nothing arriving as data can run even where an escape is missed.
 - **Faces:** each monitor's avatar is a machine head drawn from the session id, so an agent looks the same every day. Its visor light only repeats what the monitor border says: scanning while a step is open, steady while the agent waits on you, dim between steps, dark when the log is silent. It has no expressions, because the logs record none.
 - **Project names:** a folder can be shown under another name by listing it in `~/.live-room/projects.json` as `{"folder name": "shown as"}`, read when a window connects. Double-clicking a chip sets a name for that browser only. Neither is in the public files.
+- **What counts as a risk, a check, or "probably needs you"** is the Watch button in the console. You type the words (`git push`, `make test`, `want me to commit`) and pick what they mean. The built-in ones switch off with a checkbox. The words are kept in `~/.live-room/watch.json`; the shipped patterns stay in `src/watch.json`. Who started whom is not in either file.
 - **Links between agents**, once made, are kept in `~/.live-room/links.json` (agent ids, the parent, a one-line reason, and whether it was recorded or inferred; never prompt text or folders) and restored at start-up. A recorded link replaces an inferred one; an inferred one never replaces anything; a stored link is dropped after thirty days without the child being seen. "Unlink" at the desk drops a stored inferred link.
 
 ## Trust boundary
@@ -126,7 +127,9 @@ Early, and in daily use by its author. Every change that touches the key, the ho
 ## Project layout
 
     src/server.py            the server: follows the logs, serves the page, holds permission prompts
+    src/watch.json           deploy, push, delete, send, checks, and "probably needs you"
     src/web/index.html       the room (one page, no build step)
+    tests/test_parsers.py    the shell parser, watch.json, and one Cursor transcript
     scripts/install_hooks.py adds or removes the Claude Code hooks
     docs/ROADMAP.md          what is planned and what is unproven
     docs/media/              the images in this file, all from demo mode
