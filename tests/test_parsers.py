@@ -106,10 +106,35 @@ def test_cursor_transcript():
     check('goal', server.AGENTS[tail.aid].get('goal') == 'fix the door')
 
 
+def test_terminal_text():
+    import urllib.request
+    import watch_tty as w
+    check('escapes stripped', '\x1b' not in w.clean('a\x1b]0;pwned\x07b\x9b2J'))
+    check('clipped', len(w.clean('x' * 200, 10)) == 10)
+    check('lone surrogate stripped', '\ud800' not in w.clean('hi \ud800'))
+    check('bidi and zero-width stripped', w.clean('a\u202eb\u200bc\ufeff').replace(' ', '') == 'abc')
+    check('no proxy for the key', not any(isinstance(h, urllib.request.ProxyHandler) and h.proxies for h in w.NO_PROXY.handlers))
+    check('agent id checked', not w.AID_RX.match('c:12345678\n') and w.AID_RX.match('c:1234abcd-0000'))
+
+    def agent(*events):
+        a = {'turn': '', 'wait': '', 'perms': set(), 'calls': set(), 'asks': set()}
+        for e in events:
+            w.track(a, e)
+        return w.state(a)
+    perm = {'kind': 'perm', 'pid': 'p1'}
+    check('a result elsewhere leaves a permission open', agent(perm, {'kind': 'result', 'id': 'other'}).startswith('WAITING'))
+    check('its own end closes it', not agent(perm, {'kind': 'perm_end', 'pid': 'p1'}).startswith('WAITING'))
+    q = {'kind': 'waiting', 'sticky': True, 'qid': 'q1'}
+    check('a Codex question outlives its next step', agent(q, {'kind': 'run'}).startswith('WAITING'))
+    check('withdrawn when the log says so', agent(q, {'kind': 'unask', 'qid': 'q1'}) == '')
+    check('a notification clears when the log moves on', agent({'kind': 'waiting', 'why': 'idle'}, {'kind': 'run'}) == 'working')
+    check('a question waits for its own answer', agent({'kind': 'ask', 'id': 'a1'}, {'kind': 'result', 'id': 'x'}).startswith('WAITING'))
+
 if __name__ == '__main__':
     test_import_is_quiet()
     test_shell()
     test_user_file_replaces_a_key()
     test_plain_words()
     test_cursor_transcript()
+    test_terminal_text()
     print('all ok')

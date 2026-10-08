@@ -84,6 +84,18 @@ This adds Notification, Stop, SubagentStop and PermissionRequest hooks to your C
 
 **Moving around:** two-finger scroll or drag to turn, or the arrow keys. Hover a monitor and it comes to your hand; click it to step up to its desk. Escape, or "Back to the room", to step back.
 
+**In a terminal instead.** With the server running, in another terminal:
+
+```bash
+python3 src/watch_tty.py            # a board: one row per agent, those waiting on you first
+python3 src/watch_tty.py --tail     # one line per event, to read or grep
+python3 src/watch_tty.py --once     # one line such as "2 waiting · 3 working", for a tmux or prompt status bar
+python3 src/watch_tty.py --tab      # iTerm2: the board in a new window, then one tab per agent, each with its own log
+python3 src/watch_tty.py --split    # iTerm2: the same in one tab, the board on top and each agent in a pane below
+```
+
+The board and the tail ring the terminal bell when an agent starts waiting on you. In iTerm2 an agent's tab or pane is titled with its name and project and turns amber while it waits on you, and the board's tab shows a "2 waiting" badge. The board opens a tab for each agent active in the server's window, and for each new one as it appears, without taking the focus; a view you close stays closed. Panes halve the largest one as agents arrive, and a tab too small to split again gets a new tab. Each view is one of the twelve connections the server allows, browser windows included, so the board opens at most six and says how many it left out; a view the server turns away waits for a free connection for up to a minute. Run one board at a time: a second one can take the connections your browser window needs. `--tab` copies `src/iterm-profile.json` to `~/Library/Application Support/iTerm2/DynamicProfiles/project-watch.json`, replacing any earlier copy, and the first time, macOS asks whether your terminal may control iTerm2. The terminal reads the same stream as the page, with the same key, and it only watches: it cannot answer a prompt. Use the same `PORT` as the server.
+
 ## The room, and the desk
 
 <p align="center"><img src="docs/media/demo-room.png" width="1000" alt="Six monitors in a curved row seated in three bays named Lighthouse, Orchard and Tidewater. Along the bottom, a ledge of captions: one agent wants permission, one is between actions, one is working with a sweeping rail, one reported a verdict, one asked a question, one is about to take an action."></p>
@@ -118,6 +130,7 @@ Read this before relying on Allow / Deny.
 - **Answering prompts is off by default.** It is switched on per window ("Answer prompts here"). A prompt is held only while such a window is visible and has checked in within ~12 seconds, only if the request is short enough to be shown in one scrolling panel (up to 20,000 characters and 600 lines; you may still have to scroll to read all of it), for at most one minute. An agent's question to you is never held, because Allow or Deny cannot answer it. Otherwise the hook returns no decision. (The hook's own timeouts are longer, about five and a half minutes: if the server itself stalls while holding a request, Claude may wait that long, not one minute.) While answering is on, every Claude session's permission requests wait here first, including sessions you are not watching. What Claude does with no decision is Claude's business: normally it asks in the app, but a context that cannot show a prompt may deny.
 - Allow and Deny exist only in a window with answering switched on, while that one request is the thing on the agent's screen with no panel over it. Each request gets its own pair of buttons, which ignore clicks for the first half second. The hook prints an answer only if it arrived whole. curl is told to ignore proxies and `~/.curlrc`. Prompts that reach the room only as a notification (sandbox network access, for example) are shown with "answer it in the app" and cannot be answered here.
 - Rendered previews: an HTML file is served only if an agent's successful write was seen for it, it is a regular file reached without symlinks, it is outside private folders, and it is still the same file. Beside such a page, styles, scripts, images and fonts in the same folder tree are served, opened one path component at a time with symlinks refused, from the same folder (by identity) that was granted. Previews run sandboxed under a content policy that blocks other origins. That limits what a preview can fetch; it is not a guarantee that nothing can leave the machine.
+- The terminal view reads the key from `~/.live-room/key` and connects only to 127.0.0.1, ignoring any proxy setting, so the key in its query string never reaches a proxy. Log text is stripped of control, format and bidi characters before it is printed, so an agent cannot send escape sequences to your terminal, or reorder what it shows, through its own log. It has no Allow or Deny. `--tab` and `--split` install only the profile's colours and names: a profile file holding anything else (a command or a trigger) is refused.
 - Unlocking opens a private file holding a one-time code (good for two minutes, then deleted; leftovers are removed at start), which the page trades for the key. Anything on this machine can still ask for an unlock tab to be opened, at most once a minute.
 
 ## Status
@@ -129,7 +142,9 @@ Early, and in daily use by its author. Every change that touches the key, the ho
     src/server.py            the server: follows the logs, serves the page, holds permission prompts
     src/watch.json           deploy, push, delete, send, checks, and "probably needs you"
     src/web/index.html       the room (one page, no build step)
-    tests/test_parsers.py    the shell parser, watch.json, and one Cursor transcript
+    src/watch_tty.py         the room in a terminal: board, tail, or a one-line count
+    src/iterm-profile.json   the iTerm2 profile watch_tty.py --tab installs
+    tests/test_parsers.py    the shell parser, watch.json, one Cursor transcript, terminal escaping (run on every push)
     scripts/install_hooks.py adds or removes the Claude Code hooks
     docs/ROADMAP.md          what is planned and what is unproven
     docs/media/              the images in this file, all from demo mode
