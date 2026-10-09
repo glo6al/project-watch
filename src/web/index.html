@@ -65,7 +65,9 @@ code,pre{font:12.5px/1.5 ui-monospace,Menlo,monospace}
 #watchMini .mh{padding:8px 10px;display:flex;gap:10px;align-items:center}#watchMini .mh .av{width:22px;height:22px;border-radius:4px;background:#1b2230;border:1px solid #2a3340;flex:none}
 #watchMini .mh b{color:#ff7bd1;display:block}#watchMini .mh span{color:#d7dbe4;font-size:12px}
 #watchMini .mb{padding:4px 10px 10px;font:11px/1.5 ui-monospace,Menlo,monospace;color:#9aa4b2;white-space:pre-wrap;word-break:break-word}#watchMini .mb .c{color:#d7dbe4}#watchMini .mb .al{color:var(--del);font-weight:700;margin-left:6px}#watchMini .mb .q{font:13px/1.4 -apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-serif;color:#eef2f7}
-#watchAs{display:flex;flex-wrap:wrap;gap:4px;align-items:center}#watchAs.busy .wch{opacity:.5;cursor:progress}#watchAs .grp{font:600 10px ui-monospace,Menlo,monospace;letter-spacing:.1em;text-transform:uppercase;color:#4f7590;margin:0 2px 0 6px}#watchAs .grp:first-child{margin-left:0}
+#watchAs{display:flex;flex-direction:column;gap:6px}#watchAs.busy .wch{opacity:.5;cursor:progress}
+#watchAs .grow{display:flex;flex-wrap:wrap;gap:4px;align-items:center}      /* one row per group: a command, something it says, neither */
+#watchAs .grp{font:600 10px ui-monospace,Menlo,monospace;letter-spacing:.1em;text-transform:uppercase;color:#4f7590;margin-right:4px;white-space:nowrap}
 #watchP .wch{font:600 11px ui-monospace,Menlo,monospace;letter-spacing:.1em;text-transform:uppercase;color:#7fa6c2;background:#0d1a2b;border:1px solid #1f3a52;border-radius:3px;padding:3px 9px;cursor:pointer}
 #watchP .wch:hover{border-color:var(--hl)}#watchP .wch.on{color:#04121c;background:var(--hl);border-color:var(--hl)}
 #watchSaved{margin-top:8px;padding:6px 9px;border-left:2px solid var(--add);background:#0d1a2b;border-radius:0 3px 3px 0;font-size:12.5px;color:var(--ink)}#watchSaved.off{border-left-color:#4f7590}#watchSaved button{all:unset;cursor:pointer;color:var(--hl);margin-left:8px}
@@ -898,7 +900,7 @@ function paintMini(text,v){
   if(v.unknown){hid(as,true); hid(ask,true); return}      /* nothing to teach against until the room has answered */
   const cur=(sentence?v.said:v.command)||'none';
   const chip=k=>`<button type="button" class="wch${k===cur?' on':''}" data-as="${esc(k)}" title="${k===cur?'what it is now':k==='none'?'remove your rule for these words':'teach the room: these words mean '+esc(WATCH_NAME[k]||k)}">${esc(k==='action'?'needs you':k==='decide'?'asking you':k==='none'?'no tag':k)}</button>`;
-  put(as,`<span class="grp">as a command</span>`+CMD_KINDS.map(chip).join('')+`<span class="grp">as something it says</span>`+['action','decide'].map(chip).join('')+chip('none'));
+  put(as,`<div class="grow"><span class="grp">as a command</span>`+CMD_KINDS.map(chip).join('')+`</div><div class="grow"><span class="grp">as something it says</span>`+['action','decide'].map(chip).join('')+`</div><div class="grow"><span class="grp">or neither</span>`+chip('none')+`</div>`);
   hid(as,false); hid(ask,false);
 }
 function paintWatch(){
