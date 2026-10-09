@@ -581,7 +581,7 @@ function peekFit(id){
   /* in your hand it faces you squarely, whichever way its seat points and wherever the camera is looking: the seat's
      own turn is replaced by the camera's undone */
   const pre=`translate3d(${(vx/L*d).toFixed(1)}px,${(vy/L*d).toFixed(1)}px,${(vz/L*d).toFixed(1)}px) `, base=`translate3d(${q.x}px,${q.y}px,${q.z}px) rotateY(${(-cam.yaw).toFixed(2)}deg) rotateX(${(-cam.tilt).toFixed(2)}deg)`+(sure(id)?' translateZ(150px)':'');
-  const f=Math.max(.4,Math.min(kid?3:2.2,Math.min(innerWidth*.40,(innerHeight-90)*.68*r0.width/r0.height)/r0.width));      /* the same size in hand wherever it sat: about two fifths of the window wide, smaller if it was nearer than that */
+  const f=Math.max(.4,Math.min(innerWidth*.40,(innerHeight-90)*.68*r0.width/r0.height)/r0.width);      /* the same size in hand wherever it sat and whatever it is, parent or sub-agent, near seat or far: about two fifths of the window wide, or what the height allows */
   const was=el.style.transform, wt=el.style.transition; el.style.transition='none';
   const probe=t=>{el.style.transform=pre+base+t; return el.getBoundingClientRect()};
   const r1=probe(` scale(${cur})`), sc=cur*f*r0.width/Math.max(1,r1.width);                          /* cancel what coming forward added */
