@@ -52,17 +52,37 @@ code,pre{font:12.5px/1.5 ui-monospace,Menlo,monospace}
 #hud .ic b{font-weight:600}
 #helpW,#watchW{position:relative}
 #help{width:28px;padding:5px 0;text-align:center;color:#4f7590}
-#watchP{position:absolute;right:0;top:36px;width:380px;padding:10px 12px;background:var(--hbg);border:1px solid var(--hl);z-index:12;text-transform:none;letter-spacing:0;font:13px/1.4 system-ui;color:var(--ink)}
-#watchP form{display:flex;flex-wrap:wrap;gap:6px;margin:0 0 8px}
-#watchP select,#watchP form input{font:inherit;color:var(--ink);background:#0d1a2b;border:1px solid #1f3a52;border-radius:3px;padding:4px 6px;text-transform:none;letter-spacing:0}
-#watchP select{flex:1 1 100%}
-#watchP form input{flex:1;min-width:0}
-#watchP button{text-transform:none;letter-spacing:0;padding:4px 8px}
-#watchList{display:flex;flex-direction:column;gap:4px;max-height:280px;overflow:auto}
-#watchList label,#watchList .row{display:flex;gap:8px;align-items:center;justify-content:flex-start;min-width:0;max-width:100%}
-#watchList .row b{font-weight:600;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-#watchList input{flex:none;width:16px;height:16px;margin:0;padding:0}
-#watchList i{margin-left:auto;color:var(--mute);font-style:normal}
+#watchP{position:absolute;right:0;top:36px;width:380px;max-width:calc(100vw - 24px);max-height:calc(100vh - 60px);overflow:auto;padding:10px 12px;background:var(--hbg);border:1px solid var(--hl);z-index:12;text-transform:none;letter-spacing:0;font:13px/1.4 system-ui;color:var(--ink)}
+/* the Watch panel: type a command or a sentence, see the monitor banner it would get, change it with one click */
+#watchTry{width:100%;box-sizing:border-box;font:inherit;color:var(--ink);background:#0d1a2b;border:1px solid #1f3a52;border-radius:3px;padding:6px 9px;text-transform:none;letter-spacing:0}
+#watchTry:focus{border-color:var(--hl);outline:none}
+#watchP .wkk{font:600 10px ui-monospace,Menlo,monospace;letter-spacing:.14em;text-transform:uppercase;color:#4f7590;display:flex;align-items:center;gap:8px;margin:10px 0 6px}#watchP .wkk::after{content:"";flex:1;height:1px;background:#1f3a52}
+#watchMiniK{margin-top:10px;font:600 10px ui-monospace,Menlo,monospace;letter-spacing:.14em;text-transform:uppercase;color:#4f7590}
+#watchMini{margin-top:4px;border:1.5px solid #2a3340;border-radius:3px;background:#0d1016;overflow:hidden}
+#watchMini .mf{display:flex;align-items:center;gap:8px;background:#1a1d26;height:26px;padding-right:10px;font-size:11.5px;color:#d7dbe4}
+#watchMini .mf .tg{font:700 10px ui-monospace,Menlo,monospace;letter-spacing:.12em;text-transform:uppercase;padding:0 10px;height:100%;display:flex;align-items:center;color:#161000;background:var(--warn);clip-path:polygon(0 0,100% 0,calc(100% - 8px) 100%,0 100%);white-space:nowrap}
+#watchMini .mf .tg.red{background:var(--del);color:#1a0505}#watchMini .mf .tg.chk{background:#39c8ff;color:#04121c}#watchMini .mf .tg.none{background:#232834;color:#7d8596}
+#watchMini .mh{padding:8px 10px;display:flex;gap:10px;align-items:center}#watchMini .mh .av{width:22px;height:22px;border-radius:4px;background:#1b2230;border:1px solid #2a3340;flex:none}
+#watchMini .mh b{color:#ff7bd1;display:block}#watchMini .mh span{color:#d7dbe4;font-size:12px}
+#watchMini .mb{padding:4px 10px 10px;font:11px/1.5 ui-monospace,Menlo,monospace;color:#9aa4b2;white-space:pre-wrap;word-break:break-word}#watchMini .mb .c{color:#d7dbe4}#watchMini .mb .al{color:var(--del);font-weight:700;margin-left:6px}#watchMini .mb .q{font:13px/1.4 -apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-serif;color:#eef2f7}
+#watchAs{display:flex;flex-wrap:wrap;gap:4px;align-items:center}#watchAs.busy .wch{opacity:.5;cursor:progress}#watchAs .grp{font:600 10px ui-monospace,Menlo,monospace;letter-spacing:.1em;text-transform:uppercase;color:#4f7590;margin:0 2px 0 6px}#watchAs .grp:first-child{margin-left:0}
+#watchP .wch{font:600 11px ui-monospace,Menlo,monospace;letter-spacing:.1em;text-transform:uppercase;color:#7fa6c2;background:#0d1a2b;border:1px solid #1f3a52;border-radius:3px;padding:3px 9px;cursor:pointer}
+#watchP .wch:hover{border-color:var(--hl)}#watchP .wch.on{color:#04121c;background:var(--hl);border-color:var(--hl)}
+#watchSaved{margin-top:8px;padding:6px 9px;border-left:2px solid var(--add);background:#0d1a2b;border-radius:0 3px 3px 0;font-size:12.5px;color:var(--ink)}#watchSaved.off{border-left-color:#4f7590}#watchSaved button{all:unset;cursor:pointer;color:var(--hl);margin-left:8px}
+#watchYours{display:flex;flex-direction:column;gap:3px;max-height:170px;overflow:auto}#watchYours .yr{display:flex;align-items:center;gap:8px;padding:4px 0;border-bottom:1px solid #121a26;font-size:12.5px;color:var(--ink)}#watchYours .yr:last-child{border:0}
+#watchYours .yr code{font:600 12px ui-monospace,Menlo,monospace;color:#d7dbe4;background:#0d1a2b;border:1px solid #1f3a52;border-radius:3px;padding:1px 6px;max-width:190px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#watchYours .yr i{font:600 10px ui-monospace,Menlo,monospace;letter-spacing:.1em;text-transform:uppercase;color:var(--hl);font-style:normal}
+#watchYours .yr button{all:unset;cursor:pointer;color:#4f7590;margin-left:auto;padding:0 4px}#watchYours .yr button:hover{color:var(--del)}
+#watchYours .none{color:var(--mute);font-size:12.5px}
+#watchRules{margin-top:10px;color:var(--mute);font-size:12.5px}#watchRules summary{cursor:pointer;color:#7fa6c2;text-transform:none;letter-spacing:0}
+#watchList{display:flex;flex-direction:column;gap:3px;margin-top:6px}
+#watchList .wr{display:flex;align-items:center;gap:8px;padding:3px 0;min-width:0;color:var(--ink)}
+#watchList .wr .sw{flex:none;width:28px;height:16px;border-radius:8px;background:#121a26;border:1px solid #1f3a52;position:relative;cursor:pointer}#watchList .wr .sw::after{content:"";position:absolute;top:2px;left:2px;width:10px;height:10px;border-radius:50%;background:#4f7590;transition:left .15s}
+#watchList .wr .sw[aria-checked="true"]{border-color:var(--add)}#watchList .wr .sw[aria-checked="true"]::after{left:14px;background:var(--add);box-shadow:0 0 6px var(--add)}
+#watchList .wr .nm{min-width:150px}#watchList .wr small{color:var(--mute);font:11px ui-monospace,Menlo,monospace;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;min-width:0}
+/* the examples are cut short; hovering a row slides them along so the whole line can be read, then they slide back */
+#watchList .wr small span{display:inline-block;transition:transform .2s linear}
+#watchList .wr:hover small{text-overflow:clip;color:#9fc3e0}
 #hint{display:none;position:absolute;right:0;top:34px;width:300px;padding:10px 12px;background:var(--hbg);border:1px solid var(--hl);text-transform:none;letter-spacing:0;font:12.5px/1.5 system-ui;color:var(--ink);z-index:11}
 #helpW:hover #hint,#hint.show{display:block}
 #hud .sp{flex:1}
@@ -384,7 +404,7 @@ body.portrait.short #deskB{height:176px}body.portrait.short #bay{height:64px;pad
     <button id="notify" class="sw" aria-label="Notify me"><svg viewBox="0 0 24 24"><path d="M6 16V11a6 6 0 0 1 12 0v5l2 2H4zM10 20a2 2 0 0 0 4 0"/></svg><span>Notify</span></button>
     <button id="appr" class="sw" aria-label="Answer prompts here"><svg viewBox="0 0 24 24"><path d="M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6z"/><path d="M8.5 12l2.5 2.5 4.5-5"/></svg><span>Answer here</span></button>
   </span>
-  <span id="acts"><button id="clearQ" class="ic" hidden title="Dismiss every agent that is idle and not waiting on you; pinned ones stay" aria-label="Dismiss idle agents"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="12" rx="1"/><path d="M9 20h6M12 16v4M9 8l6 4M15 8l-6 4"/></svg></button><button id="bringB" class="ic" hidden aria-label="Bring back dismissed agents"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="12" rx="1"/><path d="M9 20h6M12 16v4M12 7v6M9 10h6"/></svg><b></b></button><span id="watchW"><button id="watchB" title="Add or remove what counts as a risk, a check, or probably needing you" aria-expanded="false" aria-controls="watchP">Watch</button><div id="watchP" hidden><form id="watchF"><select id="watchKind" aria-label="What it is"><option value="push">a push</option><option value="deploy">a deploy</option><option value="publish">a publish</option><option value="delete">a delete</option><option value="send">sending something out</option><option value="check">a test or build</option><option value="action">probably needs you to act</option><option value="decide">probably asking you</option></select><input id="watchText" maxlength="80" placeholder="words, such as git push" aria-label="Words to watch for"><button type="submit">Add</button></form><div id="watchList"></div></div></span><span id="helpW"><button id="help" title="Gestures and keys" aria-label="Gestures and keys">?</button><span id="hint">pinch out on a screen to step up · two-finger scroll or ← → to turn along the row · pinch to move closer · double-click empty space to reset · hover a screen to lean in</span></span></span>
+  <span id="acts"><button id="clearQ" class="ic" hidden title="Dismiss every agent that is idle and not waiting on you; pinned ones stay" aria-label="Dismiss idle agents"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="12" rx="1"/><path d="M9 20h6M12 16v4M9 8l6 4M15 8l-6 4"/></svg></button><button id="bringB" class="ic" hidden aria-label="Bring back dismissed agents"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="12" rx="1"/><path d="M9 20h6M12 16v4M12 7v6M9 10h6"/></svg><b></b></button><span id="watchW"><button id="watchB" title="Add or remove what counts as a risk, a check, or probably needing you" aria-expanded="false" aria-controls="watchP">Watch</button><div id="watchP" hidden><input id="watchTry" maxlength="80" autocomplete="off" placeholder="a command, or something an agent might say" aria-label="Try a command or a sentence"><div id="watchMiniK" hidden>Preview · what the room would show</div><div id="watchMini" hidden></div><div id="watchAsK" class="wkk" hidden>Show it as</div><div id="watchAs" hidden></div><div id="watchSaved" hidden></div><div class="wkk" id="watchYoursK">Your rules</div><div id="watchYours"></div><details id="watchRules"><summary>Built-in rules</summary><div id="watchList"></div></details></div></span><span id="helpW"><button id="help" title="Gestures and keys" aria-label="Gestures and keys">?</button><span id="hint">pinch out on a screen to step up · two-finger scroll or ← → to turn along the row · pinch to move closer · double-click empty space to reset · hover a screen to lean in</span></span></span>
   <button id="back" hidden>← Back to the room</button>
 </div>
 <div id="needs"></div>
@@ -780,31 +800,180 @@ let ACT=/\b(log ?in|sign ?in|authenticat\w*|authori[sz]e\w*|verification code|2f
 let DEC=/\?\s*$|\b(should i|shall i|want me to|do you want me|would you like me|let me know (?:which|if|whether|what)|your call)\b/i;
 function applyWatch(w){
   if(!w||typeof w!=='object') return;
-  try{ if(typeof w.action==='string'&&w.action) ACT=new RegExp(w.action,'i')}catch(err){}
-  try{ if(typeof w.decide==='string'&&w.decide) DEC=new RegExp(w.decide,'i')}catch(err){}
+  try{ if(typeof w.action==='string') ACT=w.action?new RegExp(w.action,'i'):/(?!)/}catch(err){}      /* '' from the server: that kind is off and has no words of yours, so nothing matches */
+  try{ if(typeof w.decide==='string') DEC=w.decide?new RegExp(w.decide,'i'):/(?!)/}catch(err){}
 }
 const WATCH_NAME={deploy:'a deploy',push:'a push',publish:'a publish',delete:'a delete',send:'sending something out',check:'a test or build',action:'probably needs you to act',decide:'probably asking you'};
 let WATCH_RULES=[];
-function paintWatch(){
-  put($('#watchList'),WATCH_RULES.map(r=>r.shipped
-    ?`<label><input type="checkbox" data-ship="${esc(r.label)}" ${r.on?'checked':''}> ${esc(WATCH_NAME[r.label]||r.label)}</label>`
-    :`<span class="row"><b>${esc(r.text)}</b> <i>${esc(WATCH_NAME[r.label]||r.label)}</i> <button type="button" data-drop="${esc(r.label)}" data-text="${esc(r.text)}">Remove</button></span>`).join(''));
+/* what the room makes of something an agent said: plain text, the last four sentences, an action to take (any of them) before a question (the last one).
+   In a live window ACT and DEC already hold your words (the server joins them in); a demo window adds the words taught here. */
+function saidKind(text){
+  const tail=one(plain(text)).split(/(?<=[.?!])\s+/).filter(Boolean).slice(-4);
+  const mine=k=>DEMO?WATCH_RULES.filter(r=>!r.shipped&&r.label===k).map(r=>PHRASE(r.text,'say')):[];      /* a live window's ACT and DEC already include your words, from the server */
+  const hits=(k,rx)=>x=>((DEMO?ruleOn(k):true)&&rx.test(x))||mine(k).some(m=>m.test(x));      /* live: ACT and DEC come from the server with the switches already applied */
+  const act=tail.find(hits('action',ACT)); if(act) return {kind:'action',text:act};
+  const dec=[...tail].reverse().find(hits('decide',DEC)); if(dec) return {kind:'decide',text:dec};
+  return null;
 }
-function applyRules(w){applyWatch(w); if(w&&Array.isArray(w.rules)){WATCH_RULES=w.rules; paintWatch()}}
-function watchSend(body){
-  if(DEMO){
-    const text=String(body.text||'').trim();
-    if(body.op==='add'&&text){WATCH_RULES=WATCH_RULES.filter(r=>!(r.text===text&&r.label===body.label)); WATCH_RULES.push({label:body.label,text,shipped:false})}
-    else if(body.op==='drop') WATCH_RULES=WATCH_RULES.filter(r=>!(r.text===body.text&&r.label===body.label));
-    else if(body.op==='off') WATCH_RULES=WATCH_RULES.map(r=>r.shipped&&r.label===body.label?Object.assign({},r,{on:!!body.on}):r);
-    paintWatch(); return;
+/* the shipped command patterns, for the preview in a demo window (a live window asks the server, which also knows your words) */
+const WATCH_FB={"risks": [["deploy", "^(?:npx\\s+)?(vercel|netlify|wrangler|firebase|flyctl|fly|railway|amplify)\\b.*(\\bdeploy\\b|--prod\\b|\\bpublish\\b)|^(npm|pnpm|yarn)\\s+(run\\s+)?deploy\\b|^terraform\\s+apply\\b|^kubectl\\s+(apply|delete)\\b|^(?:npx\\s+)?supabase\\s+(db\\s+push|functions\\s+deploy|migration\\s+up)\\b"], ["push", "^git\\s+(?:-\\S+\\s+\\S+\\s+)*push\\b|^gh\\s+(pr\\s+(create|merge)|release\\s+create|repo\\s+(create|delete))\\b"], ["publish", "^(npm|pnpm|yarn)\\s+publish\\b"], ["delete", "^(?:sudo\\s+)?rm\\s+(?:-\\w+\\s+)*-\\w*[rR]\\w*\\s|^(?:sudo\\s+)?rm\\s+(?:-\\w+\\s+)*--recursive|^git\\s+(?:-\\S+\\s+\\S+\\s+)*(reset\\s+--hard|clean\\s+-\\w*f)"], ["send", "^(sendmail|mailx|mail\\s+-s)\\b"]], "checks": "^((npm|pnpm|yarn|bun|npx)\\s+(run\\s+)?(test|build|lint|typecheck)\\b|(npx\\s+)?(pytest|vitest|jest|tsc|eslint)\\b|python[\\d.]*\\s+-m\\s+pytest\\b|(npx\\s+)?playwright\\s+test\\b|cargo\\s+(test|build)\\b|go\\s+test\\b)"};
+const KIND_ORDER=['deploy','push','publish','delete','send','check','action','decide'], CMD_KINDS=['deploy','push','publish','delete','send','check'];
+const KIND_EG={deploy:'vercel deploy, terraform apply, kubectl apply…',push:'git push, gh pr merge, gh release create…',publish:'npm publish…',delete:'rm -rf, git reset --hard, git clean -f…',send:'sendmail, mail -s…',check:'npm test, pytest, cargo build, tsc…',action:'“log in”, “you’ll need to”, “I can’t”…',decide:'“should I”, “want me to”, a question…'};
+const ruleOn=k=>{const r=WATCH_RULES.find(x=>x.shipped&&x.label===k); return !r||r.on!==false};
+const WB='(?<![\\p{L}\\p{N}_])', WE='(?![\\p{L}\\p{N}_])', UB='(?:'+WB+'(?=[\\p{L}\\p{N}_])|(?<=[\\p{L}\\p{N}_])'+WE+')';      /* \b the way Python sees it: a boundary between a word character of any script and a non-word one */
+const PHRASE=(words,where)=>{const body=words.trim().split(/\s+/).map(w=>w.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')).join('\\s+'); return new RegExp((where==='say'?UB:'^')+body+UB,'iu')};      /* the server's phrase_pattern(): words, in order, as words */
+const SHIPPED_RX=(()=>{const u=pat=>new RegExp(pat.replace(/\\b/g,UB),'isu'); const list=[]; for(const [label,pat] of WATCH_FB.risks){try{list.push([label,u(pat)])}catch(err){try{list.push([label,new RegExp(pat,'is')])}catch(e2){}}} let checks=null; try{checks=u(WATCH_FB.checks)}catch(err){try{checks=new RegExp(WATCH_FB.checks,'i')}catch(e2){}} return {list,checks}})();
+function splitChain(str){             /* the commands in a line: split on && || ; & | outside quotes, after dropping a trailing comment; what is inside $( ) and back-ticks (also inside double quotes) is read as commands of its own, after the whole line, as the server reads it */
+  const out=[]; let cur='', q='', i=0; const subs=[];
+  const closeParen=from=>{let d=1,j=from,qq=''; for(;j<str.length&&d;j++){const c=str[j]; if(qq){if(c==='\\'&&qq==='"'){j++; continue} if(c===qq) qq=''; continue} if(c==='\\'){j++; continue} if(c==='"'||c==="'") qq=c; else if(c==='(') d++; else if(c===')') d--} return j};      /* quotes inside $( ) are respected */
+  const sub=open=>{if(open==='`'){const j=str.indexOf('`',i+1); if(j<0) return false; subs.push(...splitChain(str.slice(i+1,j))); cur+=' '; i=j+1; return true}
+    const j=closeParen(i+2); subs.push(...splitChain(str.slice(i+2,j-1))); cur+=' '; i=j; return true};
+  while(i<str.length){const ch=str[i], two=str.slice(i,i+2);
+    if(q){if(ch==='\\'&&q==='"'){cur+=ch+(str[i+1]||''); i+=2; continue}
+      if(q==='"'&&two==='$('&&sub('$(')) continue;
+      if(q==='"'&&ch==='`'&&sub('`')) continue;
+      cur+=ch; if(ch===q) q=''; i++; continue}
+    if(ch==='\\'){cur+=ch+(str[i+1]||''); i+=2; continue}
+    if(ch==='#'&&(i===0||/\s/.test(str[i-1]))) break;
+    if(ch==='"'||ch==="'"){q=ch; cur+=ch; i++; continue}
+    if(two==='$('&&sub('$(')) continue;
+    if(ch==='`'&&sub('`')) continue;
+    if(two==='&&'||two==='||'){out.push(cur); cur=''; i+=2; continue}
+    if(ch===';'||ch==='&'||ch==='|'){out.push(cur); cur=''; i++; continue}
+    cur+=ch; i++}
+  out.push(cur); out.push(...subs); return out.map(x=>x.trim()).filter(Boolean);
+}
+function expand(seg){                 /* drop sudo/env/time/… and VAR= prefixes; follow the body of sh -c "…" (any shell, any flags) as commands of its own */
+  seg=seg.replace(/^(?:(?:sudo|env|time|nohup|command|exec)\s+|\w+=\S*\s+)*/,'');
+  const m=seg.match(/^(?:sh|bash|zsh|dash)\s+(?:-\w+\s+)*-\w*c\w*\s+(?:"((?:[^"\\]|\\.)*)"|'([^']*)')/s);
+  if(m){const body=m[1]!==undefined?m[1].replace(/\\(.)/g,'$1'):m[2]; return splitChain(body).flatMap(expand)}
+  return [seg];
+}
+function judgeLocal(text){            /* a demo window's reading: the shipped patterns and the words taught here. Close to the server's; the label says it is approximate */
+  const t=text.trim(); if(!t) return {command:'',said:''};
+  let risk='', check=false;
+  for(const seg of splitChain(t).flatMap(expand)){
+    let k='';
+    for(const r of WATCH_RULES) if(!r.shipped&&CMD_KINDS.includes(r.label)&&r.label!=='check'&&PHRASE(r.text,'cmd').test(seg)){k=r.label; break}      /* your words first, as on the server */
+    if(!k) for(const [label,rx] of SHIPPED_RX.list){if(ruleOn(label)&&rx.test(seg)){k=label; break}}
+    if(!k&&/^curl(?![\p{L}\p{N}_])/iu.test(seg)&&/-X\s*(POST|PUT|PATCH|DELETE)(?![\p{L}\p{N}_])|\s(--data\S*|-d|--form|-F|--json)\s/iu.test(seg)){      /* a curl that writes to another host */
+      const urls=(seg.match(/https?:\/\/\S+/gi)||[]); let away=false; for(const u of urls){const m=u.replace(/["']/g,'').match(/^[a-z]+:\/\/(?:[^@\/]*@)?(\[[^\]]*\]|[^:\/?#]+)/i); const h=m?m[1].replace(/^\[|\]$/g,'').toLowerCase():''; if(h&&!['127.0.0.1','localhost','::1'].includes(h)) away=true}      /* the host as written, compared like the server does; 127.1 is not on its list */
+      if(away) k='send'}      /* any URL that is not this machine: the server's rule */
+    if(k){risk=risk||k; continue}
+    if((ruleOn('check')&&SHIPPED_RX.checks&&SHIPPED_RX.checks.test(seg))||WATCH_RULES.some(r=>!r.shipped&&r.label==='check'&&PHRASE(r.text,'cmd').test(seg))) check=true;
   }
-  post('/watch',body).then(r=>r.ok?r.json():null).then(w=>{if(w)applyRules(w)}).catch(()=>{});
+  const command=risk||(check?'check':'');      /* a risk anywhere in the line wins over a check anywhere in it */
+  const sk=saidKind(t);
+  return {command,said:sk?sk.kind:''};
 }
-$('#watchB').onclick=()=>{const p=$('#watchP'); p.hidden=!p.hidden; $('#watchB').setAttribute('aria-expanded',String(!p.hidden))};
-$('#watchF').onsubmit=ev=>{ev.preventDefault(); const text=$('#watchText').value.trim(); if(!text) return; watchSend({op:'add',label:$('#watchKind').value,text}); $('#watchText').value=''};
-$('#watchList').onchange=ev=>{const s=ev.target.dataset.ship; if(s) watchSend({op:'off',label:s,on:ev.target.checked})};
-$('#watchList').onclick=ev=>{const b=ev.target.closest('[data-drop]'); if(b) watchSend({op:'drop',label:b.dataset.drop,text:b.dataset.text})};
+let tryN=0, tryText='';
+function judge(text){
+  tryText=text; const n=++tryN;
+  const show=v=>{if(n!==tryN) return; paintMini(text,v)};
+  if(DEMO||!KEY) return show(judgeLocal(text));
+  post('/watch',{op:'try',text}).then(r=>r.ok?r.json():null).then(v=>show(v||{unknown:true})).catch(()=>show({unknown:true}));      /* no server answer: say so, rather than pass the page's own guess off as the room's reading */
+}
+function paintMini(text,v){
+  const mini=$('#watchMini'), mk=$('#watchMiniK'), as=$('#watchAs'), ask=$('#watchAsK'), t=text.trim();
+  if(!t){hid(mini,true); hid(mk,true); hid(as,true); hid(ask,true); return}
+  const sentence=!v.command&&(v.said||/\?\s*$/.test(t)||/\b(i|you|should|would|could|please|let me|ready|done)\b/i.test(t)&&!/^[\w.\/-]+\s+-/.test(t));
+  let flag, body;
+  if(v.unknown){flag=`<span class="tg none">no reading</span><span>the server could not be asked just now; try again</span>`; body=`<span class="c">${esc(t)}</span>`}
+  else if(v.error){flag=`<span class="tg none">no reading</span><span>${esc(v.error)}</span>`; body=`$ <span class="c">${esc(t)}</span>`}
+  else if(!sentence){
+    const k=v.command;
+    flag=k==='check'?`<span class="tg chk">check</span><span>would count as a test or build; its result would show on the Changing screen</span>`
+        :k?`<span class="tg red">alert · ${esc(k)}</span><span>would be flagged: looks like ${esc(WATCH_NAME[k]||k)}</span>`
+        :`<span class="tg none">no tag</span><span>would not be flagged</span>`;
+    body=`$ <span class="c">${esc(t)}</span>${k&&k!=='check'?`<span class="al">⚠ ${esc(k)}</span>`:''}`;
+  }else{
+    const k=v.said;
+    flag=k==='decide'?`<span class="tg">decide · probably</span><span>would read as asking you (probably)</span>`
+        :k==='action'?`<span class="tg">action needed · probably</span><span>would read as needing you to act (probably)</span>`
+        :`<span class="tg none">no tag</span><span>would not be read as needing you</span>`;
+    body=`<span class="q">“${esc(t)}”</span>`;
+  }
+  put(mini,`<div class="mf">${flag}</div><div class="mh"><span class="av"></span><div><b>an agent</b><span>${sentence?'if it said this':'if it ran this'}</span></div></div><div class="mb">${body}</div>`);
+  txt(mk,'Preview · what the room would show'+(DEMO||!KEY?' · demo: an approximate reading, without the server':'')); hid(mini,false); hid(mk,false);
+  if(v.unknown){hid(as,true); hid(ask,true); return}      /* nothing to teach against until the room has answered */
+  const cur=(sentence?v.said:v.command)||'none';
+  const chip=k=>`<button type="button" class="wch${k===cur?' on':''}" data-as="${esc(k)}" title="${k===cur?'what it is now':k==='none'?'remove your rule for these words':'teach the room: these words mean '+esc(WATCH_NAME[k]||k)}">${esc(k==='action'?'needs you':k==='decide'?'asking you':k==='none'?'no tag':k)}</button>`;
+  put(as,`<span class="grp">as a command</span>`+CMD_KINDS.map(chip).join('')+`<span class="grp">as something it says</span>`+['action','decide'].map(chip).join('')+chip('none'));
+  hid(as,false); hid(ask,false);
+}
+function paintWatch(){
+  const added=WATCH_RULES.filter(r=>!r.shipped);
+  put($('#watchYours'),added.length?added.map(w=>`<div class="yr"><code title="${esc(w.text)}">${esc(w.text)}</code><span>${CMD_KINDS.includes(w.label)?'is':'means'}</span><i>${esc(w.label==='action'?'needs you':w.label==='decide'?'asking you':w.label)}</i><button type="button" data-drop="${esc(w.label)}" data-text="${esc(w.text)}" title="Remove this rule" aria-label="Remove">×</button></div>`).join(''):'<div class="none">None yet. Type words above and pick what they mean.</div>');
+  put($('#watchList'),KIND_ORDER.filter(k=>WATCH_RULES.some(r=>r.shipped&&r.label===k)).map(k=>{const r=WATCH_RULES.find(x=>x.shipped&&x.label===k);
+    return `<div class="wr"><span class="sw" role="switch" tabindex="0" aria-checked="${r.on!==false?'true':'false'}" data-ship="${esc(k)}" aria-label="${esc(WATCH_NAME[k]||k)}"></span><span class="nm">${esc(WATCH_NAME[k]||k)}</span><small title="${esc(KIND_EG[k]||'')}"><span>${esc(KIND_EG[k]||'')}</span></small></div>`}).join(''));
+  if(tryText) judge(tryText);
+}
+let WATCH_REV=0, WATCH_GEN='';
+function applyRules(w){applyWatch(w); if(w&&Array.isArray(w.rules)){WATCH_RULES=w.rules; if(Number.isInteger(w.rev)) WATCH_REV=w.rev; if(typeof w.gen==='string') WATCH_GEN=w.gen; paintWatch()}}
+let watchQ=Promise.resolve();          /* edits go out one at a time, each applied before the next starts */
+const serial=f=>{const p=watchQ.then(f,f); watchQ=p.then(()=>{},()=>{}); return p};
+function watchSend(body){
+  const run=()=>{
+    if(DEMO){
+      const text=String(body.text||'').trim();
+      if(body.op==='set'&&Array.isArray(body.extra)) WATCH_RULES=WATCH_RULES.filter(r=>r.shipped).concat(body.extra.map(x=>({label:x.label,text:x.text,shipped:false})));
+      else if(body.op==='add'&&text){WATCH_RULES=WATCH_RULES.filter(r=>!(r.text===text&&r.label===body.label)); WATCH_RULES.push({label:body.label,text,shipped:false})}
+      else if(body.op==='drop') WATCH_RULES=WATCH_RULES.filter(r=>!(r.text===body.text&&r.label===body.label));
+      else if(body.op==='off') WATCH_RULES=WATCH_RULES.map(r=>r.shipped&&r.label===body.label?Object.assign({},r,{on:!!body.on}):r);
+      WATCH_REV++; paintWatch(); return Promise.resolve(WATCH_REV);      /* the demo keeps its own count, so Undo binds the same way */
+    }
+    return post('/watch',body).then(async r=>{if(r.ok){const w=await r.json(); if(w){applyRules(w); return Number.isInteger(w.rev)?w.rev:true} return false} if(r.status===409){try{applyRules(await r.json())}catch(err){} return 'conflict'} return false}).catch(()=>false);      /* a success answers with the revision the save produced */      /* 409: built from an older list; the current one is applied and the caller may try again */
+  };
+  return run();      /* callers that are not already inside an operation wrap this in serial() */
+}
+function judgeNow(text){               /* the reading after the edits: the server's in a live window; {unknown:true} if it cannot be had */
+  if(DEMO||!KEY) return Promise.resolve(judgeLocal(text));
+  return post('/watch',{op:'try',text}).then(r=>r.ok?r.json():null).then(v=>v||{unknown:true}).catch(()=>({unknown:true}));
+}
+const watchOpen=on=>{const p=$('#watchP'); p.hidden=!on; $('#watchB').setAttribute('aria-expanded',String(on)); if(on) $('#watchTry').focus()};
+$('#watchB').onclick=()=>watchOpen($('#watchP').hidden);
+addEventListener('pointerdown',e=>{if(!$('#watchP').hidden&&!e.target.closest('#watchW')) watchOpen(false)},true);      /* a click anywhere else closes the panel */
+addEventListener('keydown',e=>{if(e.key==='Escape'&&!$('#watchP').hidden){watchOpen(false); $('#watchB').focus(); e.stopPropagation()}},true);      /* so does Escape, without stepping back from a desk */
+{let tT=null; $('#watchTry').oninput=()=>{hid($('#watchSaved'),true); clearTimeout(tT); tT=setTimeout(()=>judge($('#watchTry').value),220)};
+  $('#watchAs').onclick=ev=>{const b=ev.target.closest('[data-as]'); if(!b||b.classList.contains('on')||$('#watchAs').classList.contains('busy')) return; teach($('#watchTry').value.trim(), b.dataset.as)};}
+/* teaching: these words mean one thing, so any earlier rule for the same words goes first; 'none' just removes yours */
+const UNDO={}; let undoN=0;             /* what each Save replaced, kept here rather than in the markup */
+const mine=()=>WATCH_RULES.filter(r=>!r.shipped).map(r=>({label:r.label,text:r.text}));
+function teach(text,label){            /* one whole operation at a time: the list is read when the operation starts, not when it was clicked */
+  if(!text) return Promise.resolve();
+  const sv=$('#watchSaved'); sv.classList.toggle('off',label==='none'); put(sv,'Saving…'); hid(sv,false); $('#watchAs').classList.add('busy');
+  text=text.trim().split(/\s+/).join(' ');      /* the words as the server keeps them: single spaces */
+  return serial(async()=>{
+    let before, same, ok;
+    for(let attempt=0; attempt<2; attempt++){      /* built from the list as it is now; if another window changed it meanwhile, once more from the fresh list */
+      before=mine(); const low=text.toLowerCase(); same=before.filter(r=>r.text.toLowerCase()===low);
+      const after=before.filter(r=>r.text.toLowerCase()!==low);
+      if(label!=='none'){const at=same.length?before.indexOf(same[0]):after.length; after.splice(Math.min(at,after.length),0,{label,text})}      /* in the place of the rule it replaces, so nothing else changes order */
+      ok=await watchSend({op:'set',extra:after,rev:WATCH_REV,gen:WATCH_GEN});
+      if(ok!=='conflict') break;
+    }
+    if(!ok||ok==='conflict'){put(sv,ok==='conflict'?'Not saved: the rules changed in another window just now. Try again.':'Could not save that; the server did not accept it.'); return}
+    const savedRev=Number.isInteger(ok)?ok:WATCH_REV;      /* the revision this save produced, taken now, before the preview is awaited */
+    const v=await judgeNow(text), now=v.unknown?null:(v.command||v.said||'');
+    if(label!=='none'){
+      const id=++undoN; UNDO[id]={before,rev:savedRev,gen:WATCH_GEN};      /* valid only while the rules are still at the revision that save produced, in the same run of the server */
+      put(sv,(v.unknown?`Saved <code>${esc(text)}</code> as ${esc(WATCH_NAME[label]||label)}. The room's reading could not be checked just now.`
+        :v.error?`Saved <code>${esc(text)}</code> as ${esc(WATCH_NAME[label]||label)}, but the room cannot read it as a command: ${esc(v.error)}.`
+        :now===label?`Saved: <code>${esc(text)}</code> now counts as ${esc(WATCH_NAME[label]||label)}.`
+        :now?`Saved, but the room still reads <code>${esc(text)}</code> as ${esc(WATCH_NAME[now]||now)}; another rule, built-in or yours, gets there first.`
+        :`Saved, but the room still does not flag <code>${esc(text)}</code>.`)+`<button type="button" data-undo="${id}">Undo</button>`);
+    }else put(sv,same.length?`Removed your rule for <code>${esc(text)}</code>.${v.unknown?'':now?' Something still catches it: a built-in rule, or another of your rules. See Built-in rules and Your rules below.':''}`:`You had no rule for <code>${esc(text)}</code>.`);
+    if(tryText===text&&!v.unknown) paintMini(text,v);
+  }).finally(()=>$('#watchAs').classList.remove('busy'));
+}
+$('#watchSaved').onclick=ev=>{const u=ev.target.closest('[data-undo]'); if(!u) return; const snap=UNDO[u.dataset.undo]; if(!snap) return; delete UNDO[u.dataset.undo];
+  const sv=$('#watchSaved'); put(sv,'Undoing…');
+  serial(async()=>{if(snap.rev!==WATCH_REV||snap.gen!==WATCH_GEN){put(sv,'Not undone: the rules changed since that save.'); return} const ok=await watchSend({op:'set',extra:snap.before,rev:snap.rev,gen:snap.gen}); put(sv,ok&&ok!=='conflict'?'Undone: your rules are as they were.':ok==='conflict'?'Not undone: the rules changed in another window since that save.':'Could not undo; the server did not accept it.'); if(tryText) judge(tryText)})};
+$('#watchList').onclick=ev=>{const w=ev.target.closest('[data-ship]'); if(w){const body={op:'off',label:w.dataset.ship,on:w.getAttribute('aria-checked')!=='true'}; serial(()=>watchSend(body))}};
+$('#watchList').onmouseover=ev=>{const w=ev.target.closest('.wr'); if(!w||w._slid) return; const box=w.querySelector('small'), sp=box&&box.firstChild; if(!sp) return; const over=sp.scrollWidth-box.clientWidth; if(over<=4) return; w._slid=true; sp.style.transitionDuration=Math.max(.6,over/45)+'s'; sp.style.transform='translateX('+(-over)+'px)'};      /* slide at about 45 px a second */
+$('#watchList').onmouseout=ev=>{const w=ev.target.closest('.wr'); if(!w||!w._slid||w.contains(ev.relatedTarget)) return; w._slid=false; const sp=w.querySelector('small span'); if(sp){sp.style.transitionDuration='.5s'; sp.style.transform=''}};
+$('#watchList').onkeydown=ev=>{const w=ev.target.closest('[data-ship]'); if(w&&(ev.key==='Enter'||ev.key===' ')){ev.preventDefault(); w.click()}};
+$('#watchYours').onclick=ev=>{const b=ev.target.closest('[data-drop]'); if(b){const body={op:'drop',label:b.dataset.drop,text:b.dataset.text}; serial(()=>watchSend(body))}};
 /* sure=true is an explicit signal (a permission prompt, a question tool, a notification); sure=false is a reading of
    the last thing it said before its turn ended, and is always labelled "probably". */
 function need(a){
@@ -814,9 +983,7 @@ function need(a){
   if(q.length) return {kind:'Decide',text:q[0].text,sure:false};
   if(a.wait) return {kind:a.wait.why==='permission'?'Approve':'Needs you',text:a.wait.text,sure:true};
   if(a.turn==='ended'&&!a.parent&&a.said&&a.saidOff!==a.said.ts&&(!a.user||a.said.ts>=a.user.ts)){
-    const tail=one(plain(a.said.text)).split(/(?<=[.?!])\s+/).filter(Boolean).slice(-4);
-    const act=tail.find(x=>ACT.test(x)); if(act) return {kind:'Action',text:act,sure:false};
-    const dec=[...tail].reverse().find(x=>DEC.test(x)); if(dec) return {kind:'Decide',text:dec,sure:false};
+    const sk=saidKind(a.said.text); if(sk) return {kind:sk.kind==='action'?'Action':'Decide',text:sk.text,sure:false};
   }
   return null;
 }

@@ -502,6 +502,9 @@ LOCAL_HOSTS = ('127.0.0.1', 'localhost', '::1')
 WATCH_PATH = os.path.join(HERE, 'watch.json')
 USER_WATCH = os.path.join(HOME, '.live-room', 'watch.json')
 RISKS, NEEDS, WATCH_RULES = [], {}, []
+WATCH_REV = 0                # bumped on every change of the user's rules; a whole-list replacement must name the revision it was built from
+WATCH_SIG = None             # what the user's file held when the rules were last compiled, so a hand edit found on reload also bumps the revision
+WATCH_GEN = secrets.token_hex(4)   # this run of the server: a revision number from an earlier run, however equal, is not this run's
 TOOL_RISK = CHECK_RX = re.compile(r'(?!)')
 WATCH_KINDS = ('deploy', 'push', 'publish', 'delete', 'send', 'check', 'action', 'decide')
 RISK_KINDS = ('deploy', 'push', 'publish', 'delete', 'send')
@@ -566,10 +569,18 @@ def _join(parts):
 
 
 def watch_public():
-    return {'action': NEEDS.get('action') or '', 'decide': NEEDS.get('decide') or '', 'rules': WATCH_RULES}
+    return {'action': NEEDS.get('action') or '', 'decide': NEEDS.get('decide') or '', 'rules': WATCH_RULES, 'rev': WATCH_REV, 'gen': WATCH_GEN}
+
+
+WATCH_LOCK = threading.RLock()     # one edit or recompile of the rules at a time: read, change, write, compile, publish
 
 
 def apply_watch(overlay=False):
+    with WATCH_LOCK:
+        return _apply_watch(overlay)
+
+
+def _apply_watch(overlay=False):
     """Compile src/watch.json. A ~/.live-room/watch.json that still contains risks, checks or needsYou
     replaces those keys (a hand-edited file). extra and off, which the Watch button writes, add plain
     phrases and switch built-ins off. A pattern that does not compile is skipped."""
@@ -582,15 +593,26 @@ def apply_watch(overlay=False):
         data = {}
     if not isinstance(data, dict):
         data = {}
+    global WATCH_SIG, WATCH_REV
     extra, off = [], set()
     if overlay:
         user = _user_watch()
+        sig = json.dumps({'extra': user.get('extra'), 'off': user.get('off')}, sort_keys=True, default=str)
+        if WATCH_SIG is not None and sig != WATCH_SIG:
+            WATCH_REV += 1                       # the file changed by some other hand since it was last compiled
+        WATCH_SIG = sig
         if any(k in user for k in ('risks', 'checks', 'needsYou', 'toolRisk')):
             data.update({k: v for k, v in user.items() if k not in ('_comment', 'extra', 'off')})
         extra = [x for x in (user.get('extra') or []) if isinstance(x, dict) and x.get('label') in WATCH_KINDS
                  and isinstance(x.get('text'), str) and x['text'].strip()]
         off = {x for x in (user.get('off') or []) if x in WATCH_KINDS}
     risks = []
+    for item in extra:                       # your words first: teaching a command a kind must win over the shipped pattern
+        if item['label'] not in RISK_KINDS:
+            continue
+        rx = _rx(phrase_pattern(item['text'], item['label']), re.I, item['label'])
+        if rx:
+            risks.append((item['label'], rx))
     for item in data.get('risks') or []:
         if not isinstance(item, dict) or not isinstance(item.get('label'), str):
             continue
@@ -600,12 +622,6 @@ def apply_watch(overlay=False):
         rx = _rx(item.get('pattern') or phrase_pattern(item.get('text'), label), re.I | re.S, label)
         if rx:
             risks.append((label, rx))
-    for item in extra:
-        if item['label'] not in RISK_KINDS:
-            continue
-        rx = _rx(phrase_pattern(item['text'], item['label']), re.I, item['label'])
-        if rx:
-            risks.append((item['label'], rx))
     RISKS = risks
     TOOL_RISK = _rx(data.get('toolRisk'), re.I, 'toolRisk') or re.compile(r'(?!)')
     parts = [data['checks']] if 'check' not in off and isinstance(data.get('checks'), str) else []
@@ -627,10 +643,34 @@ def apply_watch(overlay=False):
         WATCH_RULES.append({'label': item['label'], 'text': ' '.join(item['text'].split())[:80], 'shipped': False})
 
 
-def change_watch(op, label, text, on):
+def said_kind(text):
+    """What the room would make of something an agent said, the way the page's need() reads it: plain text, the last
+    four sentences, an action to take (any of them) before a question (the last one). '' when neither."""
+    plain = re.sub(r'^#+\s*', '', re.sub(r'\*\*|__|`', '', re.sub(r'\[([^\]]*)\]\([^)]*\)', r'\1', str(text or ''))), flags=re.M)
+    one = ' '.join(plain.split())
+    tail = [s for s in re.split(r'(?<=[.?!])\s+', one) if s][-4:]
+    for k, order in (('action', tail), ('decide', list(reversed(tail)))):
+        pat = NEEDS.get(k)
+        if not pat:
+            continue
+        try:
+            if any(re.search(pat, s, re.I) for s in order):
+                return k
+        except re.error:
+            pass
+    return ''
+
+
+def change_watch(op, label, text, on, extra_list=None, rev=None, gen=None):
     """Add or remove a plain phrase, or switch a built-in on or off. Writes ~/.live-room/watch.json and
     returns the list the page shows. None when the edit is not one of those."""
-    if label not in WATCH_KINDS:
+    with WATCH_LOCK:
+        return _change_watch(op, label, text, on, extra_list, rev, gen)
+
+
+def _change_watch(op, label, text, on, extra_list=None, rev=None, gen=None):
+    global WATCH_REV
+    if op != 'set' and label not in WATCH_KINDS:
         return None
     words = ' '.join(str(text or '').split())[:80]
     user = _user_watch()
@@ -638,13 +678,28 @@ def change_watch(op, label, text, on):
              and isinstance(x.get('text'), str) and x['text'].strip()]
     off = [x for x in (user.get('off') or []) if x in WATCH_KINDS]
     if op == 'add':
-        if not phrase_pattern(words, label):
+        if len(' '.join(str(text or '').split())) > 80 or not phrase_pattern(words, label):
             return None
         if not any(x['label'] == label and x['text'] == words for x in extra):
             extra.append({'label': label, 'text': words})
         extra = extra[-40:]
     elif op == 'drop':
         extra = [x for x in extra if not (x['label'] == label and ' '.join(x['text'].split()) == words)]
+    elif op == 'set':                          # the whole list of your words, in order, in one write: what the Watch panel sends
+        if not isinstance(extra_list, list) or len(extra_list) > 40:
+            return None
+        if gen != WATCH_GEN or not isinstance(rev, int) or isinstance(rev, bool) or rev != WATCH_REV:      # built from an older list, or from an earlier run of the server: refused, with the current list
+            return dict(watch_public(), conflict=True)
+        new = []
+        for x in extra_list:
+            if not isinstance(x, dict) or x.get('label') not in WATCH_KINDS or not isinstance(x.get('text'), str):
+                return None
+            w = ' '.join(x['text'].split())
+            if not w or len(w) > 80 or not phrase_pattern(w, x['label']):
+                return None
+            if not any(y['label'] == x['label'] and y['text'] == w for y in new):
+                new.append({'label': x['label'], 'text': w})
+        extra = new
     elif op == 'off':
         if on is True:
             off = [x for x in off if x != label]
@@ -661,9 +716,10 @@ def change_watch(op, label, text, on):
         _save_user_watch(user)
     except OSError:
         return None
+    WATCH_REV += 1
     apply_watch(True)
     view = watch_public()
-    emit('', 'watch', False, action=view['action'], decide=view['decide'], rules=view['rules'])
+    emit('', 'watch', False, action=view['action'], decide=view['decide'], rules=view['rules'], rev=view['rev'], gen=view['gen'])
     return view
 
 
@@ -2412,10 +2468,20 @@ class H(BaseHTTPRequestHandler):
             return self.send(200, KEY.encode())
         if not self.keyed(self.headers.get('X-Live-Room-Key', '')):
             return self.send(403, b'forbidden')
+        if route == '/watch' and d.get('op') == 'try':      # read-only: what the room would make of these words, with your rules applied
+            text = str(d.get('text') or '')[:200]
+            said = said_kind(text)
+            try:
+                command = risk(text) or ('check' if is_check(text) else '')
+            except Exception as e:                                # a command the parser cannot read (a malformed URL, for one) is an answer, not a crash
+                return self.send(200, json.dumps({'command': '', 'said': said, 'error': 'could not read that command (%s)' % type(e).__name__}).encode(), 'application/json')
+            return self.send(200, json.dumps({'command': command, 'said': said}).encode(), 'application/json')
         if route == '/watch':                       # add or remove a plain phrase, or switch a built-in off
-            view = change_watch(d.get('op'), d.get('label'), d.get('text'), d.get('on'))
+            view = change_watch(d.get('op'), d.get('label'), d.get('text'), d.get('on'), d.get('extra'), d.get('rev'), d.get('gen'))
             if view is None:
                 return self.send(400, b'bad watch edit')
+            if view.get('conflict'):
+                return self.send(409, json.dumps(view).encode(), 'application/json')
             return self.send(200, json.dumps(view).encode(), 'application/json')
         if route == '/keep':                         # this window's whole pin list, re-sent every few minutes; an empty list clears it
             ids = d.get('ids')
