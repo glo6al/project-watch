@@ -27,13 +27,13 @@
 
 You can run several coding agents at once now. What you cannot easily do is watch them. Each one lives in its own terminal or app window, and the record of what it did is a transcript you read afterwards, once it has finished building the thing. By then the decision you would have questioned is three steps back, and the file it should not have touched has already changed.
 
-W.A.T.C.H. is situational awareness for the time in between. Claude Code and Codex both write a session log as they work. W.A.T.C.H. reads those logs as they are written and turns them into a room you can stand in: one monitor per agent, each showing what that agent has open, what it just ran, what it changed, what it said, and whether it is waiting on you. You glance along the row the way you would glance along a row of desks. When one of them needs a look, you step up to it.
+W.A.T.C.H. is situational awareness for the time in between. Claude Code, Codex and Cursor each write a session log as they work. W.A.T.C.H. reads those logs as they are written and turns them into a room you can stand in: one monitor per agent, each showing what that agent has open, what it just ran, what it changed, what it said, and whether it is waiting on you. You glance along the row the way you would glance along a row of desks. When one of them needs a look, you step up to it.
 
 Today it watches, and does one thing more: with the hooks installed and a window switched on for it, it can answer a Claude Code permission prompt. It does not drive the agents, and it is not a chat window; it is the window beside their windows. (It suits a second screen, left open while you work with the agents on the first.) Where it is going is a command post, one room where you both see your agents and act on them, across providers. The [roadmap](docs/ROADMAP.md) sets that out, and the rules do not change on the way: the person stays in charge, every action is opt-in, and the page never claims more than the log confirms.
 
 ## What you can see
 
-Everything on screen comes from the two tools' own records: their session logs, the messages the optional hooks send, and the apps' metadata files (session titles, settings, when you last focused a session). Rendered previews are read from disk at the moment they are shown. Each item is labelled by how it got there.
+Everything on screen comes from the tools' own records: their session logs, the messages the optional hooks send, and the apps' metadata files (session titles, settings, when you last focused a session). Rendered previews are read from disk at the moment they are shown. Each item is labelled by how it got there.
 
 - **Per agent, as it happens:** what it is saying, as the log records each message; the file it has open, edits shown as diffs, commands and their output; your messages to it; and a rendered preview of any HTML it writes. In the room and in hand, a monitor shows the narration with your last message to that agent pinned above it in one line, so you know what you asked without stepping up.
 - **Who is waiting on you**, and for what: a permission prompt, a question, a plan to approve. These are recorded facts, from the log or from a hook message, shown with the request text.
@@ -42,7 +42,7 @@ Everything on screen comes from the two tools' own records: their session logs, 
 - **The goal:** each monitor carries the first message of the session that was read, as a one-line reminder of what that agent is for.
 - **Who started whom:** a chain of command, marked where it was recorded and where it was inferred.
 - **Which project:** the row is seated in bays by folder, with the project's name set into the floor, and you can give a folder a display name.
-- **Alerts** when a command looks like a deploy, a push, a delete or a send, from a small shell-aware parser.
+- **Alerts** when a command looks like a deploy, a push, a delete or a send, from a small shell-aware parser. The Watch button in the bar lets you add your own words to that list, or switch the built-in ones off.
 - **Readouts** the log states: model, branch, approval setting, context in use, when the session began, when you last spoke to it.
 
 The desk for one agent has four screens on its monitor, Saying, Doing, Seeing and Changing, and you land on the one you were reading. Beside it, a timeline of what the agent did and said, in order, grouped under each of your messages, with each turn's end marked; click a step to see it on the monitor, or a said line to open it on the Saying screen. Then the other agents at a glance and a five-minute activity strip coloured by kind of action.
@@ -57,6 +57,7 @@ The room shows what those records contain and nothing else. That rules some thin
 - **Not "done".** A command whose exit code is not recorded is shown as *returned*, not done.
 - **Not certainty about parents.** "Started by" is *recorded* when the log says so and *inferred* when it was worked out from a launch command, and the label says which. A guess from script text is shown as "possibly started by" and is never stored.
 - **Not Codex's private channels.** Messages between Codex agents are encrypted in its log; its permission prompts and queued messages are not visible.
+- **Not Cursor's results.** Cursor's transcript records what a tool was asked to do, not what came back, so a Cursor step is shown as *returned* when its turn ends, never as done.
 - **Not the future.** "Probably needs you" notices read the agent's last sentences and can be wrong either way.
 
 ## Try it
@@ -123,8 +124,8 @@ The board and the tail ring the terminal bell when an agent starts waiting on yo
 Read this before relying on Allow / Deny.
 
 - Binds to 127.0.0.1; rejects other Host and Origin headers; cannot be framed.
-- The key in `~/.live-room/key` is required by `/events`, `/check`, `/decide`, `/open`, `/presence`, `/hook`, `/permission`, `/keep` and `/unlink`. Four things do not use it: `/pair` (unauthenticated; it only asks your default browser to open an unlock tab, at most once a minute, and returns nothing to the caller), `/claim` (trades the one-time code from that tab for the key, once), `/fs/<preview key>/…` (a separate per-run key that is only good for previews) and `/static/<name>` (the page's own four icon files, by exact name).
-- The hooks send the key to whatever is listening on the port. Stopping another local program from taking that port while W.A.T.C.H. is not running is outside what this tool can do.
+- The key in `~/.live-room/key` is required by `/events`, `/check`, `/decide`, `/open`, `/presence`, `/hook`, `/permission`, `/keep`, `/unlink` and `/watch`. Four things do not use it: `/pair` (unauthenticated; it only asks your default browser to open an unlock tab, at most once a minute, and returns nothing to the caller), `/claim` (trades the one-time code from that tab for the key, once), `/fs/<preview key>/…` (a separate per-run key that is only good for previews) and `/static/<name>` (the page's own four icon files, by exact name).
+- The hooks, and the terminal view, send the key to whatever is listening on the port; the terminal view reads it from the key file and never sends it through a proxy. Stopping another local program from taking that port while W.A.T.C.H. is not running is outside what this tool can do.
 - The key file and its directory are forced to private permissions at start. The hooks send the key from a private header file, so it does not appear in any process's arguments. It does sit in the page's localStorage and in the query string of the page's own `/events` and `/check` requests.
 - A program that can read `~/.live-room/`, or drive your browser, can do what you can do here, including approving a prompt. Protecting against that needs an OS-level boundary this tool lacks.
 - **Answering prompts is off by default.** It is switched on per window ("Answer prompts here"). A prompt is held only while such a window is visible and has checked in within ~12 seconds, only if the request is short enough to be shown in one scrolling panel (up to 20,000 characters and 600 lines; you may still have to scroll to read all of it), for at most one minute. An agent's question to you is never held, because Allow or Deny cannot answer it. Otherwise the hook returns no decision. (The hook's own timeouts are longer, about five and a half minutes: if the server itself stalls while holding a request, Claude may wait that long, not one minute.) While answering is on, every Claude session's permission requests wait here first, including sessions you are not watching. What Claude does with no decision is Claude's business: normally it asks in the app, but a context that cannot show a prompt may deny.
