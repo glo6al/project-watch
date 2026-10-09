@@ -99,8 +99,10 @@ code,pre{font:12.5px/1.5 ui-monospace,Menlo,monospace}
 .flag .msg{flex:1;min-width:0;display:flex;align-items:center;padding:0 12px 0 6px;font:500 15px system-ui;white-space:nowrap;overflow:hidden}
 .flag .msg span{overflow:hidden;text-overflow:ellipsis}
 .flag button{flex:none;align-self:center;margin-right:8px;font:700 12px ui-monospace,Menlo,monospace;letter-spacing:.12em;text-transform:uppercase;border:1px solid;border-radius:3px;padding:6px 16px;cursor:pointer;background:transparent}
-.flag .yes{color:#7ff0a4;border-color:#7ff0a4}.flag .yes:hover{background:#7ff0a4;color:#04140a}
-.flag .no{color:#ff9d9d;border-color:#ff9d9d}.flag .no:hover{background:#ff9d9d;color:#1a0505}
+/* Allow and Deny in the HUD's own idiom: dark fill, thin frame, key-style type; colour only in the word and on hover */
+.flag .yes,.flag .no{font-weight:600;letter-spacing:.14em;border-color:#1f3a52;padding:4px 12px;background:#0d1a2b}
+.flag .yes{color:var(--add)}.flag .yes:hover{border-color:var(--add);background:#0e2418}
+.flag .no{color:var(--del)}.flag .no:hover{border-color:var(--del);background:#2a1214}
 .flag.w{background:linear-gradient(90deg,rgba(240,160,32,.22),rgba(240,160,32,.06));border-bottom:1px solid var(--warn);color:#ffdca3}
 .flag.w .tag{background:var(--warn);color:#161000}
 .flag.w.soft .tag{background:repeating-linear-gradient(135deg,rgba(240,160,32,.34) 0 7px,rgba(240,160,32,.14) 7px 14px);color:var(--warn)}
@@ -192,6 +194,15 @@ code,pre{font:12.5px/1.5 ui-monospace,Menlo,monospace}
 .split{flex:1;min-height:0;display:flex}
 .code{flex:1;min-width:0;margin:0;padding:9px 11px;white-space:pre-wrap;word-break:break-word;overflow:hidden}
 .st.focus .code{overflow:auto}
+/* narration: in the room and in hand a monitor shows what the agent has said, newest at the bottom, as the log records it; the desk keeps the terminal view */
+.st:not(.focus) .code.say{display:flex;flex-direction:column;gap:9px;font:15px/1.45 -apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-serif;white-space:normal}
+.st:not(.focus) .code.say p{margin:0;color:#9aa4b2}
+.st:not(.focus) .code.say p.now{color:#eef2f7}
+.st:not(.focus) .code p.you{margin:0 0 6px;color:#8fb6ff;font:13px/1.4 -apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-serif;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}      /* your last message to it, one line, first in a terminal view */
+.tab.you .what{direction:ltr;color:#8fb6ff}      /* on a narrating monitor the tab itself carries your last message */
+/* the desk's Said screen: the narration drawn the same way as in the room and in hand */
+.st.focus .code.say{display:flex;flex-direction:column;gap:9px;font:15px/1.45 -apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-serif;white-space:normal}
+.st.focus .code.say p{margin:0;color:#9aa4b2}.st.focus .code.say p.now{color:#eef2f7}
 .split.pv .code{flex:0 0 44%;border-right:1px solid #232834}
 .pvw{flex:1;min-width:0;position:relative;background:#fff;overflow:hidden}
 .pvw iframe{position:absolute;left:0;top:0;width:250%;height:250%;border:0;transform:scale(.4);transform-origin:0 0;pointer-events:none}
@@ -231,7 +242,7 @@ code,pre{font:12.5px/1.5 ui-monospace,Menlo,monospace}
 .views{display:none;gap:6px;flex:none;align-self:center}
 .st.focus .views{display:flex;justify-content:flex-end;align-items:center}
 .views span{font:600 10px ui-monospace,Menlo,monospace;letter-spacing:.16em;text-transform:uppercase;color:#4f7590;margin-right:4px}
-.views button{font:600 12px ui-monospace,Menlo,monospace;letter-spacing:.14em;text-transform:uppercase;color:#7fa6c2;background:#0d1a2b;border:1px solid #1f3a52;border-radius:3px;padding:4px 12px;cursor:pointer;display:flex;flex-direction:row;align-items:center;gap:7px}
+.views button{font:600 12px ui-monospace,Menlo,monospace;letter-spacing:.14em;text-transform:uppercase;white-space:nowrap;color:#7fa6c2;background:#0d1a2b;border:1px solid #1f3a52;border-radius:3px;padding:4px 12px;cursor:pointer;display:flex;flex-direction:row;align-items:center;gap:7px}
 .views button i{font-style:normal;font-size:10px;color:#4f7590;border:1px solid #1f3a52;border-radius:2px;padding:0 5px}
 .views button:hover{border-color:var(--hl)}
 .views button.on{color:#04121c;background:var(--hl);border-color:var(--hl)}
@@ -297,6 +308,15 @@ code,pre{font:12.5px/1.5 ui-monospace,Menlo,monospace}
 .story p{margin:0 0 7px;font-size:13px;line-height:1.4;color:var(--mute);overflow-wrap:anywhere}
 .story p small{opacity:.7;margin-left:4px;white-space:nowrap}
 .story .v{font:15px/1.4 Georgia,'Times New Roman',serif;color:var(--ink);margin-top:10px}
+/* the log as a timeline: what it said is one muted line in sequence with the steps; click it and the monitor's Said screen goes to that message */
+.story .sv{cursor:pointer;padding-left:12px;border-left:2px solid #2a3a5a;color:#8a95a6;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.story .sv b{font-weight:600;color:#8fb6ff;margin-right:4px}
+.story .sv:hover{color:var(--ink);border-left-color:#8fb6ff}
+.story .end{font:600 10px ui-monospace,Menlo,monospace;letter-spacing:.12em;text-transform:uppercase;color:#4f7590;margin:6px 0 2px 12px}
+.story .nowm{font:600 10px ui-monospace,Menlo,monospace;letter-spacing:.12em;text-transform:uppercase;color:var(--hl);margin:6px 0 2px 12px}
+.story .nowm::before{content:'';display:inline-block;width:6px;height:6px;border-radius:50%;background:var(--hl);margin-right:6px;animation:nowblink 1.4s ease-in-out infinite}
+@keyframes nowblink{50%{opacity:.25}}
+.code.say p.hl{background:#162136;box-shadow:inset 0 0 0 1px #8fb6ff;border-radius:3px;transition:background 1.2s,box-shadow 1.2s}
 .story .u{color:#fff;background:#10243a;border:1px solid #1f3a52;border-radius:3px;padding:7px 10px}
 .story .sd{cursor:pointer;padding-left:12px;border-left:2px solid var(--line)}
 .story .sd:hover{color:var(--ink);border-left-color:var(--c)}
@@ -338,7 +358,8 @@ body.portrait #helpW{display:none}
 #lock h1{font:600 22px system-ui;color:var(--ink);margin:0 0 10px}
 #lock button{margin:18px 0 12px;font:700 13px ui-monospace,Menlo,monospace;letter-spacing:.14em;text-transform:uppercase;color:#04121c;background:var(--hl);border:0;border-radius:3px;padding:12px 26px;cursor:pointer}
 .flag .fx{color:#ffdca3;border-color:transparent;padding:6px 10px;font-size:15px}.flag .fx:hover{border-color:#ffdca3}
-.flag .off{flex:none;align-self:center;margin-right:10px;font:600 11px ui-monospace,Menlo,monospace;letter-spacing:.08em;text-transform:uppercase;color:#ffdca3;max-width:300px}
+.flag.w.held .tag{cursor:pointer}
+.flag .off{flex:none;align-self:center;margin-right:10px;font:600 11px ui-monospace,Menlo,monospace;letter-spacing:.08em;text-transform:uppercase;color:#ffdca3;white-space:nowrap;border:1px solid #ffdca366;border-radius:3px;padding:2px 7px;cursor:help}
 body.portrait.short #fleet svg{height:16px}body.portrait.short #fleet{gap:3px}body.portrait.short #fleet .axis{font-size:10.5px}body.portrait.short #bay{gap:4px}
 body.portrait.short #deskB{height:176px}body.portrait.short #bay{height:64px;padding-bottom:6px}body.portrait.short #deskB>.in{gap:8px;padding:10px 16px}
 @media (max-width:700px){.views{flex-wrap:wrap}}
@@ -432,7 +453,7 @@ function agent(id){
   el.innerHTML=`<div class="flag w" hidden><b class="tag"></b><div class="msg"><span></span></div><span class="off" hidden></span><button class="rev" hidden>Review</button><button class="yes" hidden>Allow</button><button class="no" hidden>Deny</button><button class="fx" hidden title="Dismiss this notice" aria-label="Dismiss this notice">×</button></div><div class="flag r" hidden><b class="tag">Alert</b><div class="msg"><span></span></div></div>
     <div class="pband"></div><header><span class="av">?</span><div class="id"><b></b><span class="doing"></span><span class="ctx"><em class="pj"></em><span class="goal"></span></span><span class="sub"></span><span class="fuel" hidden><i><u></u></i><em></em></span></div><button class="go" title="Open this session in its desktop app"></button><button class="pinb" title="Keep this agent in the room when you dismiss the quiet ones">Pin</button><button class="x" title="Dismiss from the room. It comes back if it does something new." aria-label="Dismiss this agent from the room">×</button></header>
     <div class="mon"><div class="tab"><span class="what"></span><span class="how"></span></div><div class="pin" hidden>Showing an earlier step — click to go back to live. Any rendered page beside it is the file as it is on disk now.</div><div class="plan" hidden></div><div class="split"><pre class="code"></pre><div class="pvw" hidden><iframe sandbox="allow-scripts" title="Rendered preview"></iframe><span class="pvn"></span></div></div></div>
-    <div class="views"><button data-side="L" hidden>Log</button><button data-side="R" hidden>Comms</button><span>Screen</span><button data-v="doing"><i>1</i>Doing</button><button data-v="seeing"><i>2</i>Seeing</button><button data-v="changes"><i>3</i>Changes</button></div><div class="lk" hidden></div>`;
+    <div class="views"><button data-side="L" hidden>Log</button><button data-side="R" hidden>Comms</button><span>Screen</span><button data-v="said"><i>1</i>Saying</button><button data-v="doing"><i>2</i>Doing</button><button data-v="seeing"><i>3</i>Seeing</button><button data-v="changes"><i>4</i>Changing</button></div><div class="lk" hidden></div>`;
   /* Hover is owned by the pointer's position over the SEAT, not by the element: once in hand the monitor moves to the
      centre, away from the pointer, so the element's own leave event must not end the hover (that loop is what made
      the room pulse). A hover is acquired only when the camera is still; a camera gesture never starts one. */
@@ -445,11 +466,25 @@ function agent(id){
     const sb=t.closest('[data-side]'); if(sb){narrow=narrow===sb.dataset.side?null:sb.dataset.side; desk(); return}
     if(t.closest('.x')){dismiss(id);return}
     if(t.closest('.pinb')){togglePin(id);return}
-    if(t.closest('.rev')){narrow=null; if(focus===id)setView('doing');else setFocus(id);return}
+    const heldReq=a.perms&&Object.values(a.perms).some(p=>p&&!p.sent);
+    if(t.closest('.rev')||(t.closest('.flag.w.held .tag')&&heldReq)){narrow=null; if(DEMO&&!APPROVE) APPROVE=true;      /* Review, or the tag of a held request, opens it on Doing; in the demo that also switches answering on, so Allow and Deny are one click away */
+      if(focus===id)setView('doing');else{setFocus(id); setView('doing')}return}
     const yn=t.closest('.yes,.no');
     if(yn){const p=a.perms[yn.dataset.pid];        /* exactly the request these buttons were drawn for, and only while it is the one on screen */
       if(!p||p.sent||focus!==id||a.permScreen!==p.pid||!APPROVE||covered()||!onScreen(a.$.code)||Date.now()-(+yn.dataset.at||0)<450) return;      /* measured now, not when it was last painted */ const allow=yn.classList.contains('yes'); p.sent=true; a.dirty=true;
       const back=msg=>{p.sent=false; a.dirty=true; a.permMsg=msg};
+      if(DEMO){const now=()=>Date.now()/1000, H=o=>handle(Object.assign({agent:id,ts:now()},o)), after=(ms,f)=>setTimeout(()=>{f(); render()},ms);      /* nothing leaves the page: the request ends here and the fictional agent carries on for a while */
+        a.permMsg=(allow?'Allowed':'Denied')+' from here'; render();
+        after(600,()=>{H({kind:'perm_end',pid:p.pid,how:(allow?'allowed':'denied')+' from the room'});
+          if(allow) H({kind:'run',id:'c9',cmd:'rm -rf build/ && make nightly ARCH=arm64 CRC=soft',why:'rebuild with the soft CRC path'});
+          else{H({kind:'say',text:'Understood, I will not clear the build directory. I will try an out-of-tree build in /tmp instead and report back.'}); H({kind:'turn_end'})}});
+        if(allow){
+          after(4000,()=>{H({kind:'result',id:'c9',text:'…\nlinking nightly (arm64, CRC=soft)\nok'}); H({kind:'say',text:'Linked. The nightly builds on arm64 with CRC=soft. Now making that the default for arm64 targets so the fast path is only used where the symbol exists.'})});
+          after(7000,()=>H({kind:'edit',id:'c10',path:'/Users/demo/Projects/Lighthouse/Makefile',before:'CRC ?= hw',after:'CRC ?= $(if $(filter arm64,$(ARCH)),auto,hw)'}));
+          after(9500,()=>{H({kind:'result',id:'c10',text:'ok'}); H({kind:'run',id:'c11',cmd:'make nightly ARCH=arm64',why:'confirm the default links'})});
+          after(13000,()=>{H({kind:'result',id:'c11',text:'linking nightly (arm64, CRC=auto)\nok'}); H({kind:'say',text:'Done. arm64 now defaults to CRC=auto and the nightly links cleanly; the diff is one line in the Makefile. Ready for a pull request when you are.'}); H({kind:'turn_end'})});
+        }
+        return}
       post('/decide',{pid:p.pid,allow}).then(r=>{if(!r.ok)back(r.status===409?'Already answered from another window.':'That prompt is no longer waiting; it may have been answered in the app.')}).catch(()=>back('Could not reach the server; nothing was sent. Try again.'));
       return}
     if(t.closest('.fx')){for(const k in a.asks) if(a.asks[k].maybe) delete a.asks[k]; if(a.said) a.saidOff=a.said.ts; a.wait=null; a.dirty=true; render(); return}
@@ -717,7 +752,7 @@ function handle(e){
       {const confirms=a.endHook&&!e.hook&&lastBefore<=(a.endTs||0);      /* the log confirming a hook's provisional end, and nothing newer since that end */
       if(a.endTs&&e.ts<a.endTs&&!confirms) break;      /* older than the end we have */
       if(e.ts<lastBefore&&!confirms) break;}             /* older than the latest record: the log has moved on since */
-      a.turn='ended'; a.endHook=!!e.hook; a.how=e.hook?'turn ended · reported by its hook, not yet in its log':(e.how||''); a.endTs=Math.max(e.ts,a.endTs||0); if(!e.hook) a.calls={}; break;
+      a.turn='ended'; a.endHook=!!e.hook; a.how=e.hook?'turn ended · reported by its hook, not yet in its log':(e.how||''); a.endTs=Math.max(e.ts,a.endTs||0); if(!e.hook) a.calls={}; if(!e.hook) note(a,{t:'end',ts:e.ts}); break;
     case 'turn_start': if(!(a.endTs&&e.ts<a.endTs)) a.turn='in'; break;
     case 'file': a.html={path:e.path,v:e.seq>=0?e.seq:Date.now(),ts:e.ts}; break;
     case 'result': {const c=a.calls[e.id]; if(c){if(e.ts>=c.ts&&!c.guess){const l=((a.durs=a.durs||{})[c.kind]=a.durs[c.kind]||[]); l.push(e.ts-c.ts); if(l.length>40)l.shift()} c.done=true; c.out=e.text; c.err=!!e.error; c.unknown=!!e.unknown; delete a.calls[e.id];
@@ -866,12 +901,20 @@ async function preview(a,path){
   }catch(err){if(tok===f._tok){a.pvErr=String(err.message||err); /* f._v is kept: this version is not fetched again until the file changes */ f.srcdoc='<p style="font:14px system-ui;padding:20px;color:#555">The rendered page could not be loaded.</p>'}}
   a.dirty=true;
 }
+function said(a,now){
+  const all=a.story.filter(it=>it.t==='say'), at=a.sayAt?all.findIndex(x=>x.n===a.sayAt):-1;
+  const says=at>=0?all.slice(Math.max(0,at-2),Math.max(at+1,Math.min(all.length,at+10))):all.slice(-12);      /* the chosen message and its neighbours, else the latest twelve */
+  if(STEADY) return ["What it's saying",'hidden in steady mode','<span class="k">(narration hidden in steady mode)</span>','code'];
+  if(!says.length) return ["What it's saying",'nothing yet','<span class="k">Nothing said yet. What it tells you as it works appears here, as the log records it.</span>','code'];
+  const l=says[says.length-1];
+  return ["What it's saying",'spoke '+dur(now-l.ts)+' ago · '+says.length+(says.length===1?' message':' messages'),says.map((it,i)=>{const t=plain(it.text).trim(); return `<p data-n="${it.n}"${i===says.length-1?' class="now"':''}>${esc(t.length>1500?'…'+t.slice(-1500):t)}</p>`}).join(''),'code'];
+}
 function seeing(a){
   const c=[a.seen&&{ts:a.seen.ts,k:'img'},a.html&&{ts:a.html.ts||0,k:'html'},a.web&&a.web.out&&{ts:a.web.ts,k:'web'}].filter(Boolean).sort((x,y)=>y.ts-x.ts)[0];
-  if(!c) return ['Seeing','','<span class="k">Nothing visual recorded: no screenshot, opened image, edited page or search result in what has been read of its log.</span>','code'];
-  if(c.k==='img') return [a.seen.label+' · '+clock(a.seen.ts)+' · file as it is on disk now',esc(tail2(a.seen.img)),`<img src="/fs/${PK}${a.seen.img.split('/').map(encodeURIComponent).join('/')}" alt="What the agent was looking at">`,'code'];
-  if(c.k==='html') return ['Rendered page · '+tail2(a.html.path),'the file on disk now','','full'];
-  return ['Search results',esc(a.web.q||''),lines(a.web.out),'code'];
+  if(!c) return ["What it's seeing",'nothing visual recorded','<span class="k">Nothing visual recorded: no screenshot, opened image, edited page or search result in what has been read of its log.</span>','code'];
+  if(c.k==='img') return ["What it's seeing · "+a.seen.label+' · '+clock(a.seen.ts)+' · file as it is on disk now',esc(tail2(a.seen.img)),`<img src="/fs/${PK}${a.seen.img.split('/').map(encodeURIComponent).join('/')}" alt="What the agent was looking at">`,'code'];
+  if(c.k==='html') return ["What it's seeing · rendered page · "+tail2(a.html.path),'the file on disk now','','full'];
+  return ["What it's seeing · search results",esc(a.web.q||''),lines(a.web.out),'code'];
 }
 function checkLine(k){
   if(!k) return '<span class="k">No test or build command seen in what has been read of its log.</span>\n\n';
@@ -885,7 +928,7 @@ function changes(a){
   const tag=e=>!e.done?' · proposed, no result yet':e.err?' · failed, not applied':'';
   const body=a.edits.slice().reverse().map(e=>`<span class="k" style="display:block">── ${esc(tail2(e.path))} · ${clock(e.ts)}${tag(e)}</span>`+screen(e,0)[2]).join('\n');
   const cap=a.dropped?`\n<span class="k">… ${a.dropped} earlier edit${a.dropped>1?'s':''} not kept (only the latest 60 are shown)</span>`:(a.partial?'\n<span class="k">Earlier history was not loaded, so earlier edits may be missing.</span>':'');
-  return ['Changes seen',files.size+' file'+(files.size===1?'':'s')+' · '+ok.length+' applied edit'+(ok.length===1?'':'s'),checkLine(a.check)+(body||'<span class="k">No file changes seen.</span>')+cap,'code'];
+  return ["What it's changing",files.size+' file'+(files.size===1?'':'s')+' · '+ok.length+' applied edit'+(ok.length===1?'':'s'),checkLine(a.check)+(body||'<span class="k">No file changes seen.</span>')+cap,'code'];
 }
 
 /* ---------- subtitles ----------
@@ -948,6 +991,8 @@ function render(){
     cl.toggle('busy',S.busy&&!w); cl.toggle('idle',!S.busy&&!w&&!at);
     cl.toggle('wait',!!w&&N.sure); cl.toggle('maybe',!!w&&!N.sure); cl.toggle('alarm',!!al&&!w); cl.toggle('pinned',!!PINS[id]);
     hid(a.$.fw,!w); if(!w) a.permScreen=null;
+    {const heldNow=!!w&&!!N.perm&&!N.perm.sent; a.$.fw.classList.toggle('held',heldNow); const tg=a.$.fw.querySelector('.tag');      /* the tag of a held request is a button: focusable, Enter and Space open it; plain text otherwise */
+      if(heldNow){tg.setAttribute('role','button'); tg.tabIndex=0; tg.title='Open this request at the desk'} else{tg.removeAttribute('role'); tg.removeAttribute('tabindex'); tg.removeAttribute('title')}}
     if(w){
       txt(a.$.fwk,({Approve:'Approve',Decide:'Decide',Action:'Action needed','Needs you':'Needs you'}[N.kind])+(N.sure?'':' · probably')+(N.more?' · +'+N.more:''));
       txt(a.$.fwt,STEADY?'(text hidden in steady mode)':a.permMsg||one(w).slice(0,300)); a.$.fw.classList.toggle('soft',!N.sure);
@@ -957,7 +1002,7 @@ function render(){
       if(can&&a.$.yes.dataset.pid!==N.perm.pid){          /* a different request gets different buttons: a press begun on the old pair can never land on these */
         for(const k of ['yes','no']){const b=a.$[k].cloneNode(true); b.dataset.pid=N.perm.pid; b.dataset.at=Date.now(); a.$[k].replaceWith(b); a.$[k]=b}}
       hid(a.$.yes,!can); hid(a.$.no,!can); hid(a.$.rev,!(N.perm&&!showing));
-      const offNote=showing&&!APPROVE; hid(a.$.off,!offNote); if(offNote)txt(a.$.off,'Answering is off in this window. Answer in the app, or switch on “Answer prompts here”.');
+      const offNote=showing&&!APPROVE; hid(a.$.off,!offNote); if(offNote){txt(a.$.off,'not answering here'); a.$.off.title='Answering is off in this window. Answer it in the app, or switch on “Answer here” in the bar.'}      /* two words in the banner; the sentence in the tooltip, so the request keeps its width */
     }
     hid(a.$.fx,!(w&&!N.sure)&&!(w&&N.kind==='Needs you'));
     if(!w||!N.perm) hid(a.$.off,true);
@@ -977,9 +1022,21 @@ function render(){
     {const pn=proj(id), early=a.goalEarly; txt(a.$.pj,projLabel(pn)); txt(a.$.goal,STEADY?(a.goal?'(goal hidden in steady mode)':''):(a.goal||(a.task?'':'no first message read'))); a.$.goal.title=a.goal&&!STEADY?(early?'The earliest message read from its log (the log was not read from the start): ':'Your first message to it: ')+a.goal:''}
     txt(a.$.sub,(a.task||'')+(a.maybe&&!a.parent&&A[a.maybe.parent]?(a.task?' · ':'')+'possibly started by '+A[a.maybe.parent].name:'')+(a.q.length?'  ✉ '+a.q.length+' queued':''));      /* the guess is visible from the room too */
     let [what,how,body]=c?screen(c,now):['','','<span class="k">nothing opened yet</span>'], mode='split';
+    /* in the room and in hand: narration, the agent's own messages as the log records them (never its reasoning, which the log does not hold); an agent that has said nothing yet keeps the terminal view */
+    let say=false;
+    let youLine='';
+    if(!at){youLine=a.user&&!STEADY?'You, '+dur(now-a.user.ts)+' ago: '+one(plain(a.user.text)).slice(0,300):'';      /* your last message to it, one line, on every room and held monitor */
+      const says=a.story.filter(it=>it.t==='say').slice(-6);
+      if(!says.length){if(youLine) body=`<p class="you" title="${esc(youLine)}">${esc(youLine)}</p>`+body}
+      else{const l=says[says.length-1]; say=true; mode='code'; what=youLine||"What it's saying"; how='spoke '+dur(now-l.ts)+' ago';
+      body=STEADY?'<span class="k">(narration hidden in steady mode)</span>':says.map((it,i)=>{const t=plain(it.text).trim(); return `<p${i===says.length-1?' class="now"':''}>${esc(t.length>700?'…'+t.slice(-700):t)}</p>`}).join('')}}
+    if(at&&deskView==='said'&&!a.pin) say=true;
+    a.$.code.classList.toggle('say',say); a.$.what.parentElement.classList.toggle('you',say&&!!youLine); a.$.what.title=say&&youLine?youLine:'';
     if(at&&!a.pin&&N&&N.perm&&deskView==='doing') [what,how,body,mode]=['Permission requested · '+N.perm.tool,'held for an answer · '+dur(now-N.perm.ts),`<span class="k">This is the request as the app sent it; scroll to read all of it. ${APPROVE?'Allow and Deny are in the bar above and apply to this request only.':'This window is not answering prompts.'}</span>\n\n`+lines(N.perm.text,'',5000),'code'];
-    else if(at&&deskView!=='doing'&&!a.pin) [what,how,body,mode]=deskView==='seeing'?seeing(a):changes(a);
+    else if(at&&deskView!=='doing'&&!a.pin) [what,how,body,mode]=deskView==='seeing'?seeing(a):deskView==='said'?said(a,now):changes(a);
+    else if(at&&!a.pin&&what) what="What it's doing · "+what;
     txt(a.$.what,what); put(a.$.how,how); put(a.$.code,body);
+    if(say&&a.$.code._tail!==body){a.$.code._tail=body; a.$.code.scrollTop=a.$.code.scrollHeight}      /* in the room and on the Said screen alike */      /* short narration reads from the top; long narration shows its newest lines */
     const pv=a.html;
     hid(a.$.pvw,!pv||mode==='code'); a.$.split.classList.toggle('pv',!!pv&&mode==='split'); a.$.split.classList.toggle('full',!!pv&&mode==='full');
     if(pv){txt(a.$.pvn,(a.pvErr?'not rendered — '+a.pvErr+': ':'on disk now: ')+tail2(pv.path)); if(PK&&a.$.frame._v!==pv.v+pv.path){a.$.frame._v=pv.v+pv.path; preview(a,pv.path)}}
@@ -997,7 +1054,7 @@ function render(){
   {const n=$('#needs'), t=$('#hud').offsetHeight+2+'px'; if(n.style.top!==t) n.style.top=t}      /* always directly under the top bar, however it wraps */
   attention(now); subs(now);
   hid($('#needN'),true);      /* the "N may need you" button is hidden at the owner's request (2026-10-06); the tab title count and the monitors' own flags carry this */
-  const ap=$('#appr'); hid(ap,!!locked||DEMO);      /* a demo window has no switch: it could not show a held prompt */ ap.classList.toggle('on',APPROVE); ap.setAttribute('aria-pressed',String(!!APPROVE)); ap.title=(APPROVE?'On: while this window is visible, Claude permission prompts wait here for your Allow or Deny.':'Off: Claude asks in its own app as usual.')+' Click to switch.';
+  const ap=$('#appr'); hid(ap,!!locked); ap.classList.toggle('on',APPROVE); ap.setAttribute('aria-pressed',String(!!APPROVE)); ap.title=DEMO?'Demo: switches on and off here only. No prompt is held and nothing is sent.':(APPROVE?'On: while this window is visible, Claude permission prompts wait here for your Allow or Deny.':'Off: Claude asks in its own app as usual.')+' Click to switch.';
   const all=Object.keys(A).length, goneN=all-order.length;
   hid($('#bringB'),!goneN||!!focus); txt($('#bringB b'),String(goneN)); $('#bringB').title='Bring back '+goneN+' dismissed agent'+(goneN===1?'':'s'); hid($('#clearQ'),!!focus||order.length<2);
   /* the fleet: an "All" chip, then one chip per project carrying that project's agents as lit cells */
@@ -1194,7 +1251,7 @@ let flyT=0, applyQ=0;
 const queueApply=()=>{if(!applyQ) applyQ=requestAnimationFrame(()=>{applyQ=0; apply()})};      /* many gesture events, one camera update per painted frame */
 const fly=()=>{world.classList.add('fly'); clearTimeout(flyT); flyT=setTimeout(()=>world.classList.remove('fly'),1150)};
 const hands=()=>{world.classList.remove('fly'); clearTimeout(flyT)};       /* your hands on the view end any camera glide at once */
-function setView(v){if(!focus)return; deskView=v; const a=A[focus]; a.pin=null; a.zm=1; a.$.split.style.setProperty('--zm','1'); a.dirty=true; render()}
+function setView(v){if(!focus)return; deskView=v; const a=A[focus]; a.pin=null; a.sayAt=null; a.zm=1; a.$.split.style.setProperty('--zm','1'); a.dirty=true; render()}
 /* Stepping up. The monitor must grow from where it is on the screen (in hand, or in its seat) into the desk, as one
    move. Its own transform and the camera's live in different spaces, so a CSS transition on each makes the monitor
    dip before it grows. Instead its on-screen pose is interpolated directly, frame by frame, with the camera's glide
@@ -1223,9 +1280,12 @@ function setFocus(id){
   if(focus&&A[focus]){A[focus].zm=1;A[focus].$.split.style.setProperty('--zm','1')}
   clearTimeout(peekT); if(peek)setPeek(null,true);
   const P0=id&&A[id]&&!A[id].gone?screenPose(A[id].el):null;      /* where the monitor is on screen right now, before anything moves */
+  const src=id&&A[id]&&!STEADY&&id!==focus&&A[id].$.code.classList.contains('say');      /* stepping up from a narrating monitor lands on the desk's Said screen */
   if(id&&A[id].gone)revive(id);
   for(const k of order){A[k].dirty=true;A[k].pin=null}
-  const was=focus; stick=true; stickC=true; deskView='doing'; narrow=null; focus=id; glideN++; fly(); apply(); render();
+  if(id&&A[id]) A[id].sayAt=null;
+  const held=id&&A[id]&&Object.values(A[id].perms||{}).some(p=>p&&!p.sent);      /* a held permission request is answered on Doing, so that is where you land */
+  const was=focus; stick=true; stickC=true; deskView=src&&!held?'said':'doing';      /* otherwise, land on the screen you were reading */ narrow=null; focus=id; glideN++; fly(); apply(); render();
   apply();                                    /* again, now that the desk's own bars exist and can be measured */
   if(P0&&pos[id]) stepUp(id,P0);
   if(was&&was!==id&&A[was]&&A[was].forgetLater) forget(was);
@@ -1236,11 +1296,12 @@ $('#needs').onclick=e=>{const x=e.target.closest('[data-x]'); if(x){for(const al
 try{if(!DEMO&&!localStorage.getItem('liveRoomHinted')){localStorage.setItem('liveRoomHinted','1'); $('#hint').classList.add('show'); setTimeout(()=>$('#hint').classList.remove('show'),9000)}}catch(err){}      /* the demo shows no hint and touches no flag */
 $('#help').onclick=()=>$('#hint').classList.toggle('show');          /* a click shows the hint too, for keyboards and touch, not only hover */
 addEventListener('keydown',e=>{
+  if((e.key==='Enter'||e.key===' ')&&e.target&&e.target.matches&&e.target.matches('.flag.w.held .tag')){e.preventDefault(); moved=false; e.target.click(); return}      /* the held request's tag, from the keyboard; never a drag's trailing click */
   if(e.target.closest&&e.target.closest('input,textarea')) return;
   if(e.key==='Escape')setFocus(null);
   if(!focus&&(e.key==='ArrowLeft'||e.key==='ArrowRight')){turn(e.key==='ArrowRight'?1:-1); e.preventDefault()}
   if(focus&&(e.key==='['||e.key===']')){bayPg+=e.key===']'?1:-1;desk()}
-  const v={1:'doing',2:'seeing',3:'changes'}[e.key]; if(v&&focus)setView(v);
+  const v={1:'said',2:'doing',3:'seeing',4:'changes'}[e.key]; if(v&&focus)setView(v);
 });
 let wasPortrait=portrait();
 addEventListener('resize',()=>{if(portrait()!==wasPortrait){wasPortrait=portrait();layout()}else{apply();render()}});
@@ -1262,7 +1323,7 @@ room.addEventListener('dblclick',e=>{if(focus||e.target.closest('.st'))return; i
    One continuous gesture (including its momentum tail) can trigger at most one step: after a step fires, nothing
    more fires until the stream of wheel events has actually paused. */
 let gT=0, gz=0, gx=0, gFired=false, gZone=null, gPinch='';
-const VIEWS=['doing','seeing','changes'];
+const VIEWS=['said','doing','seeing','changes'];      /* the four screens, in the order of their buttons and keys */
 function canScrollX(el,dx){for(;el&&el!==document.body;el=el.parentElement){
   if(el.scrollWidth>el.clientWidth+2&&/(auto|scroll)/.test(getComputedStyle(el).overflowX)){
     if(dx<0?el.scrollLeft>0:el.scrollLeft+el.clientWidth<el.scrollWidth-1) return true}} return false}
@@ -1300,7 +1361,7 @@ addEventListener('wheel',e=>{
   if(!zone||gFired) return;                        /* over the log or comms a sideways swipe does nothing, and locks nothing */
   gx+=e.deltaX; if(Math.abs(gx)<90) return;
   const dir=gx>0?1:-1; gFired=true;
-  if(zone==='bay'){bayPg+=dir;desk()} else if(zone==='walk') step(dir); else setView(VIEWS[(VIEWS.indexOf(deskView)+dir+3)%3]);
+  if(zone==='bay'){bayPg+=dir;desk()} else if(zone==='walk') step(dir); else setView(VIEWS[(VIEWS.indexOf(deskView)+dir+VIEWS.length)%VIEWS.length]);
 },{passive:false});
 
 /* ---------- stepped up: the desk around one monitor ---------- */
@@ -1312,6 +1373,8 @@ $('#bayH').onclick=ev=>{const b=ev.target.closest('[data-pg]'); if(b){bayPg+=+b.
 const capAdd=(set,k)=>{set.add(k); while(set.size>60) set.delete(set.values().next().value)};      /* expanded groups and messages: one bound, every path */
 storyEl.addEventListener('click',ev=>{
   if(!focus||getSelection().toString()) return; const a=A[focus], c=ev.target.closest('[data-c]'), d=ev.target.closest('[data-i]');
+  const sv=ev.target.closest('[data-say]');
+  if(sv){const n=+sv.dataset.say; a.pin=null; a.sayAt=n; deskView='said'; a.dirty=true; render(); const pEl=a.$.code.querySelector(`[data-n="${n}"]`); if(pEl){pEl.scrollIntoView({block:'center'}); pEl.classList.add('hl'); setTimeout(()=>pEl.classList.remove('hl'),1600)} return}
   if(c){const k=c.dataset.c; a.open.has(k)?a.open.delete(k):capAdd(a.open,k); stick=false}
   else if(d){const it=a.story.find(x=>x.n===+d.dataset.i); a.pin=(it&&it.e&&it.e!==a.cur&&a.pin!==it.e)?it.e:null; if(a.pin)deskView='doing'}
   else return;
@@ -1380,20 +1443,23 @@ function desk(){
   const ch=[]; let cur={key:'start',you:null,items:[]};
   a.story.forEach((it,i)=>{if(it.t==='you'){if(cur.you||cur.items.length)ch.push(cur);cur={key:it.key||'t'+it.ts,you:it,items:[]}}else cur.items.push([i,it])}); ch.push(cur);
   const S=stateOf(a,now);
-  const item=([i,it])=>it.t==='say'?`<p class="v">“${esc(plain(it.text).slice(0,900))}”</p>`
+  const item=([i,it])=>it.t==='say'?`<p class="sv" data-say="${it.n}" title="${esc(one(plain(it.text)).slice(0,400))}"><b>said</b>${esc(one(plain(it.text)).slice(0,160))}<small>${clock(it.ts)}</small></p>`
+    :it.t==='end'?`<p class="end">■ turn ended · ${clock(it.ts)}</p>`
     :it.t==='wait'?`<p class="w">⏳ ${esc(one(it.text).slice(0,200))}</p>`
     :it.t==='compact'?`<p class="dv cp">${esc('context summarised'+(it.trigger==='auto'?' automatically':it.trigger==='manual'?' on request':'')+(num(it.pre)||num(it.post)?' · '+tok(it.pre)+' → '+tok(it.post)+' tokens':'')+' · '+clock(it.ts))}</p>`
     :`<p class="sd${it.e===a.pin?' on':''}${it.e.err||it.e.alert?' bad':''}" data-i="${it.n}">${it.e.alert?'⚠ ':''}${esc(did(it.e))}<small>${clock(it.ts)}</small></p>`;
   let h=(a.partial?'<p class="dv">earlier history not loaded</p>':'')+ch.map((c,ci)=>{
-    const dids=c.items.filter(x=>x[1].t==='did'), says=c.items.filter(x=>x[1].t==='say'), open=a.open.has(c.key), last=ci===ch.length-1, live=last&&S.busy;
+    const dids=c.items.filter(x=>x[1].t==='did'), says=c.items.filter(x=>x[1].t==='say'), open=a.open.has(c.key), last=ci===ch.length-1, live=last&&S.busy&&a.turn==='in';
     const n={r:0,w:0,x:0}; dids.forEach(([,it])=>{const k=it.e.kind; k==='read'?n.r++:['write','edit','patch'].includes(k)?(it.e.done&&!it.e.err?n.w++:0):k==='run'?n.x++:0});
     const parts=[n.r&&`read ${n.r}`,n.w&&`edits ${n.w}`,n.x&&`commands ${n.x}`].filter(Boolean).join(', ');
+    const span=c.items.length>1?(c.items[c.items.length-1][1].ts-c.items[0][1].ts):0;      /* how long this group has run, first entry to last */
     const bad=dids.some(([,it])=>it.e.err||it.e.alert);
     if(!c.items.length&&!last) return '';        /* a message with nothing recorded after it adds no line here; it is in Comms */
     const head=c.you?`<p class="dv${a.hit===c.key?' hit':''}" data-k="${esc(c.key)}">after your ${clock(c.you.ts)} message</p>`:'';
-    const sum=dids.length?`<p class="sum${bad?' bad':''}" data-c="${esc(c.key)}">${open?'▾':'▸'} ${dids.length} step${dids.length>1?'s':''}${live?' so far':''}${parts?' · '+parts:''}${live&&!open?'<br>latest: '+esc(did(dids[dids.length-1][1].e)):''}</p>`:'';
+    const sum=dids.length?`<p class="sum${bad?' bad':''}" data-c="${esc(c.key)}">${open?'▾':'▸'} ${dids.length} step${dids.length>1?'s':''}${live?' so far':''}${parts?' · '+parts:''}${span>=60?' · '+dur(span):''}${live&&!open?'<br>latest: '+esc(did(dids[dids.length-1][1].e)):''}</p>`:'';
     const ls=says.length?says[says.length-1][1]:null, t=ls?one(plain(ls.text)):'';
-    return head+sum+(open?c.items.map(item).join(''):c.items.filter(x=>x[1].t==='compact').map(item).join('')+(ls?`<p class="v">“${esc(t.slice(0,280))}${t.length>280?'…':''}”</p>`:''));
+    const nowm=live?`<p class="nowm">now · in a turn</p>`:'';
+    return head+sum+(open?c.items.map(item).join(''):c.items.filter(x=>x[1].t==='compact'||x[1].t==='end'||(ls&&x[1]===ls)).map(item).join(''))+nowm;      /* in recorded order, never reordered */
   }).join('');
   if(storyEl._h!==h&&!getSelection().toString()){put(storyEl,h||'<p>Nothing recorded yet.</p>'); if(stick) storyEl.scrollTop=storyEl.scrollHeight}
   /* comms: only what you said to it, and what it seems to need from you */
@@ -1428,11 +1494,12 @@ function pulse(src,dst,label){
 let NOTIFY=false; try{NOTIFY=store.getItem('liveRoomNotify')==='1'}catch(err){}
 const canNotify=()=>'Notification' in window&&Notification.permission==='granted';
 function paintNotify(){const b=$('#notify'), blocked='Notification' in window&&Notification.permission==='denied';
-  b.classList.toggle('on',NOTIFY&&canNotify()); b.classList.toggle('blocked',blocked);
-  b.title=(!('Notification' in window)?'Notifications are not available in this browser.':blocked?'Notifications are blocked for this site in the browser settings.':NOTIFY&&canNotify()?'On: a macOS notification when an agent starts waiting on you and you are not looking at it. It says only the kind of request; neither the agent\'s name nor the request text leaves this page.':'Off: no notifications. The count in the tab title is always on.')+' Click to switch.';
-  b.setAttribute('aria-pressed',String(!!(NOTIFY&&canNotify())))}
+  b.classList.toggle('on',NOTIFY&&(DEMO||canNotify())); b.classList.toggle('blocked',blocked&&!DEMO);
+  b.title=DEMO?'Demo: switches on and off here only. The browser is not asked for anything.':(!('Notification' in window)?'Notifications are not available in this browser.':blocked?'Notifications are blocked for this site in the browser settings.':NOTIFY&&canNotify()?'On: a macOS notification when an agent starts waiting on you and you are not looking at it. It says only the kind of request; neither the agent\'s name nor the request text leaves this page.':'Off: no notifications. The count in the tab title is always on.')+' Click to switch.';
+  b.setAttribute('aria-pressed',String(!!(NOTIFY&&(DEMO||canNotify()))))}
 $('#notify').onclick=async()=>{
-  if(DEMO||!('Notification' in window)) return;
+  if(DEMO){NOTIFY=!NOTIFY; paintNotify(); return}      /* demo: a local switch, no permission asked, nothing stored */
+  if(!('Notification' in window)) return;
   if(NOTIFY&&canNotify()) NOTIFY=false;
   else{if(Notification.permission==='default'){try{await Notification.requestPermission()}catch(err){}} NOTIFY=canNotify()}
   try{store.setItem('liveRoomNotify',NOTIFY?'1':'0')}catch(err){} paintNotify()};
@@ -1441,7 +1508,7 @@ function attention(now){
   let n=0;
   for(const k of order){const a=A[k], N=need(a), sure=!!(N&&N.sure), sig=sure?N.kind+'|'+N.text:'';
     if(sure) n++;
-    if(sig&&sig!==a.needSig&&connectedAt&&now-connectedAt>6&&NOTIFY&&canNotify()&&(document.hidden||focus!==k)){
+    if(sig&&sig!==a.needSig&&connectedAt&&now-connectedAt>6&&NOTIFY&&!DEMO&&canNotify()&&(document.hidden||focus!==k)){      /* never from a demo window: its agents are fictional */
       /* nothing from the logs goes to the OS notification surface: not the request, and not the agent's name, which an agent chooses for itself */
       try{const nt=new Notification('An agent is waiting on you',{body:({Approve:'Permission requested',Decide:'A question for you','Needs you':'Needs your attention',Action:'Action requested'}[N.kind]||'Waiting on you')+' — open W.A.T.C.H. to see which agent and what for',tag:'watch-'+k});
         nt.onclick=()=>{window.focus(); if(A[k])setFocus(k); nt.close()}; if(a.nt)try{a.nt.close()}catch(err){} a.nt=nt}catch(err){}}
@@ -1455,7 +1522,7 @@ let lastSeq=-1, boot='', connected=false, locked=false, connectedAt=0;
    server it is here, which is what lets the server hold a prompt for you. */
 let APPROVE=false; try{APPROVE=!DEMO&&sessionStorage.getItem('liveRoomApprove')==='1'}catch(err){}
 const here=()=>{if(APPROVE&&KEY&&connected&&!DEMO&&document.visibilityState==='visible')post('/presence',{visible:true}).catch(()=>{})};      /* never from a demo window: it could not show a held prompt */
-$('#appr').onclick=()=>{if(DEMO) return; APPROVE=!APPROVE; try{sessionStorage.setItem('liveRoomApprove',APPROVE?'1':'0')}catch(err){} here(); render()};
+$('#appr').onclick=()=>{if(DEMO){APPROVE=!APPROVE; render(); return} APPROVE=!APPROVE; try{sessionStorage.setItem('liveRoomApprove',APPROVE?'1':'0')}catch(err){} here(); render()};
 function lock(on){locked=on; hid($('#lock'),!on)}
 let ES=null, authN=0;       /* one stream at a time; an answer about an older key never touches newer state */
 function connect(){
@@ -1485,16 +1552,17 @@ document.body.classList.toggle('steady',STEADY);
 /* ---------- demo ----------
    Open the page with ?demo and the room fills with a SYNTHETIC fleet: fictional agents on fictional projects, scripted
    so that a sample of what the room can show is on screen at once — working, waiting on you, a question, a hand-off,
-   a sub-agent, last words (no held permission request, no rendered preview, no summarisation marker). Beyond the page
-   and its icons the window makes no request to the server, reads no logs, uses no key (the saved key is never read in
-   this window and the answering and notify switches are hidden, so a demo window can never hold a real prompt), and
-   says so in the bar.
+   a sub-agent, last words, a search result, and one held permission request that Allow and Deny answer on the page with
+   a scripted outcome (no rendered preview, no summarisation marker). Beyond the page and its icons the window makes no
+   request to the server, reads no logs, uses no key (the saved key is never read in this window), writes no shared
+   storage, asks the browser for nothing and raises no OS notification; the two bar switches work on this page only.
+   It says so in the bar.
    Nothing here is real; it exists so the room can be seen (and screenshotted) without anyone's sessions in it.
    DEMO itself is decided at the top of the script, before the key is read, so no credential path runs in a demo window. */
 function demo(){
   const now=()=>Date.now()/1000; let t=now()-900;
-  KEY=''; APPROVE=false; hid($('#appr'),true); hid($('#notify'),true);      /* in memory only: a demo window never reads or writes this tab's approval preference, and has no notify control, because asking for notification permission would change it for the live room too */
-  WATCH_RULES=['deploy','push','publish','delete','send','check','action','decide'].map(label=>({label,on:true,shipped:true})); paintWatch();   /* the panel works here; nothing is written */
+  KEY=''; APPROVE=false;      /* the two switches work on this page only: presence, decisions and notification permission are all guarded by DEMO */
+  WATCH_RULES=['deploy','push','publish','delete','send','check','action','decide'].map(label=>({label,on:true,shipped:true})); paintWatch();   /* the Watch panel works here; nothing is written */
   lock(false); connected=true; connectedAt=now()-30; HEALTH={at:now(),now:now(),scan:now(),ready:true,tails:6};
   setInterval(()=>{HEALTH.at=now(); HEALTH.now=now(); HEALTH.scan=now()},3000);
   const tag=document.createElement('span'); tag.id='demoTag'; tag.textContent='DEMO · synthetic agents · nothing here is real'; $('#brand').after(tag);
@@ -1517,18 +1585,26 @@ function demo(){
   ev('x:demo-bram',{kind:'say',text:'Verdict: GO, with one caveat — the rounding in cents is done after the discount, so a 15% season on $19.99 is $16.9915: the table shows $16.99, but the cart sums the unrounded cents, so four of them come to $67.97 instead of $67.96. Ada should round once, per line.'}); t+=2; ev('x:demo-bram',{kind:'turn_end'});
   ev('x:demo-esme',{kind:'run',id:'e1',cmd:'psql -c "\\d sessions"',why:'inspect the current schema'}); t+=3; ev('x:demo-esme',{kind:'result',id:'e1',text:'Table "public.sessions" … 14 columns'}); t+=60;
   ev('x:demo-esme',{kind:'say',text:'The table has 2.1 million rows and no created_at index. Should I migrate the old rows too, or only new ones from the cut-over?'}); t+=2; ev('x:demo-esme',{kind:'turn_end'});
+  ev('c:demo-cleo',{kind:'web',id:'c0',q:'ld: symbol not found _crc32_hw arm64 linker'}); t+=4;
+  ev('c:demo-cleo',{kind:'result',id:'c0',text:'3 results\n\n1. _crc32_hw undefined when CRC fast path is enabled on arm64 — build-notes.example\n   The hardware CRC32 path is only compiled in when the target advertises the crc feature; on arm64 builds without it the symbol is declared but never defined, so the link fails. Workaround: CRC=soft.\n\n2. Why does the nightly link fail only on arm64? — forum.example/q/18842\n   Same error after enabling the crc32 fast path. The x86 build has the SSE4.2 implementation; arm64 needs the +crc target feature or the soft fallback.\n\n3. CRC32 build flags reference — docs.example/build/crc\n   CRC=hw (default where supported), CRC=soft (portable, slower), CRC=auto (probe at configure time).'}); t+=12;
   ev('c:demo-cleo',{kind:'run',id:'c1',cmd:'make nightly ARCH=arm64',why:'reproduce the failure'}); t+=40; ev('c:demo-cleo',{kind:'result',id:'c1',text:'…\nld: symbol not found: _crc32_hw\nmake: *** [nightly] Error 1',error:true}); t+=8;
+  ev('c:demo-cleo',{kind:'say',text:'The nightly fails at link time on arm64: _crc32_hw is missing. I will have a sub-agent find the first run that failed while I check whether the crc32 fast path was switched on recently.'}); t+=3;
   ev('c:demo-cleo',{kind:'spawn',id:'c2',name:'log search'}); ev('c:demo-dov',{kind:'user',text:'Search the build logs for the first arm64 failure and report the line.'}); t+=3;
   ev('c:demo-dov',{kind:'read',id:'d1',path:'/Users/demo/Projects/Lighthouse/build/nightly-2026-10-05.log'}); t+=4; ev('c:demo-dov',{kind:'result',id:'d1',text:'…'}); t+=10;
-  ev('c:demo-cleo',{kind:'waiting',why:'permission',text:'Claude wants to run: rm -rf build/ && make nightly ARCH=arm64 CRC=soft — answer it in the app.'});
+  ev('c:demo-cleo',{kind:'say',text:'The symbol comes from the crc32 fast path; building with CRC=soft should link. I need to clear the build directory first, which is why I am asking before I run it.'}); t+=2;
+  ev('c:demo-cleo',{kind:'perm',pid:'demo-c3',tool:'Bash',text:'rm -rf build/ && make nightly ARCH=arm64 CRC=soft'});      /* a held request: with the switch on, Allow and Deny are shown at the desk and answered on the page */
   ev('c:demo-ada',{kind:'run',id:'a0',cmd:'npm test -- pricing',why:'run the pricing tests'}); t+=12; ev('c:demo-ada',{kind:'result',id:'a0',text:'12 passing, 1 pending'}); t+=5;
+  ev('c:demo-ada',{kind:'say',text:'Twelve passing and one pending: the four-item cart, which is the rounding case Bram flagged. Rounding once per line instead of once at the end.'}); t+=4;
   /* and the present: Ada works on, Dov reads on, a hand-off goes back to Cleo now and then */
   let n=0; const files=['src/pricing/table.ts','src/pricing/season.ts','src/checkout/total.ts','test/pricing.test.ts'], logs=['nightly-2026-10-05.log','nightly-2026-10-04.log','nightly-2026-10-03.log'];
+  const ADA=['Moving the round() into season.ts so the table and the checkout share one rounding rule.','The pending test was the four-item cart. Running the pricing suite again with the per-line rounding.','Thirteen passing. Next: wire the table into the checkout total so the cart uses the rounded line prices.','Checkout total now uses the rounded line prices. One more pass over the test names, then I will summarise what changed.'];
   const tick=()=>{t=now(); n++;
+    if(n%4===3&&(n/4|0)<ADA.length){ev('c:demo-ada',{kind:'say',text:ADA[n/4|0]})}      /* narration as it unfolds: a synthetic line every fourth tick, each once */
+    if(n===7){ev('c:demo-dov',{kind:'say',text:'The 04 run linked fine, so the break is between the 03 and 05 runs. Checking what changed in the crc32 build flags between them.'})}
     if(n%2){ev('c:demo-ada',{kind:n%4===1?'edit':'run',id:'a'+n,path:'/Users/demo/Projects/Orchard/'+files[n%4],cmd:'npm test -- pricing',why:n%4===1?'':'run the pricing tests',before:'return price * (1 - season.discount);',after:'return round(price * (1 - season.discount));'})}
     else{ev('c:demo-ada',{kind:'result',id:'a'+(n-1),text:n%4===2?'ok':'13 passing'})}
     if(n%3===0){ev('c:demo-dov',{kind:'read',id:'d'+n,path:'/Users/demo/Projects/Lighthouse/build/'+logs[(n/3|0)%3]})} else if(n%3===1){ev('c:demo-dov',{kind:'result',id:'d'+(n-1),text:'… [arm64] ld: symbol not found: _crc32_hw'})}
-    if(n%9===4){ev('c:demo-dov',{kind:'say',text:'First arm64 failure is in nightly-2026-10-03.log line 1142: ld: symbol not found: _crc32_hw. It appears after the crc32 fast path was enabled.'}); pulse('c:demo-dov','c:demo-cleo','reported back')}
+    if(n%9===4){if(n===4) ev('c:demo-dov',{kind:'say',text:'First arm64 failure is in nightly-2026-10-03.log line 1142: ld: symbol not found: _crc32_hw. It appears after the crc32 fast path was enabled.'}); pulse('c:demo-dov','c:demo-cleo','reported back')}      /* said once; the hand-off pulse recurs */
   };
   tick(); setInterval(tick,3500);
 }
