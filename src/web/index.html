@@ -429,8 +429,10 @@ const esc=s=>str(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"
 const put=(e,h)=>{if(e._h!==h){e._h=h;e.innerHTML=h}};
 const hid=(e,h)=>{if(e.hidden!==h)e.hidden=h};
 const txt=(e,t)=>{if(e._t!==t){e._t=t;e.textContent=t}};   /* never touch the DOM unless something changed */
-const short=p=>{p=String(p||'');const h=p.split('/');return h.length>4?'…/'+h.slice(-3).join('/'):p};
-const tail2=p=>String(p||'').split('/').slice(-2).join('/');
+const short=p=>{p=String(p||'');const h=p.split(/[\\/]/);return h.length>4?'…/'+h.slice(-3).join('/'):p};
+const tail2=p=>String(p||'').split(/[\\/]/).slice(-2).join('/');
+/* a preview's address: Windows paths (C:\…) are written C:/…, so a page's relative styles and scripts resolve beside it */
+const fsUrl=p=>{p=String(p); if(/^[A-Za-z]:\\/.test(p)) p=p.replace(/\\/g,'/');return '/fs/'+PK+(p.startsWith('/')?'':'/')+p.split('/').map(encodeURIComponent).join('/')};
 const one=s=>String(s||'').replace(/\s+/g,' ');
 const dur=s=>s<90?Math.max(0,Math.floor(s))+'s':s<5400?Math.floor(s/60)+' min':Math.floor(s/3600)+' h';
 const ago=s=>s<10?'just now':dur(s<90?Math.floor(s/10)*10:s)+' ago';
@@ -645,7 +647,7 @@ let PROJ=null; try{PROJ=store.getItem('liveRoomProj')||null}catch(err){}
 function projName(cwd){
   if(typeof cwd!=='string'||!cwd) return '';
   const m=cwd.match(/\/Projects\/([^/]+)/); if(m) return m[1];
-  return cwd.replace(/\/+$/,'').split('/').pop()||'';
+  return cwd.replace(/[\\/]+$/,'').split(/[\\/]/).pop()||'';
 }
 function projInfo(id){
   const a=A[id]; if(!a) return {n:'',how:''};
@@ -1058,7 +1060,7 @@ function screen(c,now){
    URL in a sandboxed frame under the server's own preview policy (not srcdoc, which would inherit this page's
    nonce-only script policy). Each version is a fresh document; a failed version is not retried until the file changes. */
 async function preview(a,path){
-  const f=a.$.frame, tok=f._tok=(f._tok||0)+1, url='/fs/'+PK+path.split('/').map(encodeURIComponent).join('/');
+  const f=a.$.frame, tok=f._tok=(f._tok||0)+1, url=fsUrl(path);
   try{
     const res=await fetch(url,{cache:'no-store'}); if(tok!==f._tok) return;
     if(!res.ok) throw new Error('not available ('+res.status+')');
@@ -1081,7 +1083,7 @@ function said(a,now){
 function seeing(a){
   const c=[a.seen&&{ts:a.seen.ts,k:'img'},a.html&&{ts:a.html.ts||0,k:'html'},a.web&&a.web.out&&{ts:a.web.ts,k:'web'}].filter(Boolean).sort((x,y)=>y.ts-x.ts)[0];
   if(!c) return ["What it's seeing",'nothing visual recorded','<span class="k">Nothing visual recorded: no screenshot, opened image, edited page or search result in what has been read of its log.</span>','code'];
-  if(c.k==='img') return ["What it's seeing · "+a.seen.label+' · '+clock(a.seen.ts)+' · file as it is on disk now',esc(tail2(a.seen.img)),`<img src="/fs/${PK}${a.seen.img.split('/').map(encodeURIComponent).join('/')}" alt="What the agent was looking at">`,'code'];
+  if(c.k==='img') return ["What it's seeing · "+a.seen.label+' · '+clock(a.seen.ts)+' · file as it is on disk now',esc(tail2(a.seen.img)),`<img src="${fsUrl(a.seen.img)}" alt="What the agent was looking at">`,'code'];
   if(c.k==='html') return ["What it's seeing · rendered page · "+tail2(a.html.path),'the file on disk now','','full'];
   return ["What it's seeing · search results",esc(a.web.q||''),lines(a.web.out),'code'];
 }
@@ -1643,7 +1645,7 @@ function desk(){
   /* readouts: recorded facts, labelled as what they are */
   const par=a.parent&&A[a.parent], f=(k,v)=>`<span><b>${k}</b><em>${esc(v)}</em></span>`;
   put($('#badge'),f('Model',(a.model||'not recorded')+(a.effort?' · '+a.effort+' effort':''))+f('Approval setting',a.perm||'not recorded')
-    +f('Context in use',(fuelOf(a)||{long:'not recorded'}).long)+f('Project',(proj(a.id)?projLabel(proj(a.id))+(projLabel(proj(a.id))!==proj(a.id)?' · folder '+proj(a.id):''):'')||(a.cwd||'').split('/').pop()||'not recorded')+f('Branch',a.branch||'none recorded')
+    +f('Context in use',(fuelOf(a)||{long:'not recorded'}).long)+f('Project',(proj(a.id)?projLabel(proj(a.id))+(projLabel(proj(a.id))!==proj(a.id)?' · folder '+proj(a.id):''):'')||(a.cwd||'').split(/[\\/]/).pop()||'not recorded')+f('Branch',a.branch||'none recorded')
     +f(a.maybe&&!a.parent?'Possibly started by (a guess from script text)':!a.soft?'Started by':/^related/.test(a.via||'')?'Related to':'Started by (inferred)',par?par.name+(a.via?' · '+a.via:''):a.parent?'an agent not in the room':a.maybe?(A[a.maybe.parent]?A[a.maybe.parent].name:'an agent not in the room')+' · '+a.maybe.via:'no parent recorded')
     +f('Session created',a.started?clock(a.started)+' · '+ago(now-a.started):'not recorded')
     +f('You last focused it',a.looked?ago(now-a.looked):a.runtime==='Claude'?'not recorded':(a.runtime||'This tool')+' does not record this'));

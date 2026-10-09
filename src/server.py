@@ -10,7 +10,7 @@ What it does
     ~/.cursor/projects/*/agent-transcripts) and streams what it finds to the page.
   * Optionally answers Claude Code permission prompts from the page (Allow / Deny), through the
     PermissionRequest hook that scripts/install_hooks.py adds. That part is NOT read-only.
-  * Can ask macOS to open a session in its desktop app.
+  * Can ask macOS or Windows to open a session in its desktop app.
 
 Trust boundary
   The server binds to 127.0.0.1. Every data or action endpoint (/events, /check, /keep, /unlink,
@@ -28,7 +28,7 @@ Trust boundary
   another local program able to bind that port could collect the key and answer prompts. Keeping
   other local programs off the port is likewise outside what this tool protects against.
 
-Run:  python3 src/server.py      then open http://127.0.0.1:8793/ and press Unlock
+Run:  python3 src/server.py      (Windows: py src/server.py) then open http://127.0.0.1:8793/ and press Unlock
 Env:  PORT (8793), WINDOW_MIN (20: how recently a session must have been active to appear)
 """
 import glob, hmac, json, mimetypes, os, re, secrets, select, socket, subprocess, threading, time, urllib.parse
@@ -43,6 +43,25 @@ LIVE_CAP, OLD_CAP, BACKLOG = 60000, 6000, 200000
 MAX_POLL, MAX_REST, MAX_PREVIEW, MAX_BODY = 8_000_000, 5_000_000, 8_000_000, 200_000
 HOLD_SECONDS, APPROVER_GRACE, MAX_HOLDS, MAX_STREAMS = 60, 12, 6, 12      # a prompt nobody answers here costs a minute, then goes to the app
 ID_RX = re.compile(r'[0-9a-fA-F-]{8,64}\Z')
+WIN = os.name == 'nt'
+BINARY = getattr(os, 'O_BINARY', 0)       # Windows opens files as text unless told otherwise
+
+
+def same_path(a, b):
+    """Windows file names ignore case; macOS's usually do too, but there the comparison stays exact."""
+    return os.path.normcase(a) == os.path.normcase(b) if WIN else a == b
+
+
+def under(path, roots):
+    return (os.path.normcase(path) if WIN else path).startswith(tuple(os.path.normcase(r) if WIN else r for r in roots))
+
+
+def launch(target):
+    """Hand a file or link to the system, as a double-click would."""
+    if WIN:
+        os.startfile(target)
+    else:
+        subprocess.Popen(['/usr/bin/open', target])
 
 BOOT = '%x' % int(time.time() * 1000)
 PKEY = secrets.token_urlsafe(16)          # previews only; changes every run
@@ -172,30 +191,46 @@ def load_key():
     lock and each file is published by rename, so two servers starting together agree on one key and a hook never
     reads a half-written header. Unlock files old enough to be dead are removed; a younger one may belong to a
     server that is still running, and is left for it."""
-    import fcntl, stat as _st, tempfile
+    import stat as _st, tempfile
     d = os.path.join(HOME, '.live-room')
     os.makedirs(d, mode=0o700, exist_ok=True)
-    if os.path.islink(d) or os.stat(d).st_uid != os.getuid():
+    # Windows has no owner ids or modes here: there the folder is private because it sits in your user profile, whose
+    # permissions keep other (non-administrator) accounts out. Links are refused on both.
+    if os.path.islink(d) or (WIN and os.lstat(d).st_file_attributes & _st.FILE_ATTRIBUTE_REPARSE_POINT) \
+            or (not WIN and os.stat(d).st_uid != os.getuid()):
         raise SystemExit('~/.live-room is not a private directory owned by you; refusing to start')
     os.chmod(d, 0o700)
 
     def publish(name, text):
         fd, tmp = tempfile.mkstemp(dir=d, prefix='.' + name + '-')
-        with os.fdopen(fd, 'w') as f:
+        with os.fdopen(fd, 'w', encoding='utf-8') as f:
             f.write(text)
         os.chmod(tmp, 0o600)
-        os.replace(tmp, os.path.join(d, name))
+        for tries in range(5):          # Windows refuses while another program (a virus scanner, say) has the file open
+            try:
+                os.replace(tmp, os.path.join(d, name))
+                return
+            except PermissionError:
+                if not WIN or tries == 4:
+                    raise
+                time.sleep(0.2)
 
     lock = os.open(os.path.join(d, '.lock'), os.O_WRONLY | os.O_CREAT, 0o600)
     try:
-        fcntl.flock(lock, fcntl.LOCK_EX)
+        if WIN:
+            import msvcrt
+            msvcrt.locking(lock, msvcrt.LK_LOCK, 1)      # retries for about ten seconds, then gives up loudly
+        else:
+            import fcntl
+            fcntl.flock(lock, fcntl.LOCK_EX)
         p, k = os.path.join(d, 'key'), ''
         try:
-            fd = os.open(p, os.O_RDONLY | getattr(os, 'O_NOFOLLOW', 0))
+            fd = os.open(p, os.O_RDONLY | BINARY | getattr(os, 'O_NOFOLLOW', 0))
             try:
                 st = os.fstat(fd)
-                if _st.S_ISREG(st.st_mode) and st.st_uid == os.getuid():
-                    os.fchmod(fd, 0o600)
+                if _st.S_ISREG(st.st_mode) and (WIN or st.st_uid == os.getuid()):
+                    if not WIN:
+                        os.fchmod(fd, 0o600)
                     k = os.read(fd, 400).decode('ascii', 'ignore').strip()
             finally:
                 os.close(fd)
@@ -212,6 +247,11 @@ def load_key():
             except OSError:
                 pass
     finally:
+        if WIN:
+            try:
+                msvcrt.locking(lock, msvcrt.LK_UNLCK, 1)      # Windows may otherwise keep it a while after closing
+            except OSError:
+                pass
         os.close(lock)
     return k
 
@@ -292,7 +332,7 @@ def link_entry(parent, via, soft, sub):
 def load_links():
     """Only well-formed entries are kept: valid ids on both sides, boolean flags, no link to itself, no cycles."""
     try:
-        with open(LINKS_PATH) as f:
+        with open(LINKS_PATH, encoding='utf-8') as f:
             d = json.load(f)
     except Exception:
         return
@@ -330,7 +370,7 @@ def save_links():
         try:
             fd, tmp = tempfile.mkstemp(dir=os.path.dirname(LINKS_PATH), prefix='.links-')
             try:
-                with os.fdopen(fd, 'w') as f:
+                with os.fdopen(fd, 'w', encoding='utf-8') as f:
                     f.write(text)
                 os.chmod(tmp, 0o600)
                 os.replace(tmp, LINKS_PATH)
@@ -548,7 +588,7 @@ def _save_user_watch(d):
     os.makedirs(os.path.dirname(USER_WATCH), mode=0o700, exist_ok=True)
     fd, tmp = tempfile.mkstemp(dir=os.path.dirname(USER_WATCH), prefix='.watch-')
     try:
-        with os.fdopen(fd, 'w') as f:
+        with os.fdopen(fd, 'w', encoding='utf-8') as f:
             json.dump(d, f, indent=2)
             f.write('\n')
         os.chmod(tmp, 0o600)
@@ -1006,13 +1046,14 @@ def match_launch(aid=None):
 BACKFILLED = set()            # agents whose "first message" was recovered from further back, so its time is not a start time
 EXEC_KIDS = {}               # script-launched runs still without a parent: agent -> None
 WORKED = {}                  # folder -> [(agent, first seen there, last seen there), …]: where agents have been reading, writing, running
-PATH_RX = re.compile(r"/Users/[^/\n\"'`]+(?:/[^/\n\"'`<>|;*$]+){2,8}")     # folder names may contain spaces
+PATH_RX = re.compile(r"(?<![\w:])[A-Za-z]:[/\\]Users[/\\][^/\\\n\"'`]+(?:[/\\][^/\\\n\"'`<>|;*$]+){2,8}" if WIN else     # folder names may contain spaces
+                     r"/Users/[^/\n\"'`]+(?:/[^/\n\"'`<>|;*$]+){2,8}")         # a computer's logs hold its own kind of path
 
 
 def folder_keys(path):
     """'Which piece of work is this', from specific to general: the FOLDER (a trailing file name is dropped) cut at
     nine, eight and seven levels."""
-    parts = [x.strip() for x in path.split('/')]
+    parts = [x.strip() for x in (re.split(r'[/\\]', path.lower()) if WIN else path.split('/'))]
     if parts and '.' in parts[-1]:
         parts = parts[:-1]
     return ['/'.join(parts[:d]) for d in (9, 8, 7, 6) if len(parts) >= d]
@@ -1090,11 +1131,13 @@ IMG_EXT = ('.png', '.jpg', '.jpeg', '.gif', '.webp')
 def saw(aid, old, ts, path, label):
     """An image the agent was actually handed (a screenshot result, a picture it opened)."""
     path = urllib.parse.unquote(path[7:]) if path.startswith('file://') else path
+    if WIN and re.match(r'/[A-Za-z]:/', path):     # file:///C:/x.png names C:/x.png
+        path = path[1:]
     try:
         real = os.path.realpath(path)
         st = os.lstat(real)
         import stat as _st
-        if not real.lower().endswith(IMG_EXT) or not _st.S_ISREG(st.st_mode) or real.startswith(tuple(p for p in PRIVATE_ROOTS if '.claude' not in p)):
+        if not real.lower().endswith(IMG_EXT) or not _st.S_ISREG(st.st_mode) or st.st_nlink != 1 or under(real, [p for p in PRIVATE_ROOTS if '.claude' not in p]):
             return
     except OSError:
         return
@@ -1105,7 +1148,8 @@ def saw(aid, old, ts, path, label):
     emit(aid, 'see', old, ts, img=real, label=label)
 
 
-PRIVATE_ROOTS = tuple(os.path.join(HOME, p) + os.sep for p in ('.live-room', '.ssh', '.claude', '.codex', '.aws', '.gnupg', '.config', 'Library'))
+PRIVATE_ROOTS = tuple(os.path.join(HOME, p) + os.sep for p in ('.live-room', '.ssh', '.claude', '.codex', '.aws', '.gnupg', '.config', 'Library')
+                      + (('AppData',) if WIN else ()))
 
 
 def dir_ids(paths):
@@ -1117,6 +1161,22 @@ def dir_ids(paths):
         except OSError:
             pass
     return out
+
+
+def final_path(fd):
+    """Windows only: where the open file really is, every link and junction on the way resolved (the stdlib reaches
+    this through ctypes; os.path.realpath asks the same of a path, not of a file already open)."""
+    import ctypes, msvcrt
+    from ctypes import wintypes
+    get = ctypes.windll.kernel32.GetFinalPathNameByHandleW
+    get.argtypes = [wintypes.HANDLE, wintypes.LPWSTR, wintypes.DWORD, wintypes.DWORD]
+    get.restype = wintypes.DWORD
+    buf = ctypes.create_unicode_buffer(32768)
+    n = get(msvcrt.get_osfhandle(fd), buf, 32768, 0)
+    if not n or n >= 32768:
+        raise OSError('no final path')
+    p = buf.value
+    return '\\\\' + p[8:] if p.startswith('\\\\?\\UNC\\') else p[4:] if p.startswith('\\\\?\\') else p
 
 
 def above(path):
@@ -1131,7 +1191,7 @@ def above(path):
 def in_private(real):
     """Is this path inside a private folder? Judged by name and also by the identity of each folder above it, since
     file names here may ignore case and the home folder may be reached under more than one name."""
-    return (real + os.sep).startswith(PRIVATE_ROOTS) or bool(dir_ids(above(os.path.dirname(real))) & dir_ids(PRIVATE_ROOTS))
+    return under(real + os.sep, PRIVATE_ROOTS) or bool(dir_ids(above(os.path.dirname(real))) & dir_ids(PRIVATE_ROOTS))
 
 
 def allow_preview(aid, old, ts, cid, path):
@@ -1143,8 +1203,8 @@ def allow_preview(aid, old, ts, cid, path):
         real = os.path.realpath(path)
         st = os.lstat(real)
         import stat as _st
-        if (not is_html(path) or not is_html(real) or os.path.abspath(path) != real or not _st.S_ISREG(st.st_mode)
-                or in_private(real)):
+        if (not is_html(path) or not is_html(real) or not same_path(os.path.abspath(path), real) or not _st.S_ISREG(st.st_mode)
+                or st.st_nlink != 1 or in_private(real)):
             return
     except OSError:
         return
@@ -1154,7 +1214,7 @@ def allow_preview(aid, old, ts, cid, path):
         ALLOWED_FILES.pop(next(iter(ALLOWED_FILES)))
     try:
         ds = os.stat(os.path.dirname(real))
-        if (ds.st_ino, ds.st_dev) in dir_ids(above(HOME)) or (HOME + os.sep).startswith(os.path.dirname(real).rstrip(os.sep) + os.sep):
+        if (ds.st_ino, ds.st_dev) in dir_ids(above(HOME)) or under(HOME + os.sep, [os.path.dirname(real).rstrip(os.sep) + os.sep]):
             raise OSError('too broad')                # a page saved straight into the home folder brings no folder with it
         ALLOWED_DIRS.pop(os.path.dirname(real), None)
         ALLOWED_DIRS[os.path.dirname(real)] = (ds.st_ino, ds.st_dev)     # styles, scripts and images beside it; never other pages
@@ -1486,7 +1546,7 @@ class ClaudeTail(Tail):
             parent = 'c:' + os.path.basename(os.path.dirname(os.path.dirname(path)))
             meta = {}
             try:
-                meta = as_dict(json.load(open(path[:-6] + '.meta.json')))
+                meta = as_dict(json.load(open(path[:-6] + '.meta.json', encoding='utf-8')))
             except Exception:
                 pass
             describe(self.aid, True, runtime='Claude', parent=parent, sub=True,
@@ -1520,7 +1580,7 @@ class ClaudeTail(Tail):
                     ts = datetime.fromisoformat(m.group(1).replace('Z', '+00:00')).timestamp()
                 except Exception:
                     continue                                    # an undated record is not evidence of when
-                for path in PATH_RX.findall(line):
+                for path in PATH_RX.findall(line.replace('\\\\', '\\')):     # a raw log line spells \ as \\
                     for k in folder_keys(path.replace('\\/', '/')):
                         seen[k].append(ts)
             for k, v in sorted(seen.items(), key=lambda kv: -len(kv[1]))[:25]:
@@ -1602,7 +1662,7 @@ class ClaudeTail(Tail):
         path = shown(i.get('file_path') or i.get('notebook_path'))
         self.calls[cid] = (n, path, i)
         if not self.sub:
-            cds = ' '.join(m.group(2) for g in segments(shown(i.get('command'))) for m in [re.match(r'cd\s+(["\']?)(/Users/[^"\']+)\1\s*$', g)] if m)
+            cds = ' '.join(m.group(2) for g in segments(shown(i.get('command'))) for m in [re.match(r'cd\s+(["\']?)((?:[A-Za-z]:)?[/\\]Users[/\\][^"\']+)\1\s*$', g)] if m)
             worked(aid, path + ' ' + shown(i.get('path')) + ' ' + cds, ts)
         if len(self.calls) > 300:
             self.calls.pop(next(iter(self.calls)))
@@ -1681,7 +1741,7 @@ def load_titles():
         if m == TITLES_MTIME:
             return
         TITLES_MTIME = m
-        for line in open(p):
+        for line in open(p, encoding='utf-8', errors='replace'):
             try:
                 d = json.loads(line)
                 if text_of(d.get('id')) and text_of(d.get('thread_name')):
@@ -1697,7 +1757,8 @@ def load_titles():
 
 
 def desktop_files():
-    return glob.glob(HOME + '/Library/Application Support/Claude/claude-code-sessions/*/*/local_*.json')
+    base = os.environ.get('APPDATA', '') + '/Claude' if WIN else HOME + '/Library/Application Support/Claude'     # Windows: unverified
+    return glob.glob(base + '/claude-code-sessions/*/*/local_*.json')
 
 
 def desktop_scan():
@@ -1707,7 +1768,7 @@ def desktop_scan():
         try:
             if time.time() - os.path.getmtime(p) > WINDOW * 12:
                 continue
-            d = json.load(open(p))
+            d = json.load(open(p, encoding='utf-8'))
             aid = 'c:' + str(d.get('cliSessionId'))
             if aid in AGENTS:
                 describe(aid, perm=('Claude mode: ' + text_of(d.get('permissionMode'))) if text_of(d.get('permissionMode')) else '',
@@ -1719,10 +1780,10 @@ def desktop_scan():
 def claude_desktop_id(cli_id):
     for p in desktop_files():
         try:
-            with open(p) as f:
+            with open(p, encoding='utf-8', errors='replace') as f:
                 head = f.read(600)
             if cli_id in head:
-                return json.loads(open(p).read()).get('sessionId') or os.path.basename(p)[:-5]
+                return json.loads(open(p, encoding='utf-8').read()).get('sessionId') or os.path.basename(p)[:-5]
         except Exception:
             pass
     return ''
@@ -2143,6 +2204,8 @@ def watch():
                          + glob.glob(HOME + '/.claude/projects/*/*/subagents/*.jsonl')]
                 found += [(p, CodexTail) for p in glob.glob(HOME + '/.codex/sessions/*/*/*/*.jsonl')]
                 found += [(p, CursorTail) for p in glob.glob(HOME + '/.cursor/projects/*/agent-transcripts/*/*.jsonl')]
+                if WIN:             # one spelling of each log's path, with the '/' the tool and folder checks look for
+                    found = [(p.replace('\\', '/'), cls) for p, cls in found]
                 bad = 0
                 prune_keep(now)
                 for p, cls in found:
@@ -2277,6 +2340,10 @@ def page_with_nonce():
     if body.count(b'<script>') != 1:
         raise RuntimeError('index.html must hold exactly one <script> tag')
     return body.replace(b'<script>', b'<script nonce="%s">' % nonce.encode(), 1), UI_CSP % nonce
+# Fixed, because on Windows mimetypes reads the registry, where .js is sometimes text/plain (and nosniff then blocks it).
+PREVIEW_TYPES = {'.html': 'text/html', '.htm': 'text/html', '.css': 'text/css', '.js': 'text/javascript', '.mjs': 'text/javascript',
+                 '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.gif': 'image/gif', '.svg': 'image/svg+xml',
+                 '.webp': 'image/webp', '.ico': 'image/x-icon', '.woff': 'font/woff', '.woff2': 'font/woff2', '.ttf': 'font/ttf'}
 ASSET_EXT = ('.css', '.js', '.mjs', '.png', '.jpg', '.jpeg', '.gif', '.svg', '.webp', '.ico', '.woff', '.woff2', '.ttf')
 # A preview runs in an opaque-origin sandbox; only the page at this server's own origin may frame it (see H.preview).
 PREVIEW_CSP = "sandbox allow-scripts; default-src 'self' data: blob: 'unsafe-inline'; frame-ancestors http://127.0.0.1:%d http://localhost:%d" % (PORT, PORT)
@@ -2335,7 +2402,10 @@ class H(BaseHTTPRequestHandler):
                 return self.send(403, b'forbidden')
             return self.events()
         if u.path.startswith('/fs/' + PKEY + '/'):
-            return self.preview('/' + urllib.parse.unquote(u.path[len('/fs/' + PKEY + '/'):]))
+            rest = urllib.parse.unquote(u.path[len('/fs/' + PKEY + '/'):])
+            if WIN and not re.match(r'[A-Za-z]:/', rest):        # Windows previews are drive paths, written C:/…
+                return self.send(404, b'not found')
+            return self.preview(rest if WIN else '/' + rest)
         self.send(404, b'not found')
 
     def preview(self, want):
@@ -2346,7 +2416,7 @@ class H(BaseHTTPRequestHandler):
         every folder walked through is compared, by identity, with the private ones."""
         import stat as _st
         want = os.path.normpath(want)
-        flags = os.O_RDONLY | os.O_NONBLOCK | getattr(os, 'O_NOFOLLOW', 0)
+        flags = os.O_RDONLY | BINARY | getattr(os, 'O_NONBLOCK', 0) | getattr(os, 'O_NOFOLLOW', 0)
         fd = -1
         try:
             granted = ALLOWED_FILES.get(want)
@@ -2355,6 +2425,30 @@ class H(BaseHTTPRequestHandler):
                 st = os.fstat(fd)
                 if (st.st_ino, st.st_dev) != granted:
                     return self.send(404, b'not found')
+            elif WIN:
+                # Windows cannot open a folder and walk down from it. Instead the file is opened, and Windows is then
+                # asked where the file it opened really is: a link or junction anywhere on the way makes that differ
+                # from the path asked for, and nothing is served. The check is of what was opened, so a folder
+                # swapped for a link in between cannot slip past it.
+                root = next((d for d in list(ALLOWED_DIRS) if under(want, [d + os.sep])), None)
+                if not root or not want.lower().endswith(ASSET_EXT) or in_private(want):
+                    return self.send(404, b'not found')
+                rs = os.stat(root)
+                if (rs.st_ino, rs.st_dev) != ALLOWED_DIRS[root] or (rs.st_ino, rs.st_dev) in dir_ids(PRIVATE_ROOTS):
+                    return self.send(404, b'not found')
+                # First, by name: no link or junction from the granted folder down, so nothing is opened through
+                # one (a link to a network share would otherwise be followed before any check). This is not atomic;
+                # the check of what was actually opened, below, is what holds if a folder is swapped in between.
+                walk = root
+                for name in [x for x in want[len(root) + 1:].split(os.sep) if x]:
+                    walk = os.path.join(walk, name)
+                    if os.lstat(walk).st_file_attributes & _st.FILE_ATTRIBUTE_REPARSE_POINT:
+                        return self.send(404, b'not found')
+                fd = os.open(want, flags)
+                real = final_path(fd)
+                if not same_path(real, want) or not under(real, [root + os.sep]) or in_private(real):
+                    return self.send(404, b'not found')
+                st = os.fstat(fd)
             else:
                 root = next((d for d in list(ALLOWED_DIRS) if want.startswith(d + os.sep)), None)
                 if not root or not want.lower().endswith(ASSET_EXT) or in_private(want):
@@ -2378,7 +2472,9 @@ class H(BaseHTTPRequestHandler):
                 finally:
                     os.close(cur)
                 st = os.fstat(fd)
-            if not _st.S_ISREG(st.st_mode) or st.st_size > MAX_PREVIEW:
+            # A hard link is a second name for a file that may live anywhere, the key included, and no folder or
+            # link check can see it: only a file with one name is served. (pnpm's hard-linked node_modules is the cost.)
+            if not _st.S_ISREG(st.st_mode) or st.st_size > MAX_PREVIEW or st.st_nlink != 1:
                 return self.send(404, b'not found')
             body = os.read(fd, MAX_PREVIEW)
         except (OSError, KeyError):
@@ -2389,7 +2485,7 @@ class H(BaseHTTPRequestHandler):
         # The policy sandboxes the document, which makes its origin opaque: 'self' would then match nothing, not even
         # the page that embeds it, so the embedding page's origin is named outright. This response is the whole
         # policy for a preview (the page loads it by iframe src), and no X-Frame-Options header is sent with it.
-        self.send(200, body, mimetypes.guess_type(want)[0] or 'application/octet-stream',
+        self.send(200, body, PREVIEW_TYPES.get(os.path.splitext(want)[1].lower()) or mimetypes.guess_type(want)[0] or 'application/octet-stream',
                   (('Content-Security-Policy', PREVIEW_CSP),))
 
     def body(self):
@@ -2440,10 +2536,10 @@ class H(BaseHTTPRequestHandler):
             # code and the port, both JSON-encoded.
             try:
                 fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
-                with os.fdopen(fd, 'w') as f:
+                with os.fdopen(fd, 'w', encoding='utf-8') as f:
                     f.write('<!doctype html><meta charset="utf-8"><title>Unlocking W.A.T.C.H.</title><script>location.replace(%s)</script>'
                             % json.dumps('http://127.0.0.1:%d/%s#p=%s' % (PORT, '?steady' if steady else '', code)))
-                subprocess.Popen(['/usr/bin/open', path])
+                launch(path)
             except OSError:
                 with LOCK:
                     CODES.pop(code, None)
@@ -2582,7 +2678,10 @@ class H(BaseHTTPRequestHandler):
             if not re.fullmatch(r'local_[A-Za-z0-9-]{1,64}', local):
                 return self.send(404, b'This session was not started in Claude Desktop, so there is no window to open.')
             url = 'claude://code/continue?session=' + local
-        subprocess.Popen(['/usr/bin/open', url])
+        try:
+            launch(url)
+        except OSError:                         # Windows: no app is registered for that kind of link
+            return self.send(404, b'No app on this computer opens that link.')
         self.send(200, b'ok')
 
     def permission(self, aid, d):
@@ -2707,6 +2806,12 @@ class H(BaseHTTPRequestHandler):
 class Server(ThreadingHTTPServer):
     daemon_threads = True
     active = 0
+    allow_reuse_address = not WIN        # on Windows that option would let another program bind the same port beside this one
+
+    def server_bind(self):
+        if WIN:
+            self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_EXCLUSIVEADDRUSE, 1)     # and this keeps them off it
+        super().server_bind()
 
     def process_request(self, request, client_address):
         with LOCK:
@@ -2729,5 +2834,10 @@ if __name__ == '__main__':
     load_links()
     apply_watch(True)
     threading.Thread(target=watch, daemon=True).start()
+    try:
+        srv = Server(('127.0.0.1', PORT), H)
+    except OSError as e:
+        raise SystemExit('Port %d is busy (%s). Another W.A.T.C.H. may be running; a server just stopped can hold it for a '
+                         'minute or two on Windows. Try again shortly, or set PORT.' % (PORT, e))
     print('W.A.T.C.H. on http://127.0.0.1:%d/  — open it and press Unlock (sessions active in the last %d min)' % (PORT, WINDOW // 60))
-    Server(('127.0.0.1', PORT), H).serve_forever()
+    srv.serve_forever()

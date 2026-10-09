@@ -130,6 +130,81 @@ def test_terminal_text():
     check('a notification clears when the log moves on', agent({'kind': 'waiting', 'why': 'idle'}, {'kind': 'run'}) == 'working')
     check('a question waits for its own answer', agent({'kind': 'ask', 'id': 'a1'}, {'kind': 'result', 'id': 'x'}).startswith('WAITING'))
 
+
+def test_platform():
+    """Runs on macOS and on Windows (CI): the key, previews with a link in the way, and the port held exclusively."""
+    import socket
+    home = os.path.realpath(tempfile.mkdtemp())
+    old = server.HOME, server.PRIVATE_ROOTS
+    server.HOME = home
+    server.PRIVATE_ROOTS = tuple(os.path.join(home, p) + os.sep for p in ('.live-room', 'AppData'))
+    try:
+        k = server.load_key()
+        check('key made once', len(k) >= 24 and server.load_key() == k)
+        with open(os.path.join(home, '.live-room', 'header'), encoding='utf-8') as f:
+            check('header written', f.read().strip().endswith(k))
+        proj = os.path.join(home, 'work', 'site')
+        os.makedirs(os.path.join(proj, 'css'))
+        page = os.path.join(proj, 'index.html')
+        with open(page, 'w', encoding='utf-8') as f:
+            f.write('<link rel="stylesheet" href="css/a.css">ü')
+        with open(os.path.join(proj, 'css', 'a.css'), 'wb') as f:
+            f.write(b'body{}\r\n\x1a after a Ctrl-Z')
+        private = os.path.join(home, '.live-room')
+        other = os.path.join(home, 'other')
+        os.makedirs(other)
+        for d in (private, other):
+            with open(os.path.join(d, 'x.css'), 'w', encoding='utf-8') as f:
+                f.write('secret')
+        server.allow_preview('c:00000000', False, 0, 'id1', page)
+        check('page granted', page in server.ALLOWED_FILES and proj in server.ALLOWED_DIRS)
+
+        class Fake:
+            def send(self, code, body, *a):
+                self.got = (code, body)
+
+        def get(path):
+            f = Fake()
+            server.H.preview(f, path)
+            return f.got
+        check('page served', get(page)[0] == 200)
+        check('asset served byte for byte', get(os.path.join(proj, 'css', 'a.css')) == (200, b'body{}\r\n\x1a after a Ctrl-Z'))
+        check('outside the grant refused', get(os.path.join(private, 'x.css'))[0] == 404)
+        twin = os.path.join(proj, 'css', 'twin.css')
+        os.link(os.path.join(private, 'key'), twin)
+        check('a hard link to the key is refused', get(twin)[0] == 404)
+        kpage = os.path.join(proj, 'k.html')
+        os.link(os.path.join(private, 'key'), kpage)
+        server.allow_preview('c:00000000', False, 0, 'id2', kpage)
+        check('a hard-linked page is not granted', kpage not in server.ALLOWED_FILES and get(kpage)[0] == 404)
+        if server.WIN:
+            check('a device name is refused', get(os.path.join(proj, 'css', 'CON.css'))[0] == 404)
+        for name, target in (('in', private), ('out', other)):
+            link = os.path.join(proj, 'css', name)
+            if server.WIN:
+                import _winapi
+                _winapi.CreateJunction(target, link)
+            else:
+                os.symlink(target, link)
+            check('a link inside the grant is refused (%s)' % name, get(os.path.join(link, 'x.css'))[0] == 404)
+    finally:
+        server.HOME, server.PRIVATE_ROOTS = old
+    s1 = server.Server(('127.0.0.1', 0), server.H)
+    s2 = socket.socket()
+    try:
+        s2.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        try:
+            s2.bind(('127.0.0.1', s1.server_address[1]))
+            taken = False
+        except OSError:
+            taken = True
+        check('nothing else can bind the port', taken)
+        check('a Mac path is still a path', server.WIN or server.PATH_RX.findall('see file:/Users/me/a/b/c.py') == ['/Users/me/a/b/c.py'])
+    finally:
+        s2.close()
+        s1.server_close()
+
+
 if __name__ == '__main__':
     test_import_is_quiet()
     test_shell()
@@ -137,4 +212,5 @@ if __name__ == '__main__':
     test_plain_words()
     test_cursor_transcript()
     test_terminal_text()
+    test_platform()
     print('all ok')
