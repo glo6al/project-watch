@@ -69,7 +69,7 @@ git clone https://github.com/glo6al/project-watch.git && cd project-watch
 python3 src/server.py
 ```
 
-On Windows, use `py src/server.py` (or `python`) instead of `python3`; see [Windows](#windows) for what differs.
+On Windows, use `py src/server.py` (or `python`) instead of `python3`. [docs/WINDOWS.md](docs/WINDOWS.md) walks through installing Python and Git and trying it, step by step; see [Windows](#windows) for what differs.
 
 Then open <http://127.0.0.1:8793/> and press **Unlock**. The server asks your default browser to open a new, unlocked tab, and the room fills with whatever Claude Code, Codex or Cursor sessions have been active in the last twenty minutes (`WINDOW_MIN` to change that, `PORT` to move it).
 
@@ -141,7 +141,7 @@ Read this before relying on Allow / Deny.
 
 ## Windows
 
-The server and the page run on Windows with the same standard-library Python, and the tests run there in CI on every push. **It has not yet been run on a real Windows desktop**, so treat it as untried. What differs:
+The server and the page run on Windows with the same standard-library Python, and the tests run there in CI on every push. **It has not yet been run on a real Windows desktop**, so treat it as untried. To try it and tell us how it went, follow **[docs/WINDOWS.md](docs/WINDOWS.md)**: installing everything from scratch, starting it, troubleshooting, and the questions only a real Windows PC can answer. What differs:
 
 - **Not available:** the hooks (Allow / Deny, and the earlier notices they give). They are shell scripts, and how Claude Code runs hook commands on Windows has not been checked; the installer says so and stops. Without them the room still watches; Claude asks in its own app.
 - **Unverified:** where Claude's desktop app keeps its session records on Windows (`%APPDATA%\Claude` is assumed), so titles, settings and last-focused times from it may be missing; and how Cursor names a project folder there, so a Cursor agent's folder may show as not recorded.
@@ -161,6 +161,7 @@ Early, and in daily use by its author. Every change that touches the key, the ho
     tests/test_parsers.py    the shell parser, watch.json, one Cursor transcript, terminal escaping (run on every push)
     scripts/install_hooks.py adds or removes the Claude Code hooks
     docs/ROADMAP.md          what is planned and what is unproven
+    docs/WINDOWS.md          installing and trying it on Windows, and what to report
     docs/media/              the images in this file, all from demo mode
 
 ## Contributing and reporting
