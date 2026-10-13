@@ -14,7 +14,8 @@ What it does
 
 Trust boundary
   The server binds to 127.0.0.1. Every data or action endpoint (/events, /check, /keep, /unlink,
-  /presence, /open, /decide, /hook, /permission) needs the key stored in ~/.live-room/key (mode 0600).
+  /presence, /open, /decide, /hook, /permission) needs the key stored in ~/.live-room/key (mode 0600 on
+  macOS; on Windows the server checks no permissions and relies on the user profile's defaults).
   Unlock (/pair) makes the server open a private file in your default browser; that file carries a
   one-time code, which the page trades for the key once, over HTTP on this machine (/claim). Served
   without the key: /pair, /claim, the page itself, and its own icon files under /static/ (an exact
@@ -31,7 +32,7 @@ Trust boundary
 Run:  python3 src/server.py      (Windows: py src/server.py) then open http://127.0.0.1:8793/ and press Unlock
 Env:  PORT (8793), WINDOW_MIN (20: how recently a session must have been active to appear)
 """
-import glob, hmac, json, mimetypes, os, re, secrets, select, socket, subprocess, threading, time, urllib.parse
+import glob, hmac, json, mimetypes, os, re, secrets, select, socket, subprocess, sys, threading, time, urllib.parse
 from datetime import datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
@@ -44,11 +45,13 @@ MAX_POLL, MAX_REST, MAX_PREVIEW, MAX_BODY = 8_000_000, 5_000_000, 8_000_000, 200
 HOLD_SECONDS, APPROVER_GRACE, MAX_HOLDS, MAX_STREAMS = 60, 12, 6, 12      # a prompt nobody answers here costs a minute, then goes to the app
 ID_RX = re.compile(r'[0-9a-fA-F-]{8,64}\Z')
 WIN = os.name == 'nt'
+WIN_IDS = not WIN or sys.version_info >= (3, 12)      # before 3.12 Windows file ids are cut to 64 bits, which ReFS does not keep unique
 BINARY = getattr(os, 'O_BINARY', 0)       # Windows opens files as text unless told otherwise
 
 
 def same_path(a, b):
-    """Windows file names ignore case; macOS's usually do too, but there the comparison stays exact."""
+    """Windows file names usually ignore case (a folder can be made case-sensitive, which is one reason identity and
+    not spelling decides what is served); macOS's usually do too, but there the comparison stays exact."""
     return os.path.normcase(a) == os.path.normcase(b) if WIN else a == b
 
 
@@ -187,18 +190,20 @@ LAST_PRUNE = [0.0]           # when stored links were last checked for children 
 
 
 def load_key():
-    """The key lives in a private directory, in a private regular file owned by you. Creation is serialised with a
-    lock and each file is published by rename, so two servers starting together agree on one key and a hook never
+    """On macOS the key lives in a directory and a regular file forced to private modes and checked to be owned by
+    you. On Windows the server checks neither owner nor permissions: it relies on the user profile's default
+    permissions, which keep other non-administrator accounts out unless they have been changed, and refuses only a
+    link or junction in the folder's place. Creation is serialised with a lock and each file is published by rename, so two servers starting together agree on one key and a hook never
     reads a half-written header. Unlock files old enough to be dead are removed; a younger one may belong to a
     server that is still running, and is left for it."""
     import stat as _st, tempfile
     d = os.path.join(HOME, '.live-room')
     os.makedirs(d, mode=0o700, exist_ok=True)
-    # Windows has no owner ids or modes here: there the folder is private because it sits in your user profile, whose
-    # permissions keep other (non-administrator) accounts out. Links are refused on both.
+    # Windows has no owner ids or modes here, and nothing is checked: the folder is as private as the user profile's
+    # default permissions make it. Links are refused on both.
     if os.path.islink(d) or (WIN and os.lstat(d).st_file_attributes & _st.FILE_ATTRIBUTE_REPARSE_POINT) \
             or (not WIN and os.stat(d).st_uid != os.getuid()):
-        raise SystemExit('~/.live-room is not a private directory owned by you; refusing to start')
+        raise SystemExit('~/.live-room is a link' if WIN else '~/.live-room is not a private directory owned by you; refusing to start')
     os.chmod(d, 0o700)
 
     def publish(name, text):
@@ -1048,6 +1053,7 @@ EXEC_KIDS = {}               # script-launched runs still without a parent: agen
 WORKED = {}                  # folder -> [(agent, first seen there, last seen there), …]: where agents have been reading, writing, running
 PATH_RX = re.compile(r"(?<![\w:])[A-Za-z]:[/\\]Users[/\\][^/\\\n\"'`]+(?:[/\\][^/\\\n\"'`<>|;*$]+){2,8}" if WIN else     # folder names may contain spaces
                      r"/Users/[^/\n\"'`]+(?:/[^/\n\"'`<>|;*$]+){2,8}")         # a computer's logs hold its own kind of path
+CD_RX = re.compile(r'cd\s+(["\']?)((?:[A-Za-z]:)?[/\\]Users[/\\][^"\']+)\1\s*$' if WIN else r'cd\s+(["\']?)(/Users/[^"\']+)\1\s*$')
 
 
 def folder_keys(path):
@@ -1133,6 +1139,8 @@ def saw(aid, old, ts, path, label):
     path = urllib.parse.unquote(path[7:]) if path.startswith('file://') else path
     if WIN and re.match(r'/[A-Za-z]:/', path):     # file:///C:/x.png names C:/x.png
         path = path[1:]
+    if not WIN_IDS or (WIN and ':' in path[2:]):  # the "same file id" check rests on whole file ids; a second colon names a stream
+        return
     try:
         real = os.path.realpath(path)
         st = os.lstat(real)
@@ -1163,20 +1171,19 @@ def dir_ids(paths):
     return out
 
 
-def final_path(fd):
-    """Windows only: where the open file really is, every link and junction on the way resolved (the stdlib reaches
-    this through ctypes; os.path.realpath asks the same of a path, not of a file already open)."""
-    import ctypes, msvcrt
-    from ctypes import wintypes
-    get = ctypes.windll.kernel32.GetFinalPathNameByHandleW
-    get.argtypes = [wintypes.HANDLE, wintypes.LPWSTR, wintypes.DWORD, wintypes.DWORD]
-    get.restype = wintypes.DWORD
-    buf = ctypes.create_unicode_buffer(32768)
-    n = get(msvcrt.get_osfhandle(fd), buf, 32768, 0)
-    if not n or n >= 32768:
-        raise OSError('no final path')
-    p = buf.value
-    return '\\\\' + p[8:] if p.startswith('\\\\?\\UNC\\') else p[4:] if p.startswith('\\\\?\\') else p
+def no_reparse(start, path, lstat=os.lstat):
+    """Windows only: is neither `start` nor any name from it down to `path` a link or junction? lstat does not
+    follow the name it is given, so a link to a network share is noticed before anything would wait on the share.
+    Each name is its own snapshot: a folder swapped after its check is not seen here, and a later lstat resolves
+    through whatever is then above it (see preview, which rests on the file id check after the open, not on this)."""
+    import stat as _st
+    walk = start
+    for name in [None] + [x for x in path[len(start):].split(os.sep) if x]:
+        if name is not None:
+            walk = os.path.join(walk, name)
+        if lstat(walk).st_file_attributes & _st.FILE_ATTRIBUTE_REPARSE_POINT:
+            return False
+    return True
 
 
 def above(path):
@@ -1197,8 +1204,15 @@ def in_private(real):
 def allow_preview(aid, old, ts, cid, path):
     """Let the page render an HTML file an agent wrote. The path must be a real, regular .html file reached without
     any symlink, outside private configuration folders. Its identity is recorded, so a file swapped in later under
-    the same name is not served. The folder it sits in is granted for its styles, scripts and images, unless that
-    folder is your home folder or above it; private folders below a granted folder are never served (see preview)."""
+    the same name is not served. On macOS the folder it sits in is granted for its styles, scripts and images, unless
+    that folder is your home folder or above it; private folders below a granted folder are never served (see
+    preview). On Windows no folder is granted (see preview), and nothing is granted before Python 3.12, which can
+    report full-width Windows file ids (the version is checked, not whether the filesystem supplied one): the "same
+    file id" check rests on them (an id a filesystem may reuse after the file is deleted, so a file deleted and
+    replaced is not always told apart; an open handle per grant would be the cure, and is not kept).
+    A Windows path with a second colon names an alternate data stream and is refused."""
+    if not WIN_IDS or (WIN and ':' in path[2:]):
+        return
     try:
         real = os.path.realpath(path)
         st = os.lstat(real)
@@ -1213,6 +1227,8 @@ def allow_preview(aid, old, ts, cid, path):
     while len(ALLOWED_FILES) > 400:
         ALLOWED_FILES.pop(next(iter(ALLOWED_FILES)))
     try:
+        if WIN:
+            raise OSError('no folder grants on Windows (see preview)')
         ds = os.stat(os.path.dirname(real))
         if (ds.st_ino, ds.st_dev) in dir_ids(above(HOME)) or under(HOME + os.sep, [os.path.dirname(real).rstrip(os.sep) + os.sep]):
             raise OSError('too broad')                # a page saved straight into the home folder brings no folder with it
@@ -1580,7 +1596,7 @@ class ClaudeTail(Tail):
                     ts = datetime.fromisoformat(m.group(1).replace('Z', '+00:00')).timestamp()
                 except Exception:
                     continue                                    # an undated record is not evidence of when
-                for path in PATH_RX.findall(line.replace('\\\\', '\\')):     # a raw log line spells \ as \\
+                for path in PATH_RX.findall(line.replace('\\\\', '\\') if WIN else line):     # a raw Windows log line spells \ as \\
                     for k in folder_keys(path.replace('\\/', '/')):
                         seen[k].append(ts)
             for k, v in sorted(seen.items(), key=lambda kv: -len(kv[1]))[:25]:
@@ -1662,7 +1678,7 @@ class ClaudeTail(Tail):
         path = shown(i.get('file_path') or i.get('notebook_path'))
         self.calls[cid] = (n, path, i)
         if not self.sub:
-            cds = ' '.join(m.group(2) for g in segments(shown(i.get('command'))) for m in [re.match(r'cd\s+(["\']?)((?:[A-Za-z]:)?[/\\]Users[/\\][^"\']+)\1\s*$', g)] if m)
+            cds = ' '.join(m.group(2) for g in segments(shown(i.get('command'))) for m in [CD_RX.match(g)] if m)
             worked(aid, path + ' ' + shown(i.get('path')) + ' ' + cds, ts)
         if len(self.calls) > 300:
             self.calls.pop(next(iter(self.calls)))
@@ -2403,7 +2419,7 @@ class H(BaseHTTPRequestHandler):
             return self.events()
         if u.path.startswith('/fs/' + PKEY + '/'):
             rest = urllib.parse.unquote(u.path[len('/fs/' + PKEY + '/'):])
-            if WIN and not re.match(r'[A-Za-z]:/', rest):        # Windows previews are drive paths, written C:/…
+            if WIN and (not re.match(r'[A-Za-z]:/', rest) or ':' in rest[2:]):      # Windows previews are drive paths, written C:/…; a second colon names a stream
                 return self.send(404, b'not found')
             return self.preview(rest if WIN else '/' + rest)
         self.send(404, b'not found')
@@ -2413,7 +2429,10 @@ class H(BaseHTTPRequestHandler):
         else must be a style, script, image or font inside a granted folder, and is opened by walking down from that
         folder one name at a time with symlinks refused at every step, so what is served is always inside the grant.
         Nothing in or under a private folder is served that way, whatever folder was granted: the granted folder and
-        every folder walked through is compared, by identity, with the private ones."""
+        every folder walked through is compared, by identity, with the private ones. On Windows only granted pages
+        and images are served, each walked by name from its drive root first (a snapshot: nothing on the way may be
+        a link or junction) and then required to be, by file id, the very file that was granted; its folder is not
+        granted there (see the branch below)."""
         import stat as _st
         want = os.path.normpath(want)
         flags = os.O_RDONLY | BINARY | getattr(os, 'O_NONBLOCK', 0) | getattr(os, 'O_NOFOLLOW', 0)
@@ -2421,34 +2440,19 @@ class H(BaseHTTPRequestHandler):
         try:
             granted = ALLOWED_FILES.get(want)
             if granted:
+                if WIN:                     # no link or junction from the drive root down, name by name; C:file is refused
+                    drive, rest = os.path.splitdrive(want)
+                    if not drive or not rest.startswith(os.sep) or not no_reparse(drive + os.sep, want):
+                        return self.send(404, b'not found')
                 fd = os.open(want, flags)
                 st = os.fstat(fd)
                 if (st.st_ino, st.st_dev) != granted:
                     return self.send(404, b'not found')
             elif WIN:
-                # Windows cannot open a folder and walk down from it. Instead the file is opened, and Windows is then
-                # asked where the file it opened really is: a link or junction anywhere on the way makes that differ
-                # from the path asked for, and nothing is served. The check is of what was opened, so a folder
-                # swapped for a link in between cannot slip past it.
-                root = next((d for d in list(ALLOWED_DIRS) if under(want, [d + os.sep])), None)
-                if not root or not want.lower().endswith(ASSET_EXT) or in_private(want):
-                    return self.send(404, b'not found')
-                rs = os.stat(root)
-                if (rs.st_ino, rs.st_dev) != ALLOWED_DIRS[root] or (rs.st_ino, rs.st_dev) in dir_ids(PRIVATE_ROOTS):
-                    return self.send(404, b'not found')
-                # First, by name: no link or junction from the granted folder down, so nothing is opened through
-                # one (a link to a network share would otherwise be followed before any check). This is not atomic;
-                # the check of what was actually opened, below, is what holds if a folder is swapped in between.
-                walk = root
-                for name in [x for x in want[len(root) + 1:].split(os.sep) if x]:
-                    walk = os.path.join(walk, name)
-                    if os.lstat(walk).st_file_attributes & _st.FILE_ATTRIBUTE_REPARSE_POINT:
-                        return self.send(404, b'not found')
-                fd = os.open(want, flags)
-                real = final_path(fd)
-                if not same_path(real, want) or not under(real, [root + os.sep]) or in_private(real):
-                    return self.send(404, b'not found')
-                st = os.fstat(fd)
+                # No folder is granted on Windows (allow_preview), so nothing but a granted page or image is served
+                # there: Python's os API cannot open a folder and walk down from it on Windows, and a walk by name
+                # cannot be made atomic. A walk pinned through Windows directory handles is on the roadmap.
+                return self.send(404, b'not found')
             else:
                 root = next((d for d in list(ALLOWED_DIRS) if want.startswith(d + os.sep)), None)
                 if not root or not want.lower().endswith(ASSET_EXT) or in_private(want):
@@ -2770,7 +2774,7 @@ class H(BaseHTTPRequestHandler):
                 if nxt is None:
                     nxt = BASE
             apply_watch(True)                    # a reload picks up an edit from the Watch button; no restart
-            out = line({'kind': 'hello', 'agent': '', 'pkey': PKEY, 'window': WINDOW, 'names': project_names(), 'watch': watch_public()})
+            out = line({'kind': 'hello', 'agent': '', 'pkey': PKEY, 'window': WINDOW, 'names': project_names(), 'watch': watch_public(), 'win': WIN})
             if expired:
                 self.wfile.write((out + line({'kind': 'gap', 'agent': ''})).encode())
                 self.wfile.flush()

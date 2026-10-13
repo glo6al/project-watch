@@ -23,7 +23,7 @@ Added on 2026-10-05 and reviewed since:
 
 ## Not yet proven
 
-- Windows: the server, the page and previews have run only in CI (the tests, including a junction inside a granted folder being refused); never on a real Windows desktop with real agent logs. The Windows port had one independent review before release (one HIGH, on both systems: a hard link to the key inside a previewed folder was served; one MEDIUM: Windows opened a file before checking for links; ten LOW). All were fixed; the fixes have not been reviewed again. Still unverified there: ReFS file ids, and whether a just-stopped server holds its port for a minute or two.
+- Windows: only the automated tests have run there, in CI (the Python suite exercises the key, the preview checks, including a junction inside and in place of a granted folder, and the port directly; the Node test runs the page's path helpers). The application has not been started on Windows, its page has not been opened in a Windows browser, and no real agent logs have been read there. The port had an independent review before it was opened as a pull request (a hard link to the key inside a previewed folder was served, on both systems; Windows opened a file before checking for links) and a second at merge (a folder differing only in case could pass the Windows containment check; the granted folder could be swapped between two checks, and a walk by name cannot be made atomic, so folder grants were withdrawn on Windows; checks that follow links ran before those that do not; macOS path handling had changed); each round was repaired, and the findings are listed in the pull request. Still unverified there: whether a just-stopped server holds its port for a minute or two; 8.3 short names and `subst` drives in a preview path (not tried; a spelling other than the granted one is refused). Alternate data streams are refused by name (a second colon). On every system a grant records a file id, which a filesystem may reuse after the file is deleted.
 - Allow and Deny have each been seen working once on a real Claude Code permission prompt (held in the room, the click reached Claude; Allow ran the command, Deny stopped it). What the Claude app shows while the room holds a prompt has not been recorded. While answering is on, every Claude session's permission requests wait in the room first.
 - Trackpad gestures have only been tested with synthetic events, not on a real trackpad.
 - The "Open in Claude / Codex" links have not been tested end to end, or clicked by the author.
@@ -40,7 +40,7 @@ Added on 2026-10-05 and reviewed since:
 - Alerts and "probably needs you" notices are heuristics and can be wrong in either direction.
 - Codex: messages between agents are encrypted in its log, and its permission prompts and queued messages are not visible.
 - Another program running as the same user that can read `~/.live-room/` or drive the browser can do what you can do here. Closing that needs an operating-system boundary this tool does not have.
-- macOS, and Windows in CI only: Windows has not been run on a real desktop, and has no hooks (so no Allow / Deny) yet. Phone-width and very short windows are unsupported.
+- macOS; Windows only in CI's automated tests: the application has not been run on a Windows desktop, and has no hooks (so no Allow / Deny) there yet. Phone-width and very short windows are unsupported.
 - Known and left as they are: only the last ~200 KB of a log is replayed on first sight (the log panel says "earlier history not loaded" when steps are missing); the row re-spaces when agents come and go; interrupting a camera move jumps to its target; content shifts when a notice bar appears; a window opened late does not learn of calls, questions, queues or plans already in flight; timeouts are for inactivity, not total time; the installer cannot fully rule out another program saving `settings.json` in the instant it writes; the review history is kept in the project's private archive, not here.
 
 ## Direction
@@ -64,6 +64,7 @@ Not started, in this order:
 3. **A held hand on deploy, push and delete**: a hook that holds such a command until you confirm. Deliberately held back until the approval interface has passed review, because it widens that surface.
 4. **Saved history**: "what did I miss", rewind the room and play it forward, an end-of-day summary per agent, search across agents.
 5. **More providers**, one at a time, each only as far as its logs and interfaces honestly allow.
+6. **Windows preview assets**: a folder walk pinned through Windows directory handles (ctypes), so a page's styles, scripts and images can be served there with the same guarantee as on macOS. Until then a Windows preview is the page alone.
 
 ## Ideas
 

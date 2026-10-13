@@ -132,10 +132,36 @@ def test_terminal_text():
 
 
 def test_platform():
-    """Runs on macOS and on Windows (CI): the key, previews with a link in the way, and the port held exclusively."""
+    """Runs on every system (CI: Ubuntu, macOS, Windows): the key, previews with a link in the way or in place of the
+    granted folder, what Windows grants (pages only, and only from Python 3.12), and the port held exclusively."""
     import socket
-    home = os.path.realpath(tempfile.mkdtemp())
-    old = server.HOME, server.PRIVATE_ROOTS
+    saved = (server.HOME, server.PRIVATE_ROOTS, dict(server.ALLOWED_FILES), dict(server.ALLOWED_DIRS), list(server.LOG), server.BASE)
+    tmp = tempfile.TemporaryDirectory()
+    home = os.path.realpath(tmp.name)
+    links = []                                   # made below, removed before the folder is: a junction is removed as a folder, never followed
+
+    def mklink(target, link):
+        if server.WIN:
+            import _winapi
+            _winapi.CreateJunction(target, link)
+        else:
+            os.symlink(target, link)
+        links.append(link)
+
+    def unlink_all():
+        while links:
+            (os.rmdir if server.WIN else os.unlink)(links.pop())
+
+    class Fake:
+        def send(self, code, body, *a):
+            self.got = (code, body)
+
+    def get(path):
+        f = Fake()
+        server.H.preview(f, path)
+        return f.got
+
+    previews, folders = server.WIN_IDS, not server.WIN          # Windows: pages only, and only with whole file ids
     server.HOME = home
     server.PRIVATE_ROOTS = tuple(os.path.join(home, p) + os.sep for p in ('.live-room', 'AppData'))
     try:
@@ -148,7 +174,8 @@ def test_platform():
         page = os.path.join(proj, 'index.html')
         with open(page, 'w', encoding='utf-8') as f:
             f.write('<link rel="stylesheet" href="css/a.css">ü')
-        with open(os.path.join(proj, 'css', 'a.css'), 'wb') as f:
+        asset = os.path.join(proj, 'css', 'a.css')
+        with open(asset, 'wb') as f:
             f.write(b'body{}\r\n\x1a after a Ctrl-Z')
         private = os.path.join(home, '.live-room')
         other = os.path.join(home, 'other')
@@ -156,39 +183,59 @@ def test_platform():
         for d in (private, other):
             with open(os.path.join(d, 'x.css'), 'w', encoding='utf-8') as f:
                 f.write('secret')
+        server.ALLOWED_FILES.clear(); server.ALLOWED_DIRS.clear()
         server.allow_preview('c:00000000', False, 0, 'id1', page)
-        check('page granted', page in server.ALLOWED_FILES and proj in server.ALLOWED_DIRS)
-
-        class Fake:
-            def send(self, code, body, *a):
-                self.got = (code, body)
-
-        def get(path):
-            f = Fake()
-            server.H.preview(f, path)
-            return f.got
-        check('page served', get(page)[0] == 200)
-        check('asset served byte for byte', get(os.path.join(proj, 'css', 'a.css')) == (200, b'body{}\r\n\x1a after a Ctrl-Z'))
-        check('outside the grant refused', get(os.path.join(private, 'x.css'))[0] == 404)
-        twin = os.path.join(proj, 'css', 'twin.css')
-        os.link(os.path.join(private, 'key'), twin)
-        check('a hard link to the key is refused', get(twin)[0] == 404)
-        kpage = os.path.join(proj, 'k.html')
-        os.link(os.path.join(private, 'key'), kpage)
-        server.allow_preview('c:00000000', False, 0, 'id2', kpage)
-        check('a hard-linked page is not granted', kpage not in server.ALLOWED_FILES and get(kpage)[0] == 404)
-        if server.WIN:
-            check('a device name is refused', get(os.path.join(proj, 'css', 'CON.css'))[0] == 404)
-        for name, target in (('in', private), ('out', other)):
-            link = os.path.join(proj, 'css', name)
-            if server.WIN:
-                import _winapi
-                _winapi.CreateJunction(target, link)
+        if not previews:
+            check('nothing granted on Windows before Python 3.12', not server.ALLOWED_FILES and not server.ALLOWED_DIRS and get(page)[0] == 404)
+        else:
+            check('page granted', page in server.ALLOWED_FILES)
+            check('folder granted' if folders else 'no folder granted on Windows', (proj in server.ALLOWED_DIRS) == folders)
+            check('page served', get(page)[0] == 200)
+            if folders:
+                check('asset served byte for byte', get(asset) == (200, b'body{}\r\n\x1a after a Ctrl-Z'))
             else:
-                os.symlink(target, link)
-            check('a link inside the grant is refused (%s)' % name, get(os.path.join(link, 'x.css'))[0] == 404)
+                check('asset beside the page refused on Windows', get(asset)[0] == 404)
+            check('outside the grant refused', get(os.path.join(private, 'x.css'))[0] == 404)
+            twin = os.path.join(proj, 'css', 'twin.css')
+            os.link(os.path.join(private, 'key'), twin)
+            check('a hard link to the key is refused', get(twin)[0] == 404)
+            kpage = os.path.join(proj, 'k.html')
+            os.link(os.path.join(private, 'key'), kpage)
+            server.allow_preview('c:00000000', False, 0, 'id2', kpage)
+            check('a hard-linked page is not granted', kpage not in server.ALLOWED_FILES and get(kpage)[0] == 404)
+            if server.WIN:
+                check('a device name is refused', get(os.path.join(proj, 'css', 'CON.css'))[0] == 404)
+                with open(page + ':s.html', 'w', encoding='utf-8') as f:     # an alternate data stream of the page
+                    f.write('<p>stream')
+                server.allow_preview('c:00000000', False, 0, 'id3', page + ':s.html')
+                check('an alternate data stream is not granted', page + ':s.html' not in server.ALLOWED_FILES and get(page + ':s.html')[0] == 404)
+            for name, target in (('in', private), ('out', other)):
+                mklink(target, os.path.join(proj, 'css', name))
+                check('a link inside the grant is refused (%s)' % name, get(os.path.join(proj, 'css', name, 'x.css'))[0] == 404)
+            unlink_all()
+            # the granted folder moved aside and a link put in its place: the link is seen before anything follows it
+            os.rename(proj, proj + '-aside')
+            mklink(proj + '-aside', proj)
+            check('an asset behind a link in place of the granted folder is refused', get(asset)[0] == 404)
+            # the page itself: on Windows the name walk from the drive root sees the link; on macOS the open follows a
+            # link above the file (O_NOFOLLOW guards only the last name) and the inode check finds the very same file
+            check('a page behind a link in place of its folder: refused on Windows, the same file on macOS', get(page)[0] == (404 if server.WIN else 200))
+            unlink_all()
+            os.rename(proj + '-aside', proj)
+            check('the page back in place is served again', get(page)[0] == 200 and (get(asset)[0] == 200) == folders)
+            # a page granted, then swapped for another file under the same name: not the same file, not served
+            with open(page + '.new', 'w', encoding='utf-8') as f:
+                f.write('<p>other')
+            os.replace(page + '.new', page)
+            check('a page swapped under its name is refused', get(page)[0] == 404)
     finally:
-        server.HOME, server.PRIVATE_ROOTS = old
+        unlink_all()
+        server.HOME, server.PRIVATE_ROOTS = saved[0], saved[1]
+        server.ALLOWED_FILES.clear(); server.ALLOWED_FILES.update(saved[2])
+        server.ALLOWED_DIRS.clear(); server.ALLOWED_DIRS.update(saved[3])
+        server.LOG[:] = saved[4]; server.BASE = saved[5]
+        tmp.cleanup()
+
     s1 = server.Server(('127.0.0.1', 0), server.H)
     s2 = socket.socket()
     try:
@@ -200,6 +247,8 @@ def test_platform():
             taken = True
         check('nothing else can bind the port', taken)
         check('a Mac path is still a path', server.WIN or server.PATH_RX.findall('see file:/Users/me/a/b/c.py') == ['/Users/me/a/b/c.py'])
+        check('a Mac cd is still a cd, and a drive path is not one there',
+              server.WIN or (bool(server.CD_RX.match('cd /Users/me/a')) and not server.CD_RX.match('cd C:/Users/me/a')))
     finally:
         s2.close()
         s1.server_close()

@@ -16,3 +16,4 @@ jobs:
         with:
           python-version: ${{ matrix.python }}
       - run: python tests/test_parsers.py
+      - run: node tests/test_page.js      # the page's path helpers, outside a browser

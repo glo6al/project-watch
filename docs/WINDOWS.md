@@ -11,7 +11,7 @@ Allow about fifteen minutes. You need no administrator rights unless your instal
 | | Why | Minimum |
 |---|---|---|
 | Windows 10 or 11 | | 64-bit |
-| **Python** | runs the server; nothing else is installed into it | 3.9 or later (3.12 or 3.13 recommended) |
+| **Python** | runs the server; nothing else is installed into it | 3.12 or later recommended. 3.9 to 3.11 run it too, but show no rendered previews (see the README's Windows section) |
 | **Git** | to download the project (optional: a ZIP download works too) | any recent version |
 | A browser | the room is a web page | Chrome or Edge recommended |
 | **Windows Terminal** | only for the optional terminal view | included in Windows 11; free in the Microsoft Store for Windows 10 |
@@ -31,7 +31,7 @@ All the commands below are for **PowerShell**. To open it, press **Start**, type
 py --version
 ```
 
-If that prints `Python 3.9` or higher (for example `Python 3.12.7`), skip to step 2.
+If that prints `Python 3.12` or higher (for example `Python 3.12.7`), skip to step 2. (3.9 to 3.11 also run it, without rendered previews, as the table says.)
 
 If it says `py` is not recognised, or shows a version below 3.9, choose **one** of these:
 
@@ -85,30 +85,32 @@ Then **close PowerShell and open a new one**.
 
 ## Step 3: Download W.A.T.C.H.
 
-Windows support is in a pull request that has not been merged yet ([glo6al/project-watch#2](https://github.com/glo6al/project-watch/pull/2)). **Until it is merged, download it from the branch that holds it:**
-
-```powershell
-cd $HOME
-git clone -b windows-upstream https://github.com/er587/project-watch.git
-cd project-watch
-```
-
-After the pull request is merged, use the main project instead:
-
 ```powershell
 cd $HOME
 git clone https://github.com/glo6al/project-watch.git
 cd project-watch
 ```
 
-**Without Git:**
-1. Open <https://github.com/er587/project-watch/tree/windows-upstream> (or <https://github.com/glo6al/project-watch> once merged).
-2. Click the green **Code** button, then **Download ZIP**.
-3. Right-click the downloaded file and choose **Extract All…**, extracting to your home folder (`C:\Users\<you>`).
-4. Then:
+If what you downloaded has no `docs\WINDOWS.md`, Windows support has not been merged yet: it is in [pull request 2](https://github.com/glo6al/project-watch/pull/2). Check that out instead:
 
 ```powershell
-cd "$HOME\project-watch-windows-upstream"    # or project-watch-main, depending on which ZIP you took
+git fetch origin pull/2/head:windows
+git checkout windows
+```
+
+**Without Git:**
+1. Open <https://github.com/glo6al/project-watch>, click the green **Code** button, then **Download ZIP**. (If Windows support is not merged yet, download <https://github.com/glo6al/project-watch/archive/refs/pull/2/head.zip> instead.)
+2. Right-click the downloaded file and choose **Extract All…**, extracting to your home folder (`C:\Users\<you>`).
+3. Then go into the folder it made. For the main ZIP:
+
+```powershell
+cd "$HOME\project-watch-main"
+```
+
+For the pull-request ZIP:
+
+```powershell
+cd "$HOME\project-watch-refs-pull-2-head"
 ```
 
 **Check you are in the right place:**
@@ -197,7 +199,7 @@ py src\watch_tty.py --once     # one line, e.g. "2 waiting · 3 working"
 
 | What | Where |
 |---|---|
-| The server's key and settings | `%USERPROFILE%\.live-room\` (private to your Windows account) |
+| The server's key and settings | `%USERPROFILE%\.live-room\` (the server does not check its permissions; your profile's default permissions keep other non-administrator accounts out unless they have been changed) |
 | Claude Code's logs (read) | `%USERPROFILE%\.claude\projects\` |
 | Codex's logs (read) | `%USERPROFILE%\.codex\sessions\` |
 | Cursor's transcripts (read) | `%USERPROFILE%\.cursor\projects\<project>\agent-transcripts\` |
@@ -219,7 +221,7 @@ dir "$env:USERPROFILE\.cursor\projects"
 ## What does not work on Windows yet
 
 - **Answering permission prompts from the room (Allow / Deny), and the hooks behind it.** The hooks are shell scripts, and how Claude Code runs hook commands on Windows has not been checked. `py scripts\install_hooks.py` says so and changes nothing. The room still watches, and Claude asks in its own app as usual.
-- **Rendered previews of pages an agent writes** in some folders. Previews are deliberately refused for files in OneDrive-synced, network, ReFS/Dev Drive or `AppData` folders, for files reached through a link or junction, and for files that pnpm hard-links into `node_modules`. Some of these are refused on purpose for safety; others we simply have not seen working. Please tell us which happen to you.
+- **Rendered previews show the page alone.** The styles, scripts and images it links to from files beside it are not served on Windows yet (inline ones still apply), so a previewed page can look unstyled; previews need Python 3.12 or later. A page reached through a link or junction, with more than one name (such as files pnpm hard-links into `node_modules`), or in `AppData` is refused. OneDrive-synced, network and ReFS/Dev Drive folders have not been tried: they may be refused by those checks, or may work. Please tell us which happen to you.
 - **Desktop app details** (session titles, permission mode, when you last looked at a session) come from the Claude desktop app's own records. We assumed they are in `%APPDATA%\Claude`, but have not checked.
 
 ---
@@ -233,9 +235,9 @@ dir "$env:USERPROFILE\.cursor\projects"
 | The room is empty | Use an agent, then reload the page within 20 minutes, or set `$env:WINDOW_MIN = "120"`. Check the agent's log folder exists (see "Where things are"). |
 | "W.A.T.C.H. is locked" | Press **Unlock**, and use the **new** tab it opens. |
 | Unlock opens an editor | See step 5: set your browser as the default for `.html`. |
-| A preview says not found | Probably one of the folders listed under "What does not work on Windows yet". Tell us which kind. |
+| A preview says not found, or a page looks unstyled | See "What does not work on Windows yet": the page alone is served, without the files beside it, and only from Python 3.12. Tell us which folder kind it was in. |
 | Odd characters in the terminal view | Use Windows Terminal. |
-| `~/.live-room is not a private directory owned by you` | `%USERPROFILE%\.live-room` is a link or junction. Remove it; the server creates a fresh one. |
+| `~/.live-room is a link` | `%USERPROFILE%\.live-room` is a link or junction. Remove it; the server creates a fresh one. |
 
 **To stop the server**, press **Ctrl+C** in its window (or close the window). **To remove W.A.T.C.H. completely**, delete the project folder and `%USERPROFILE%\.live-room`. It changes nothing else on your PC.
 
