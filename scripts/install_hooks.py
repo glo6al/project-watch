@@ -22,6 +22,10 @@ binding it is outside what this tool protects against; remove the hooks (--remov
 """
 import json, os, shutil, sys, tempfile, time
 
+if os.name == 'nt':
+    # The hooks are POSIX shell (curl, $HOME, case). How Claude Code runs hook commands on Windows has not been
+    # checked, and a hook that half-works could pass on a wrong answer, so none is installed there.
+    sys.exit('The hooks are not available on Windows yet. W.A.T.C.H. watches without them; Claude asks in its own app.')
 P = os.path.expanduser('~/.claude/settings.json')
 PORT = os.environ.get('PORT', '8793')
 if not PORT.isdigit():

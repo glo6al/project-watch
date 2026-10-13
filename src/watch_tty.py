@@ -225,6 +225,8 @@ def draw(rows, note):       # on each server batch (the stream's 'health' line),
 def main():
     argv = sys.argv[1:]
     if '--tab' in argv or '--split' in argv:
+        if sys.platform != 'darwin':
+            raise SystemExit('--tab and --split open iTerm2 on macOS; here, run the board in a terminal window of its own')
         install_profile()
         raise SystemExit(iterm_open(['--panes' if '--split' in argv else '--tabs']))
     tail, once, panes, pane = '--tail' in argv, '--once' in argv, '--panes' in argv, '--pane' in argv
