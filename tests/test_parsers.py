@@ -362,6 +362,61 @@ def test_cloud_exec():
             server.AGENTS.pop(aid, None)
 
 
+def test_active_log():
+    """A log enters the room when it was written within the window by its own clock, not merely touched; the clock
+    is the last record's own timestamp, however long that record is, never a timestamp nested inside it."""
+    import time as _t
+    d = tempfile.TemporaryDirectory()
+    try:
+        now = _t.time()
+        iso = lambda t: _t.strftime('%Y-%m-%dT%H:%M:%S', _t.gmtime(t)) + '.000Z'
+        old_iso = '2026-09-21T15:42:00.000Z'
+        def log(name, *records, mtime=None):
+            path = os.path.join(d.name, name)
+            with open(path, 'w') as f:
+                f.write(''.join(json.dumps(r) + '\n' for r in records))
+            if mtime is not None:
+                os.utime(path, (mtime, mtime))
+            return path
+        stale = log('stale.jsonl', {'type': 'assistant', 'timestamp': old_iso})            # touched now, written weeks ago by its own clock
+        check('a touched log with weeks-old records is not followed', not server.active(stale, now))
+        fresh = log('fresh.jsonl', {'type': 'assistant', 'timestamp': old_iso}, {'type': 'user', 'timestamp': iso(now - 30)})
+        check('a log with a recent last record is followed', server.active(fresh, now))
+        check('the last timestamp is read, not the first', abs(server.last_record_ts(fresh) - (now - 30)) < 2)
+        old = log('old.jsonl', {'type': 'user', 'timestamp': iso(now - 30)}, mtime=now - server.WINDOW * 2)
+        check('a log not changed within the window is not followed, whatever it says', not server.active(old, now))
+        big = log('big.jsonl', {'type': 'assistant', 'timestamp': iso(now - 40), 'message': {'content': 'x' * 70000}})
+        check('a last record far longer than a chunk is still read', server.active(big, now) and abs(server.last_record_ts(big) - (now - 40)) < 2)
+        nested = log('nested.jsonl', {'type': 'assistant', 'timestamp': iso(now - 20), 'message': {'content': [{'type': 'tool_use', 'input': {'timestamp': old_iso, 'note': '"timestamp":"2026-01-01T00:00:00Z"'}}]}})
+        check('a timestamp nested in a record is not its clock', server.active(nested, now))
+        nested_old = log('nested_old.jsonl', {'type': 'assistant', 'timestamp': old_iso, 'message': {'content': [{'type': 'tool_use', 'input': {'timestamp': iso(now - 5)}}]}})
+        check('a recent timestamp nested in an old record does not admit it', not server.active(nested_old, now))
+        tailless = log('tailless.jsonl', {'type': 'assistant', 'timestamp': iso(now - 50)}, {'type': 'summary', 'summary': 'no time here'})
+        check('a timestamp-less record at the end is skipped back to the last timed one', server.active(tailless, now))
+        untimed = log('untimed.jsonl', {'role': 'user', 'message': {'content': []}})
+        check('a log that never states a time is not admitted by its file alone when timed', not server.active(untimed, now))
+        check('a Cursor-style log is judged by the file alone', server.active(untimed, now, timed=False))
+        deep = log('deep.jsonl', {'type': 'assistant', 'timestamp': iso(now - 10), 'message': 'y' * 3000})
+        check('no more than the limit is read, and a timed record beyond it is inconclusive', server.last_record_ts(deep, limit=1000) is None and server.last_record_ts(deep, limit=5000) is not None)
+        check('an inconclusive tail does not admit a freshly changed log', not server.active(deep, now, limit=1000) and server.active(deep, now))
+        # the tail's cut falls exactly on the newline before a complete recent record: that record must still count
+        rec = json.dumps({'type': 'user', 'timestamp': iso(now - 15), 'pad': 'z' * 940})
+        edge = os.path.join(d.name, 'edge.jsonl')
+        with open(edge, 'w') as f:
+            f.write('{}\n' + rec + '\n')
+        lim = len(rec) + 2                                      # the read starts at the newline that precedes the record (record, its newline, and that one)
+        check('a record whose preceding newline sits at the cut is read', server.last_record_ts(edge, limit=lim) is not None and server.active(edge, now, limit=lim))
+        check('a record the cut lands inside is not trusted', server.last_record_ts(edge, limit=lim - 1) is None)
+        if not server.WIN:
+            os.chmod(deep, 0)
+            try:
+                check('a tail that cannot be read is inconclusive, and the log is not admitted', server.last_record_ts(deep) is None and not server.active(deep, now))
+            finally:
+                os.chmod(deep, 0o600)
+    finally:
+        d.cleanup()
+
+
 if __name__ == '__main__':
     test_import_is_quiet()
     test_shell()
@@ -371,4 +426,5 @@ if __name__ == '__main__':
     test_terminal_text()
     test_platform()
     test_cloud_exec()
+    test_active_log()
     print('all ok')

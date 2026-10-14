@@ -129,6 +129,56 @@ def aid_of(path):
     return 'c:' + (stem.replace('agent-', '') if os.path.basename(os.path.dirname(path)) == 'subagents' else stem)
 
 
+def last_record_ts(path, limit=4_000_000):
+    """When a log last recorded anything, by its own clock: the top-level "timestamp" of its last complete record
+    that states one, found by reading the file's tail backwards one chunk at a time (a record can be far longer than
+    a chunk). Only a record's own timestamp counts, never one nested in a tool input or a quoted document. None when
+    no such record was found within the last `limit` bytes (never more than that is read), or the tail could not be
+    read: inconclusive."""
+    try:
+        with open(path, 'rb') as f:
+            size, n = os.fstat(f.fileno()).st_size, 16384
+            while True:
+                n = min(n, size, limit)
+                f.seek(size - n)
+                data = f.read(n)
+                pieces = data.split(b'\n')
+                if n < size:
+                    pieces = pieces[1:]                         # the first piece may be the end of a longer record (even if empty: the cut fell on a newline)
+                lines = [l for l in pieces if l.strip()]
+                for raw in reversed(lines):
+                    try:
+                        d = json.loads(raw)
+                    except ValueError:
+                        continue
+                    t = d.get('timestamp') if isinstance(d, dict) else None
+                    if isinstance(t, str):
+                        try:
+                            return datetime.fromisoformat(t.replace('Z', '+00:00')).timestamp()
+                        except ValueError:
+                            return None
+                if n >= size or n >= limit:
+                    return None
+                n *= 4
+    except OSError:
+        return None
+
+
+def active(path, now, timed=True, limit=4_000_000):
+    """A log worth starting to follow: changed within the window, and, for a log whose records carry timestamps, by
+    its own clock too. A file's modification time alone is not evidence of activity: something can touch a log without
+    adding a record (seen: nine sub-agent logs touched in one second, weeks after their last record), and such a log
+    would otherwise walk into the room with stale content and no parent. A log whose last timestamped record cannot
+    be found is not admitted until one is written. Logs whose records state no time (Cursor's: timed=False) are
+    judged by the file alone."""
+    if now - os.path.getmtime(path) >= WINDOW:
+        return False
+    if not timed:
+        return True
+    ts = last_record_ts(path, limit)
+    return ts is not None and now - ts < WINDOW
+
+
 def kept(path, now):
     wins = KEEP.get(aid_of(path), {})
     return any(now - t < KEEP_LEASE for t in wins.values()) and now - os.path.getmtime(path) < KEEP_DAYS * 86400
@@ -2383,7 +2433,7 @@ def watch():
                 prune_keep(now)
                 for p, cls in found:
                     try:
-                        if p not in tails and (now - os.path.getmtime(p) < WINDOW or kept(p, now)):
+                        if p not in tails and (active(p, now, cls is not CursorTail) or kept(p, now)):
                             tails[p] = cls(p)
                             HUNTED.clear()              # a new log is new ground: orphans may be searched for again
                     except Exception as e:

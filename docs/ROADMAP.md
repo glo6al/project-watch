@@ -36,6 +36,7 @@ Added on 2026-10-05 and reviewed since:
 
 - Granularity is whatever the logs record: tool calls, their results, messages and turn boundaries, never keystrokes. For Codex, a step in flight is read from script text and marked unconfirmed until its finished record arrives. Hidden reasoning is not shown, because it is not in the logs.
 - "No log entry for N" means the log is silent; it does not prove an agent is idle.
+- Touching a log whose last timed record is outside the window does not make it active: for Claude Code and Codex the last timed record decides, by the log's own clock, so a log written by a clock more than the window behind this machine's stays out; what touched nine Claude sub-agent logs at once on 2026-10-13 is not known.
 - Which agent started which is recorded for some cases and inferred for others; inferred links are labelled.
 - Alerts and "probably needs you" notices are heuristics and can be wrong in either direction.
 - Codex: messages between agents are encrypted in its log, and its permission prompts and queued messages are not visible.
