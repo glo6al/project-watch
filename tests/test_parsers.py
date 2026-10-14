@@ -254,6 +254,114 @@ def test_platform():
         s1.server_close()
 
 
+def test_cloud_exec():
+    """A Codex cloud exec server seen in the process list: recognised by the text of its executable and subcommand,
+    never by words in a command line; one step per command with the command line and folder as the list and lsof
+    state them; helpers ignored by their executable; a pid seen again with another start text is another process; a
+    hostile command line is shown unjudged rather than lost, an over-long one as partly judged; a burst examined
+    over samples; an unreadable list marks the agent stale and a readable one clears it; the agent gone when the
+    server is. Everything is injected, so this runs on every system and touches no process or folder."""
+    cx = server.CloudExec()
+    check('a server is its executable and subcommand, not words in a command',
+          cx.is_root('/Applications/ChatGPT.app/Contents/Resources/codex-cli/CodexCLI.app/Contents/MacOS/codex exec-server --remote https://x --environment-id e')
+          and not cx.is_root('/bin/zsh -lc echo /tmp/codex exec-server --remote fake') and not cx.is_root('codex exec-server forward'))
+    check('a helper is its executable, not a word', bool(cx.HELPER.match('/A/cua_node/bin/node ./server.mjs')) and bool(cx.HELPER.match('/A/cua_node/bin/node_repl'))
+          and not cx.HELPER.match('/bin/zsh -lc echo server.mjs') and not cx.HELPER.match('/bin/zsh -lc rm -rf /tmp/cua_node'))
+    check('etime: days, hours, minutes', [server.etime_secs(x) for x in ('02-03:04:05', '03:04:05', '04:05')] == [183845, 11045, 245])
+    bad = 0
+    for x in ('x', '1:2:3:4', 'a-1:2'):
+        try:
+            server.etime_secs(x)
+        except ValueError:
+            bad += 1
+    check('etime: anything else is refused', bad == 3)
+    ev = []
+    orig_emit, orig_risk = server.emit, server.risk
+    server.emit = lambda agent, kind, old, ts=None, **kw: ev.append((agent, kind, dict(kw)))
+    ROOT = '/Applications/ChatGPT.app/Contents/Resources/codex-cli/CodexCLI.app/Contents/MacOS/codex exec-server --remote https://example.invalid/api --environment-id env_x'
+    T0, T1 = 1000.0, 1010.0
+    proj = os.path.join(os.sep, 'tmp', 'proj')
+    rows = [[(100, 1, T0, ROOT), (101, 100, T0, '/Applications/ChatGPT.app/Contents/Resources/cua_node/bin/node ./server.mjs'), (102, 100, T0, '/bin/zsh -lc git push origin main')]]
+    cwds = {102: proj}
+    cx = server.CloudExec(rows=lambda: list(rows[0]), cwd=lambda pid: cwds.get(pid, ''))
+    kinds = lambda: [k for a, k, _ in ev]
+    aid = None
+    try:
+        cx.poll(2000.0)
+        aid = ev[0][0]
+        check('one agent, from the exec server', aid.startswith('e:') and server.AID_RX.match(aid) and 'agent' in kinds())
+        runs = [kw for a, k, kw in ev if k == 'run']
+        check('one step: the command, not the helper', len(runs) == 1 and runs[0]['cmd'] == 'git push origin main' and runs[0]['seen'] and runs[0]['judged'] == 'full')
+        check('the command is judged like any other', runs[0]['alert'] == 'push')
+        check('the step carries its own folder', runs[0]['cwd'] == proj)
+        check('the agent is described from the list', server.AGENTS[aid].get('runtime') == 'Codex cloud' and server.AGENTS[aid].get('cwd') == proj and 'process list' in server.AGENTS[aid].get('observed', ''))
+        rows[0] = [(pid, ppid, st + 1.5, args) for pid, ppid, st, args in rows[0]]      # the start, now minus a rounded elapsed time, moves a little between samples
+        cx.poll(2000.5)
+        check('nothing twice: a start that moved by rounding is the same process', len([1 for a, k, _ in ev if k == 'run']) == 1)
+        rows[0] = rows[0][:2]
+        cx.poll(2002.0)
+        res = [kw for a, k, kw in ev if k == 'result']
+        check('the command ended with no outcome, and nothing claims what it changed', len(res) == 1 and res[0]['unknown'] and res[0]['seen'] and res[0]['text'] == '' and 'patch' not in kinds())
+        # pid 102 comes back with another start text: another command, whose folder lsof cannot give; the classifier chokes on it
+        server.risk = lambda cmd: (_ for _ in ()).throw(RecursionError('deep'))
+        cwds.pop(102)
+        rows[0] = rows[0] + [(102, 100, T1, '/bin/zsh -lc ' + 'echo $(' * 300)]
+        cx.poll(2006.0)
+        runs = [kw for a, k, kw in ev if k == 'run']
+        check('a reused pid with a start beyond the tolerance is another command', len(runs) == 2 and runs[1]['cmd'].startswith('echo $('))
+        check('a command the classifier cannot parse is shown unjudged, not lost', runs[1]['judged'] == 'none' and runs[1]['alert'] == '')
+        check('an unreadable folder is empty on the step and leaves the last known one on the agent', runs[1]['cwd'] == '' and server.AGENTS[aid].get('cwd') == proj)
+        server.risk = orig_risk
+        rows[0] = rows[0][:2] + [(103, 100, T1, '/bin/zsh -lc ' + 'echo x; ' * 600 + 'git push')]
+        cx.poll(2008.0)
+        runs = [kw for a, k, kw in ev if k == 'run']
+        check('an over-long command is judged on its start only, and says so', runs[-1]['judged'] == 'partial')
+        rows[0] = rows[0][:2] + [(200 + i, 100, T1 + i, '/bin/zsh -lc echo %d' % i) for i in reversed(range(6))]
+        cx.poll(2011.0)
+        seen_echo = lambda: sorted(int(kw['cmd'][5:]) for a, k, kw in ev if k == 'run' and kw['cmd'].startswith('echo ') and kw['cmd'][5:].isdigit())
+        check('four new commands per sample, the oldest first', seen_echo() == [0, 1, 2, 3])
+        cx.poll(2012.0)
+        check('the rest the next sample', seen_echo() == [0, 1, 2, 3, 4, 5])
+        # a churn of newer short-lived commands never starves one that stays
+        for n in range(3):
+            rows[0] = rows[0][:2] + [(400 + 10 * n + i, 100, T1 + 100 + 10 * n, '/bin/zsh -lc echo churn') for i in range(5)] + [(300, 100, T1, '/bin/zsh -lc echo stays')]
+            cx.poll(2013.0 + n)
+            if n == 0:
+                check('the command that stays is examined before a newer churn listed ahead of it', any(kw['cmd'] == 'echo stays' for a, k, kw in ev if k == 'run'))
+        check('three samples of churn never hid it, and each sample took four', len([1 for a, k, kw in ev if k == 'run' and kw['cmd'] == 'echo churn']) == 3 + 4 + 4)
+        # a folder lookup that blows up leaves nothing half-done: the step is still shown, its folder unreadable
+        cx.cwd = lambda pid: (_ for _ in ()).throw(UnicodeDecodeError('utf-8', b'', 0, 1, 'bad'))
+        rows[0] = rows[0][:2] + [(500, 100, T1 + 200, '/bin/zsh -lc echo boom')]
+        try:
+            cx.poll(2014.0)
+        except Exception:
+            pass
+        cx.cwd = lambda pid: ''
+        cx.poll(2015.0)
+        check('a command whose folder lookup failed is still shown, folder unreadable', any(kw['cmd'] == 'echo boom' and kw['cwd'] == '' for a, k, kw in ev if k == 'run'))
+        good = cx.rows
+        cx.rows = lambda: (_ for _ in ()).throw(OSError('no ps'))
+        for t in (2013.0, 2014.0, 2015.0):
+            cx.poll(t)
+        check('three unreadable samples mark the agent stale', server.AGENTS[aid].get('stale') is True)
+        cx.rows = good
+        cx.poll(2016.0)
+        check('a readable sample clears it, and the record is resent', 'stale' not in server.AGENTS[aid] and ev[-1][1] == 'agent' and not ev[-1][2].get('stale'))
+        rows[0] = rows[0][:2] + [(600, 100, T1 + 300, '/bin/zsh -lc sleep 999'), (601, 100, T1 + 300, '/bin/zsh -lc sleep 1')]
+        cx.poll(2017.0)
+        rows[0] = [(600, 1, T1 + 300, '/bin/zsh -lc sleep 999')]            # the server is gone; one command is gone with it, one lives on, reparented
+        before = len(ev)
+        cx.poll(2018.0)
+        tail = [(k, kw.get('id')) for a, k, kw in ev[before:]]
+        check('the agent goes with its server: the command gone with it ended, the one still running is not said to have ended',
+              aid not in server.AGENTS and tail[-1][0] == 'forget' and ('result', 'p601-%d' % int(T1 + 300)) in tail and not any(k == 'result' and i == 'p600-%d' % int(T1 + 300) for k, i in tail))
+        check('no process list on Windows', (server.ps_rows() == []) if server.WIN else True)
+    finally:
+        server.emit, server.risk = orig_emit, orig_risk
+        if aid:
+            server.AGENTS.pop(aid, None)
+
+
 if __name__ == '__main__':
     test_import_is_quiet()
     test_shell()
@@ -262,4 +370,5 @@ if __name__ == '__main__':
     test_cursor_transcript()
     test_terminal_text()
     test_platform()
+    test_cloud_exec()
     print('all ok')

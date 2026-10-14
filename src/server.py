@@ -75,7 +75,8 @@ AGENTS = {}
 CODES = {}                   # one-time unlock codes: code -> time issued
 KEEP = {}                    # agents windows have pinned: aid -> {window: when it last said so}. Their logs are followed for a day, not 20 min
 KEEP_DAYS, KEEP_LEASE = 1, 15 * 60      # a window re-sends its whole pin list every few minutes; a list not refreshed in 15 min lapses
-AID_RX = re.compile(r'[cxk]:[0-9a-f-]{8,64}\Z')   # c claude, x codex, k cursor
+AID_LETTERS = 'cxke'                               # c claude, x codex, k cursor, e a Codex cloud exec server (see CloudExec)
+AID_RX = re.compile(r'[%s]:[0-9a-f-]{8,64}\Z' % AID_LETTERS)
 
 
 def count(v):
@@ -2207,6 +2208,162 @@ def expire_hooked(tails, now):
                 drop_agent(aid, tails)
 
 
+def etime_secs(et):
+    """ps's elapsed time, `[[dd-]hh:]mm:ss`, as seconds; ValueError if it is anything else."""
+    d, _, hms = et.rpartition('-')
+    parts = hms.split(':')
+    if not 2 <= len(parts) <= 3 or (d and not d.isdigit()):
+        raise ValueError(et)
+    return int(d or 0) * 86400 + sum(int(x) * m for x, m in zip(reversed(parts), (1, 60, 3600)))
+
+
+def ps_rows():
+    """Processes, as (pid, ppid, started-at epoch, command line), this user's only. The start is `now - etime`, the
+    kernel's elapsed time, which is unambiguous (a printed local time names two instants in the hour that repeats
+    when daylight saving ends) but rounds to the second, so it moves by a second or two between samples; it is the
+    process's identity together with its pid, compared with a tolerance (see CloudExec). macOS and Linux `ps`;
+    nothing on Windows."""
+    if WIN:
+        return []
+    r = subprocess.run(['ps', '-axo', 'pid=,ppid=,uid=,etime=,args='], capture_output=True, text=True, timeout=5, env=dict(os.environ, LC_ALL='C'))
+    if r.returncode:
+        raise OSError('ps exited %d' % r.returncode)
+    now, me, rows = time.time(), os.getuid(), []
+    for line in r.stdout.splitlines():
+        parts = line.split(None, 4)                      # pid ppid uid etime args
+        if len(parts) < 5:
+            continue
+        try:
+            pid, ppid, uid, secs = int(parts[0]), int(parts[1]), int(parts[2]), etime_secs(parts[3])
+        except ValueError:
+            continue
+        if uid == me:
+            rows.append((pid, ppid, now - secs, parts[4]))
+    return rows
+
+
+def cwd_of(pid):
+    """A process's working folder, from lsof; '' when it cannot be read, or when lsof had to escape it (a name with a
+    control character, a backslash or bytes that are not UTF-8 comes back as a spelling that may name another folder,
+    so it is not trusted)."""
+    try:
+        out = subprocess.run(['lsof', '-a', '-p', str(pid), '-d', 'cwd', '-Fn'], capture_output=True, timeout=3).stdout.decode('utf-8', 'replace')
+        p = next((l[1:] for l in out.splitlines() if l.startswith('n/')), '')
+        return '' if '\\' in p or '\ufffd' in p or any(ord(ch) < 32 or ch == '\x7f' for ch in p) else p
+    except Exception:                                   # whatever lsof did, an unreadable folder is just that
+        return ''
+
+
+OBSERVED = ('the process list, sampled about once a second (a sample can take longer while a folder is being looked up): a '
+            'shorter command can be missed; of more than four new commands at once the oldest four are examined and the rest '
+            'the next sample, so a short-lived one among them can be missed; each command\'s folder from lsof; what a '
+            'command changed is not recorded here')
+
+
+class CloudExec:
+    """Codex cloud agents working on this computer. They keep no log here: the ChatGPT app runs an exec server
+    (`codex exec-server --remote …`, marked experimental by OpenAI) and the cloud sends it one command at a time.
+    What this computer records is the process list, so that is what is read, about once a second on its own thread
+    so that log following never waits for it: one agent per exec server, and one step per command it is running,
+    with the command line and working folder as the process table states them. A command shorter than a sample can
+    be missed, and at most a few new commands are examined per sample (the rest the next, if they are still there).
+    Nothing about the agent's words, what it read, what it changed, or whether a command succeeded reaches this
+    machine; the page says so on every screen. A process is the pair (pid, start): a pid seen again with a start more
+    than TOL seconds from the one recorded is another process (the start is now minus the kernel's elapsed time, which
+    rounds to the second, hence the tolerance; a pid reused within TOL seconds of the same start cannot be told apart,
+    and that is the limit of this evidence). New commands are examined oldest first, so a command that stays cannot be
+    starved by a churn of newer ones. Only this user's processes are kept; an exec server is recognised by the text of
+    its executable and subcommand, a helper by the text of its executable, never by words inside a command line (the
+    process list is text, not proof of what a program is)."""
+    ROOT = re.compile(r'^(?:\S*/)?codex exec-server(?:\s|$)')
+    HELPER = re.compile(r'^\S*/cua_node/bin/(?:node|node_repl)(?:\s|$)')
+    SHELL = re.compile(r'^(?:/bin/|/usr/bin/)?(?:zsh|bash|sh) -l?c ')
+    MAX_NEW, JUDGE_CAP, TOL = 4, 4000, 3
+
+    def __init__(self, rows=ps_rows, cwd=cwd_of):
+        self.rows, self.cwd = rows, cwd
+        self.roots, self.cmds, self.fail = {}, {}, 0          # pid -> {aid, start}; pid -> {aid, cid, start}
+
+    def run(self):
+        while True:
+            t = time.time()
+            try:
+                self.poll(t)
+            except Exception as e:
+                print('process list failed', type(e).__name__, e)
+            time.sleep(max(0.2, 1 - (time.time() - t)))
+
+    def is_root(self, args):
+        return bool(self.ROOT.match(args)) and '--remote' in args.split()
+
+    def poll(self, now):
+        try:
+            rows = self.rows()
+        except (OSError, subprocess.SubprocessError, ValueError):
+            self.fail += 1
+            if self.fail == 3:                                  # three misses: the page says the list cannot be read
+                for r in self.roots.values():
+                    describe(r['aid'], False, stale=True)
+            return
+        if self.fail >= 3:                                      # readable again: the record is resent without the mark
+            for r in self.roots.values():
+                AGENTS.get(r['aid'], {}).pop('stale', None)
+                describe(r['aid'], False, _cleared=True)
+        self.fail = 0
+        same = lambda a, b: a is not None and b is not None and abs(a - b) <= self.TOL
+        roots = {pid: st for pid, ppid, st, args in rows if self.is_root(args)}
+        live = {pid: st for pid, ppid, st, args in rows}
+        for pid, r in list(self.roots.items()):
+            if not same(roots.get(pid), r['start']):            # gone, or the pid reused by another process
+                self.drop_root(pid, now, live)
+        for pid, st in roots.items():
+            if pid not in self.roots:
+                aid = 'e:%08x%08x' % (pid & 0xffffffff, int(st) & 0xffffffff)
+                self.roots[pid] = {'aid': aid, 'start': st}
+                describe(aid, False, runtime='Codex cloud', name='Codex cloud', started=st, perm='', observed=OBSERVED)
+        for pid, c in list(self.cmds.items()):
+            if not same(live.get(pid), c['start']):
+                self.end(pid, now)
+        fresh = sorted((r for r in rows if r[1] in self.roots and r[0] not in self.cmds and not self.HELPER.match(r[3])), key=lambda r: r[2])
+        for pid, ppid, st, args in fresh[:self.MAX_NEW]:        # oldest first: a command that stays is never starved by newer churn
+            self.begin(pid, ppid, st, args)
+
+    def begin(self, pid, ppid, st, args):
+        """One command, seen for the first time. The step is emitted before the command is remembered, so a failure
+        anywhere here leaves nothing half-done: the next sample simply meets the command again."""
+        aid, cid = self.roots[ppid]['aid'], 'p%d-%d' % (pid, int(st))
+        cmd = self.SHELL.sub('', args, 1)
+        cwd = self.cwd(pid)
+        try:                                                    # the classifier parses shell; a hostile command line must not take the sample down
+            alert, check = risk(cmd[:self.JUDGE_CAP]), is_check(cmd[:self.JUDGE_CAP])
+            judged = 'partial' if len(cmd) > self.JUDGE_CAP else 'full'
+        except Exception:
+            alert, check, judged = '', False, 'none'
+        if cwd and AGENTS.get(aid, {}).get('cwd') != cwd:
+            describe(aid, False, cwd=cwd)                       # the folder of its latest command whose folder could be read
+        emit(aid, 'run', False, st, id=cid, cmd=cmd, why='', alert=alert, check=check, seen=True, cwd=cwd, judged=judged)
+        self.cmds[pid] = {'aid': aid, 'cid': cid, 'start': st}
+
+    def end(self, pid, now):
+        c = self.cmds.pop(pid)
+        emit(c['aid'], 'result', False, now, id=c['cid'], text='', unknown=True, seen=True)
+
+    def drop_root(self, pid, now, live):
+        """The exec server is gone: the agent leaves. A command of its that is gone too ended; one still in the list
+        did not, so it is only forgotten with the agent, never said to have ended. Nothing here can fail after the
+        bookkeeping, and this source's agents never enter the log readers' hunt or hook tables, so only the record
+        itself is removed, as one step with any describe or unlink (LINKS_LOCK)."""
+        r = self.roots.pop(pid)
+        for cpid, c in [(p, c) for p, c in self.cmds.items() if c['aid'] == r['aid']]:
+            if live.get(cpid) is not None and abs(live[cpid] - c['start']) <= self.TOL:
+                self.cmds.pop(cpid)                             # still running: no claim about it
+            else:
+                self.end(cpid, now)
+        with LINKS_LOCK:
+            AGENTS.pop(r['aid'], None)
+        emit(r['aid'], 'forget', False)
+
+
 def watch():
     tails, last_scan = {}, 0
     while True:
@@ -2671,10 +2828,12 @@ class H(BaseHTTPRequestHandler):
             seen.add(aid)
             aid = a['parent']
             a = AGENTS[aid]
-        if not a or not re.fullmatch(r'[cxk]:[0-9a-f-]{8,64}', aid):
+        if not a or not AID_RX.match(aid):
             return self.send(404, b'unknown agent')
         if aid[0] == 'k':
             return self.send(404, b'Cursor does not record a link that opens this chat.')
+        if aid[0] == 'e':
+            return self.send(404, b'This agent lives in ChatGPT; nothing on this computer records a link to its conversation.')
         if aid[0] == 'x':
             url = 'codex://threads/' + aid[2:]
         else:
@@ -2774,7 +2933,7 @@ class H(BaseHTTPRequestHandler):
                 if nxt is None:
                     nxt = BASE
             apply_watch(True)                    # a reload picks up an edit from the Watch button; no restart
-            out = line({'kind': 'hello', 'agent': '', 'pkey': PKEY, 'window': WINDOW, 'names': project_names(), 'watch': watch_public(), 'win': WIN})
+            out = line({'kind': 'hello', 'agent': '', 'pkey': PKEY, 'window': WINDOW, 'names': project_names(), 'watch': watch_public(), 'win': WIN, 'prefixes': AID_LETTERS})
             if expired:
                 self.wfile.write((out + line({'kind': 'gap', 'agent': ''})).encode())
                 self.wfile.flush()
@@ -2838,6 +2997,8 @@ if __name__ == '__main__':
     load_links()
     apply_watch(True)
     threading.Thread(target=watch, daemon=True).start()
+    if not WIN:
+        threading.Thread(target=CloudExec().run, daemon=True).start()     # the process list, on its own clock
     try:
         srv = Server(('127.0.0.1', PORT), H)
     except OSError as e:

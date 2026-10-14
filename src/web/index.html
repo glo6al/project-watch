@@ -24,9 +24,9 @@ code,pre{font:12.5px/1.5 ui-monospace,Menlo,monospace}
 #mark{height:22px;width:auto;margin-right:10px;vertical-align:-6px}
 #fleetS,#console{display:inline-flex;align-items:center;gap:6px;border:1px solid #1f3a52;border-radius:3px;padding:3px 8px 3px 10px;background:#0a1420;flex:none}
 #fleetS{flex:1 1 auto;min-width:min(300px,34vw);overflow:hidden;position:relative}      /* keeps a usable slice of the bar even on a narrow window; the rest scrolls */#projs{min-width:0;max-width:100%}
-/* one row on a wide screen; a narrow or portrait window gets two tidy rows: the brand, lamp and controls on the first,
-   the fleet strip on its own full-width row beneath, rather than wrapping wherever it happens to break */
-@media (max-width:1180px){#hud{flex-wrap:wrap}#fleetS{order:10;flex:1 1 100%;min-width:0;max-width:none}#console{margin-left:auto}}
+/* one row, whatever the width: on a narrow window the fleet strip gives up its minimum width and scrolls sideways
+   (its chips never squeeze), so the brand, lamp, fleet and controls stay on the same line */
+@media (max-width:1180px){#fleetS{min-width:140px}#brand{font-size:0}#console b{display:none}#hud .sw span{display:none}#demoTag{max-width:64px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}}      /* the controls give up their words first (icons stay), the brand its name; the fleet keeps a usable slice */
 #fleetS.more::after{content:"";position:absolute;right:0;top:0;bottom:0;width:28px;background:linear-gradient(90deg,transparent,#0a1420);pointer-events:none}      /* there is more to the right: swipe */
 #projs button{flex:none}#projs button span.n{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:190px}      /* chips keep their names; the strip scrolls instead of squeezing them */
 #brand,#live,#needN,#acts,#back,#demoTag{flex:none}
@@ -543,7 +543,7 @@ function did(e){
     case 'write': return (!e.done?'writing ':e.err?'failed to write ':'wrote ')+tail2(e.path);
     case 'edit': return (!e.done?'editing ':e.err?'failed to edit ':'edited ')+tail2(e.path);
     case 'patch': return (e.err?'failed to change ':({add:'wrote ',delete:'deleted '}[e.op]||'edited '))+tail2(e.path);
-    case 'run': return (e.why?line(e.why):(e.done?'ran ':'issued ')+line(e.cmd))+(e.err?' — failed':'');
+    case 'run': return (e.why?line(e.why):(e.seen?(e.done?'ended: ':e.over?'observation ended: ':e.stale?'last seen running: ':'running: '):e.done?'ran ':'issued ')+line(e.cmd))+(e.err?' — failed':'');
     case 'search': return (e.err?'search failed for ':e.done?'searched for ':'searching for ')+line(e.q);
     case 'web': return (e.err?'look-up failed for ':e.done?'looked up ':'looking up ')+line(e.q);
     case 'spawn': return 'handed off: '+line(e.name);
@@ -559,7 +559,7 @@ let PINS={}; try{PINS=JSON.parse(store.getItem('liveRoomPins')||'{}')}catch(err)
 const save=(k,v)=>{try{store.setItem(k,JSON.stringify(v))}catch(err){}};
 function dismiss(id){const a=A[id]; if(!a||a.gone) return; a.gone=GONE[id]=Date.now()/1000; save('liveRoomDismissed',GONE); const i=order.indexOf(id); if(i>=0)order.splice(i,1); a.el.hidden=true; if(focus===id)setFocus(null); layout()}
 function revive(id){const a=A[id]; if(!a||!a.gone) return; a.gone=0; delete GONE[id]; save('liveRoomDismissed',GONE); a.el.hidden=false; a.dirty=true; order.push(id); layout()}
-function forget(id){const a=A[id]; if(!a) return; if(focus===id){a.forgetLater=true; return} const i=order.indexOf(id); if(i>=0)order.splice(i,1); a.el.remove(); if(a.nt){try{a.nt.close()}catch(err){}} delete A[id]; delete GONE[id]; delete PINS[id]; save('liveRoomDismissed',GONE); save('liveRoomPins',PINS); layout()}
+function forget(id){const a=A[id]; if(!a) return; if(focus===id){a.forgetLater=true; if(a.observed){a.over=true; for(const c of Object.values(a.calls)) c.over=true} return} const i=order.indexOf(id); if(i>=0)order.splice(i,1); a.el.remove(); if(a.nt){try{a.nt.close()}catch(err){}} delete A[id]; delete GONE[id]; delete PINS[id]; save('liveRoomDismissed',GONE); save('liveRoomPins',PINS); layout()}
 function togglePin(id){PINS[id]?delete PINS[id]:PINS[id]=1; save('liveRoomPins',PINS); A[id].dirty=true; keep(); render()}
 /* pinned agents are told to the server, which keeps following their logs for a day, so they come back after a restart */
 let WIN=''; try{if(!DEMO) WIN=sessionStorage.getItem('liveRoomWin')||''; if(!WIN){WIN=Math.random().toString(36).slice(2,10); if(!DEMO) sessionStorage.setItem('liveRoomWin',WIN)}}catch(err){WIN=Math.random().toString(36).slice(2,10)}      /* no storage: still a token of its own, just not kept across reloads */      /* this window's own token, so two windows' pin lists do not overwrite each other */
@@ -718,7 +718,7 @@ function droid(id,col,state){
   return `<svg viewBox="0 0 48 48" aria-hidden="true">${s.join('')}</svg>`;
 }
 /* the face's state: what the monitor border already says, and nothing more */
-const faceState=(S,N,w)=>w&&N&&N.sure?'you':S.pend.length?'busy':S.busy?'on':'idle';
+const faceState=(S,N,w)=>w&&N&&N.sure?'you':S.unknown?'idle':S.pend.length?'busy':S.busy?'on':'idle';      /* an unreadable process list proves neither activity nor rest: the quiet face, with the label saying why */
 function paintFace(a,id,state){
   const pc=(a.el.style.getPropertyValue('--pc')||'').trim(), col=pc&&pc!=='transparent'?pc:'#7fa6c2', sig=state+'|'+col;
   if(a.el._av===sig) return;
@@ -743,9 +743,10 @@ function handle(e){
   if(e.alert&&!(a.alert&&a.alert.label===(LABEL[e.alert]||e.alert)&&Math.abs(e.ts-a.alert.ts)<30)){const al={n:++ALN,id:e.agent,label:LABEL[e.alert]||e.alert,text:e.cmd||e.name||'',ts:e.ts};a.alert=al;ALERTS.unshift(al);ALERTS.length=Math.min(ALERTS.length,8)}
   switch(e.kind){
     case 'agent':
-      for(const k of ['name','task','runtime','spawn','model','effort','perm','branch','cwd','goal']) if(typeof e[k]==='string'&&e[k]) a[k]=e[k];     /* log data: a string or nothing */
+      for(const k of ['name','task','runtime','spawn','model','effort','perm','branch','cwd','goal','observed']) if(typeof e[k]==='string'&&e[k]) a[k]=e[k];     /* log data: a string or nothing */
       if('goal' in e) a.goalEarly=!!e.goalEarly;      /* the goal came from part-way through the log, not its start */
       for(const k of ['started','looked','partial']) if(e[k]) a[k]=e[k];
+      a.stale=!!e.stale; for(const c of Object.values(a.calls)) c.stale=a.stale;            /* an observed agent whose process list could not be read lately; the record is whole, so absent means readable */
       for(const k of ['ctx','ctxmax','ctxref']) if(k in e) a[k]=num(e[k])?e[k]:null;      /* a count that is not a number is not a count */
       if('ctx' in e) a.ctxpart=!!e.ctxpart;                                                   /* only some of the usage components were stated: a lower bound, not the figure */
       /* an agent event carries the whole record: a link it does not name is a link the agent no longer has */
@@ -783,7 +784,7 @@ function handle(e){
       a.turn='ended'; a.endHook=!!e.hook; a.how=e.hook?'turn ended · reported by its hook, not yet in its log':(e.how||''); a.endTs=Math.max(e.ts,a.endTs||0); if(!e.hook) a.calls={}; if(!e.hook) note(a,{t:'end',ts:e.ts}); break;
     case 'turn_start': if(!(a.endTs&&e.ts<a.endTs)) a.turn='in'; break;
     case 'file': a.html={path:e.path,v:e.seq>=0?e.seq:Date.now(),ts:e.ts}; break;
-    case 'result': {const c=a.calls[e.id]; if(c){if(e.ts>=c.ts&&!c.guess){const l=((a.durs=a.durs||{})[c.kind]=a.durs[c.kind]||[]); l.push(e.ts-c.ts); if(l.length>40)l.shift()} c.done=true; c.out=e.text; c.err=!!e.error; c.unknown=!!e.unknown; delete a.calls[e.id];
+    case 'result': {const c=a.calls[e.id]; if(c){c.endTs=e.ts; if(e.ts>=c.ts&&!c.guess){const l=((a.durs=a.durs||{})[c.kind]=a.durs[c.kind]||[]); l.push(e.ts-c.ts); if(l.length>40)l.shift()} c.done=true; c.out=e.text; c.err=e.unknown?undefined:!!e.error; c.unknown=!!e.unknown; delete a.calls[e.id];
         if(c.kind==='run'&&c.check&&!c.guess) a.check=c;
         if(c.kind==='spawn'&&!e.old&&!c.unknown){const kid=order.find(k=>A[k].spawn===e.id); if(kid)pulse(kid,e.agent,e.error?'returned an error':'reported back')}}} break;
     default: if(MAT.includes(e.kind)){
@@ -1011,14 +1012,17 @@ function stateOf(a,now){
   const pend=Object.values(a.calls), N=need(a), idle=now-a.last;
   let label, busy=false, slow=false;
   if(N&&N.sure) label='waiting on you';
+  else if(a.over) label='exec server gone · observation ended'+(pend.length?' with a command still seen running':'');
+  else if(a.stale) label='process list not readable now · last seen '+(pend.length?'running a command':'with no command');
   else if(pend.length){busy=true; const p=pend[0]; label=p.doing||(p.kind==='tool'&&!p.text?'running a step':DOING[p.kind]);
     /* how long this step has run, and what is usual for this agent's steps of the same kind (from at least five finished ones) */
     const el=now-p.ts, d=a.durs&&a.durs[p.kind], med=d&&d.length>=5?median(d):0;
     if(el>30&&!p.guess){label+=' · '+dur(el); if(med&&el>Math.max(60,med*4)){label+=' (usually '+dur(Math.max(1,med))+')'; slow=true}}}
+  else if(a.observed) label=a.stale?'exec server last seen · process list not readable now':'exec server running · no command seen';
   else if(a.turn==='ended') label=a.how||'turn ended';
   else if(a.turn==='in'&&idle<1800){busy=true; label=idle>60?'in a turn · no log entry for '+dur(idle):'between actions'}
   else label='no log entry for '+dur(idle);
-  return {label,busy,slow,need:N,pend};
+  return {label,busy,slow,need:N,pend,unknown:!!(a.stale||a.over)};
 }
 function addTask(a,num,t){
   if(a.taskOrder.length>=200){                    /* drop a finished or deleted step first; only if none, the oldest */
@@ -1047,6 +1051,7 @@ function screen(c,now){
   const wait=`no result yet · ${dur(now-c.ts)}`;
   const done=!c.done?wait:c.err?'<span class="bad">failed</span>':c.unknown?'returned':'<span class="ok">done</span>';
   const g=c.guess?' <span class="k">(read from Codex’s script; unconfirmed)</span>':'';
+  if(c.seen&&c.kind==='run') return ['Terminal · '+(c.cwd?'in '+short(c.cwd):'folder not readable'),c.done?'ended'+(c.endTs&&c.endTs>c.ts?' after '+dur(c.endTs-c.ts):'')+' · outcome not recorded':c.over?'observation ended · whether it finished is not recorded':c.stale?'last seen running · process list not readable now':'running for '+dur(now-c.ts),`$ ${esc(c.cmd)}\n<span class="k">seen in the process list; its output goes to the cloud, and none is kept here${c.judged==='none'?'\nnot judged against the Watch rules: too tangled to parse':c.judged==='partial'?'\njudged against the Watch rules on its first 4,000 characters only':''}</span>`];
   switch(c.kind){
     case 'read': return [short(c.path),c.done?(c.err?'<span class="bad">could not read</span>':c.unknown?'returned':'opened'):'opening…',c.done?lines(c.out):'<span class="k">opening…</span>'];
     case 'write': return [short(c.path),c.done?(c.err?'<span class="bad">write failed</span>':'written'):'writing a new file…',lines(c.content,'a')];
@@ -1076,34 +1081,55 @@ async function preview(a,path){
   }catch(err){if(tok===f._tok){a.pvErr=String(err.message||err); /* f._v is kept: this version is not fetched again until the file changes */ f.srcdoc='<p style="font:14px system-ui;padding:20px;color:#555">The rendered page could not be loaded.</p>'}}
   a.dirty=true;
 }
+/* An agent read from the process list (a Codex cloud exec server) has no words and no sights on this computer. Its
+   Saying and Seeing screens say so, and show the one thing that did reach this computer: the commands, as the list stated them. */
+const CLOUD_READS=/^(ls|cat|head|tail|less|more|rg|grep|egrep|fgrep|find|wc|tree|stat|file|du|git (log|show|diff|status|blame|ls-files)|sed -n|awk|jq)\b/;
+const cloudCmds=a=>a.story.filter(it=>it.t==='did'&&it.e.kind==='run').slice(-12);
+function cloudRow(a,it,now){const c=a.calls[it.e.id], done=!c, end=it.e.endTs||(it.e.done?it.e.ts:0);
+  const d=done?'ended'+(end&&end>it.ts?' after '+dur(end-it.ts):''):c.over?'observation ended':c.stale?'last seen running · process list not readable now':'running for '+dur(now-it.ts);
+  return `<span class="k">${clock(it.ts)}</span>  ${esc(one(it.e.cmd).slice(0,72))}  <span class="k">· ${d}</span>`}
+function cloudSaid(a,now){
+  const cs=cloudCmds(a), head='<span class="k">Not recorded on this computer: this agent\'s words stay in ChatGPT. Press <b>2</b> for what it is doing here.</span>';
+  if(!cs.length) return ["What it's saying",'its words stay in the cloud',head+'\n\n<span class="k">No command seen here yet.</span>','code'];
+  return ["What it's saying",'its words stay in the cloud','<span class="k">What reached this computer, oldest first:</span>\n'+cs.map(it=>cloudRow(a,it,now)).join('\n')+'\n\n'+head+'\n<span class="k">Of this agent, this computer records its commands and their folders, nothing more; the last twelve are shown. The conversation is in ChatGPT.</span>','code'];
+}
+function cloudSeeing(a){
+  const rs=cloudCmds(a).filter(it=>CLOUD_READS.test(one(it.e.cmd))), head='<span class="k">Not recorded on this computer: what this agent reads goes to the cloud with each command\'s output. Press <b>2</b> for the commands that may have read files.</span>';
+  const foot='\n\n<span class="k">No screenshot, image or web search can be seen from here.</span>';
+  if(!rs.length) return ["What it's seeing",'not recorded on this computer',head+foot,'code'];
+  return ["What it's seeing",'commands that may have read files',head+'\n\n<span class="k">Commands that may read something, newest first. Whether they did, and what they saw, is not recorded here; only that a command named them.</span>\n'+rs.slice().reverse().map(it=>`<span class="k">${clock(it.ts)}</span>  ${esc(one(it.e.cmd).slice(0,72))}`).join('\n')+foot,'code'];
+}
 function said(a,now){
   const all=a.story.filter(it=>it.t==='say'), at=a.sayAt?all.findIndex(x=>x.n===a.sayAt):-1;
   const says=at>=0?all.slice(Math.max(0,at-2),Math.max(at+1,Math.min(all.length,at+10))):all.slice(-12);      /* the chosen message and its neighbours, else the latest twelve */
   if(STEADY) return ["What it's saying",'hidden in steady mode','<span class="k">(narration hidden in steady mode)</span>','code'];
+  if(a.observed) return cloudSaid(a,now);
   if(!says.length) return ["What it's saying",'nothing yet','<span class="k">Nothing said yet. What it tells you as it works appears here, as the log records it.</span>','code'];
   const l=says[says.length-1];
   return ["What it's saying",'spoke '+dur(now-l.ts)+' ago · '+says.length+(says.length===1?' message':' messages'),says.map((it,i)=>{const t=plain(it.text).trim(); return `<p data-n="${it.n}"${i===says.length-1?' class="now"':''}>${esc(t.length>1500?'…'+t.slice(-1500):t)}</p>`}).join(''),'code'];
 }
 function seeing(a){
+  if(a.observed) return cloudSeeing(a);
   const c=[a.seen&&{ts:a.seen.ts,k:'img'},a.html&&{ts:a.html.ts||0,k:'html'},a.web&&a.web.out&&{ts:a.web.ts,k:'web'}].filter(Boolean).sort((x,y)=>y.ts-x.ts)[0];
   if(!c) return ["What it's seeing",'nothing visual recorded','<span class="k">Nothing visual recorded: no screenshot, opened image, edited page or search result in what has been read of its log.</span>','code'];
   if(c.k==='img') return ["What it's seeing · "+a.seen.label+' · '+clock(a.seen.ts)+' · file as it is on disk now',esc(tail2(a.seen.img)),`<img src="${fsUrl(a.seen.img)}" alt="What the agent was looking at">`,'code'];
   if(c.k==='html') return ["What it's seeing · rendered page · "+tail2(a.html.path),'the file on disk now','','full'];
   return ["What it's seeing · search results",esc(a.web.q||''),lines(a.web.out),'code'];
 }
-function checkLine(k){
-  if(!k) return '<span class="k">No test or build command seen in what has been read of its log.</span>\n\n';
+function checkLine(k,observed){
+  if(!k) return '<span class="k">No test or build command seen in '+(observed?'the process list.':'what has been read of its log.')+'</span>\n\n';
   /* the exit code is log data: shown only when it is an integer, and escaped like everything else; an absent result is said to be absent */
   const code=Number.isInteger(k.code)?k.code:null;
   const res=code!=null?'exit code '+code:k.err===true?'ended with an error':k.err===false?'ended without an error':'its result was not recorded';
   return `<span class="${k.err?'bad':(k.err===false||code===0)?'ok':'k'}">Last test or build command, ${clock(k.ts)}: ${esc(res)}</span>${MASKED.test(k.cmd)?' <span class="k">(its result is masked by “|| true”)</span>':''}\n<span class="k">${esc(String(k.cmd).split('\n')[0].slice(0,110))}</span>\n\n`;
 }
 function changes(a){
+  if(a.observed) return ["What it's changing",'not recorded on this computer','<span class="k">Not recorded on this computer: what this agent changes is on disk, but no record of which files, or by which command, reaches this machine. Press <b>2</b> for the commands it ran, with their folders.</span>','code'];
   const ok=a.edits.filter(e=>e.done&&!e.err), files=new Set(ok.map(e=>e.path));
   const tag=e=>!e.done?' · proposed, no result yet':e.err?' · failed, not applied':'';
   const body=a.edits.slice().reverse().map(e=>`<span class="k" style="display:block">── ${esc(tail2(e.path))} · ${clock(e.ts)}${tag(e)}</span>`+screen(e,0)[2]).join('\n');
   const cap=a.dropped?`\n<span class="k">… ${a.dropped} earlier edit${a.dropped>1?'s':''} not kept (only the latest 60 are shown)</span>`:(a.partial?'\n<span class="k">Earlier history was not loaded, so earlier edits may be missing.</span>':'');
-  return ["What it's changing",files.size+' file'+(files.size===1?'':'s')+' · '+ok.length+' applied edit'+(ok.length===1?'':'s'),checkLine(a.check)+(body||'<span class="k">No file changes seen.</span>')+cap,'code'];
+  return ["What it's changing",files.size+' file'+(files.size===1?'':'s')+' · '+ok.length+' applied edit'+(ok.length===1?'':'s'),checkLine(a.check,a.observed)+(body||'<span class="k">No file changes seen.</span>')+cap,'code'];
 }
 
 /* ---------- subtitles ----------
@@ -1190,7 +1216,7 @@ function render(){
     const tf=!pos[id]?'':at?pos[id].tfF:pk?heldTf(id):pos[id].tfF+(w&&N.sure?' translateZ(150px)':'')+(kid?` scale(${KS})`:'');
     if(a.el.classList.contains('stepup')&&!at) a.el.classList.remove('stepup');      /* a step-up that did not finish (focus moved on) must not keep the transform frozen */
     if(tf&&a.el._tf!==tf&&!a.el.classList.contains('stepup')){a.el._tf=tf;a.el.style.transform=tf}      /* while stepping up, stepUp() owns the transform */
-    paintFace(a,id,faceState(S,N,w)); txt(a.$.name,a.name); txt(a.$.go,'Open in '+(a.runtime||'app')+' ↗');
+    paintFace(a,id,faceState(S,N,w)); txt(a.$.name,a.name); txt(a.$.go,a.observed?'Lives in ChatGPT':'Open in '+(a.runtime||'app')+' ↗');
     txt(a.$.doing,S.label); cl.toggle('slow',!!S.slow);
     {const F=fuelOf(a); hid(a.$.fuel,!F); if(F){txt(a.$.fuelTxt,F.short); const w=F.frac==null?'':Math.round(F.frac*100)+'%'; hid(a.$.fuelBar.parentNode,F.frac==null);
       if(a.$.fuelBar._w!==w){a.$.fuelBar._w=w; a.$.fuelBar.style.width=w} a.$.fuel.className='fuel'+(F.frac>=.92?' hot':F.frac>=.8?' warm':'')}}
@@ -1598,13 +1624,13 @@ function desk(){
   put($('#crumb'),guess+up.map((k,i)=>pill(k)+rel(A[up[i+1]]||a)).join('')+pill(a.id,1)+(a.parent&&a.soft?`<button class="pill off" data-unlink="${esc(a.id)}" title="Drop this inferred link. The same evidence can make it again.">unlink</button>`:'')+(kids.length?kids.slice(0,4).map(k=>rel(A[k])+pill(k)).join('')+(kids.length>4?`<span class="pill off">+${kids.length-4} more</span>`:''):''));
   for(const b of a.el.querySelectorAll('.views [data-v]')) b.classList.toggle('on',b.dataset.v===(a.pin?'doing':deskView));
   /* the bay: one panel at a time, and a standing count of other agents that need you whichever panel is showing */
-  const others=order.filter(k=>k!==a.id).map(k=>{const o=A[k], s=stateOf(o,now); return {k,o,n:s.need,busy:s.busy,rank:s.need?0:s.busy?1:2}}).sort((x,y)=>x.rank-y.rank);
+  const others=order.filter(k=>k!==a.id).map(k=>{const o=A[k], s=stateOf(o,now); return {k,o,n:s.need,busy:s.busy,unknown:s.unknown,rank:s.need?0:s.busy?1:2}}).sort((x,y)=>x.rank-y.rank);
   const needy=others.filter(x=>x.n).length;
   const PAGES=['Other stations','Alerts · all agents','Activity · this agent']; bayPg=(bayPg+PAGES.length)%PAGES.length;
   txt($('#bayT'),PAGES[bayPg]); put($('#bayD'),PAGES.map((_,i)=>`<i class="${i===bayPg?'on':''}"></i>`).join(''));
   hid($('#bayN'),!needy||bayPg===0); txt($('#bayN'),'▲ '+needy+' may need you');
   let bay='';
-  if(bayPg===0) bay='<div class="row">'+(others.map(({k,o,n,busy})=>`<button data-go="${esc(k)}" class="${n?'n':busy?'b':''}" title="${n?esc(n.kind):busy?'active':'not active'}"><i></i>${esc(o.name.slice(0,22))}${n?' <small>'+n.kind.toLowerCase()+(n.sure?'':'?')+'</small>':''}</button>`).join('')||'<span class="cap2">No other agents in the room.</span>')+'</div>';
+  if(bayPg===0) bay='<div class="row">'+(others.map(({k,o,n,busy,unknown})=>`<button data-go="${esc(k)}" class="${n?'n':busy?'b':''}" title="${n?esc(n.kind):busy?'active':unknown?(o.over?'observation ended':'process list not readable now'):'not active'}"><i></i>${esc(o.name.slice(0,22))}${n?' <small>'+n.kind.toLowerCase()+(n.sure?'':'?')+'</small>':''}</button>`).join('')||'<span class="cap2">No other agents in the room.</span>')+'</div>';
   else if(bayPg===1) bay=ALERTS.filter(x=>A[x.id]&&!x.off&&now-x.ts<1800).slice(0,3).map(x=>`<button class="al" data-go="${esc(x.id)}">⚠ ${esc(A[x.id].name.slice(0,16))} issued what looks like ${x.label} <small>${ago(now-x.ts)}</small> — ${esc(one(x.text).slice(0,80))}</button>`).join('')||'<span class="cap2">No alert to show. Only the latest 8 are kept, for agents still in the room, and pattern matching can miss things.</span>';
   else{
     const B=30,Wd=10,bk=Array.from({length:B},()=>({n:0})); for(const k of a.ticks){const i=B-1-Math.floor((now-k.t)/Wd); if(i>=0&&i<B){bk[i].n++; bk[i][k.c]=(bk[i][k.c]||0)+1}}
@@ -1633,7 +1659,7 @@ function desk(){
     const head=c.you?`<p class="dv${a.hit===c.key?' hit':''}" data-k="${esc(c.key)}">after your ${clock(c.you.ts)} message</p>`:'';
     const sum=dids.length?`<p class="sum${bad?' bad':''}" data-c="${esc(c.key)}">${open?'▾':'▸'} ${dids.length} step${dids.length>1?'s':''}${live?' so far':''}${parts?' · '+parts:''}${span>=60?' · '+dur(span):''}${live&&!open?'<br>latest: '+esc(did(dids[dids.length-1][1].e)):''}</p>`:'';
     const ls=says.length?says[says.length-1][1]:null, t=ls?one(plain(ls.text)):'';
-    const nowm=live?`<p class="nowm">now · in a turn</p>`:'';
+    const nowm=live?`<p class="nowm">${a.observed?'now · a command is running':'now · in a turn'}</p>`:a.observed&&a.over?'<p class="nowm">observation ended</p>':'';
     return head+sum+(open?c.items.map(item).join(''):c.items.filter(x=>x[1].t==='compact'||x[1].t==='end'||(ls&&x[1]===ls)).map(item).join(''))+nowm;      /* in recorded order, never reordered */
   }).join('');
   if(storyEl._h!==h&&!getSelection().toString()){put(storyEl,h||'<p>Nothing recorded yet.</p>'); if(stick) storyEl.scrollTop=storyEl.scrollHeight}
@@ -1642,16 +1668,16 @@ function desk(){
     +a.msgs.map(m=>{const k='u'+(m.seq>=0?m.seq:m.ts); const t=one(m.text), long=t.length>240, wide=a.wide&&a.wide.has(k);
       return `<p class="u jump" data-k="${esc(k)}" title="Show what the agent did after this message">${esc(long&&!wide?t.slice(0,200).replace(/\s+\S*$/,'')+'…':t)}${long?` <u data-more>${wide?'show less':'show all'}</u>`:''}<small>${clock(m.ts)}${a.miss===k?' · '+a.missWhy:''}</small></p>`}).join('')
     +a.q.map(m=>`<p class="qd">✉ Queued in the app<br>${esc(one(m.text).slice(0,300))}</p>`).join('');
-  if(commsEl._h!==cm&&!getSelection().toString()){put(commsEl,cm||'<p>No message from you found in what has been read of its log.</p>'); if(stickC) commsEl.scrollTop=commsEl.scrollHeight}
+  if(commsEl._h!==cm&&!getSelection().toString()){put(commsEl,cm||(a.observed?'<p>Messages between you and this agent live in ChatGPT; none reaches this computer.</p>':'<p>No message from you found in what has been read of its log.</p>')); if(stickC) commsEl.scrollTop=commsEl.scrollHeight}
   const N=S.need, chan=$('#chan');
   chan.className=N?'warn':a.q.length?'q':'';
   put(chan,N?`▲ ${N.sure?'Agent requests':'Agent may be asking'} · ${N.kind}${N.sure?'':' (probably)'}<p>${esc(one(N.text).slice(0,300))}</p>`:a.q.length?`✉ ${a.q.length} message${a.q.length>1?'s':''} queued in the app`:'● No request detected');
   /* readouts: recorded facts, labelled as what they are */
   const par=a.parent&&A[a.parent], f=(k,v)=>`<span><b>${k}</b><em>${esc(v)}</em></span>`;
   put($('#badge'),f('Model',(a.model||'not recorded')+(a.effort?' · '+a.effort+' effort':''))+f('Approval setting',a.perm||'not recorded')
-    +f('Context in use',(fuelOf(a)||{long:'not recorded'}).long)+f('Project',(proj(a.id)?projLabel(proj(a.id))+(projLabel(proj(a.id))!==proj(a.id)?' · folder '+proj(a.id):''):'')||(a.cwd||'').split(SEP()).pop()||'not recorded')+f('Branch',a.branch||'none recorded')
+    +f('Evidence',a.observed?a.observed+(a.over?' · observation ended':a.stale?' · not readable now':''):'its session log')+f('Context in use',(fuelOf(a)||{long:'not recorded'}).long)+f('Project',((proj(a.id)?projLabel(proj(a.id))+(projLabel(proj(a.id))!==proj(a.id)?' · folder '+proj(a.id):''):'')||(a.cwd||'').split(SEP()).pop()||'not recorded')+(a.observed&&a.cur&&a.cur.seen&&!a.cur.cwd?' · latest command: folder not readable':''))+f('Branch',a.branch||'none recorded')
     +f(a.maybe&&!a.parent?'Possibly started by (a guess from script text)':!a.soft?'Started by':/^related/.test(a.via||'')?'Related to':'Started by (inferred)',par?par.name+(a.via?' · '+a.via:''):a.parent?'an agent not in the room':a.maybe?(A[a.maybe.parent]?A[a.maybe.parent].name:'an agent not in the room')+' · '+a.maybe.via:'no parent recorded')
-    +f('Session created',a.started?clock(a.started)+' · '+ago(now-a.started):'not recorded')
+    +f(a.observed?'Exec server started':'Session created',a.started?clock(a.started)+' · '+ago(now-a.started):'not recorded')
     +f('You last focused it',a.looked?ago(now-a.looked):a.runtime==='Claude'?'not recorded':(a.runtime||'This tool')+' does not record this'));
 }
 
@@ -1750,9 +1776,13 @@ function demo(){
   ag('c:demo-cleo',{name:'Cleo',runtime:'Claude',cwd:P.lighthouse,model:'claude-sonnet-5-5',branch:'main',goal:'Find out why the nightly build fails on arm64 and fix it.',ctx:120000,ctxref:140000});
   ag('c:demo-dov',{name:'Dov',runtime:'Claude',cwd:P.lighthouse,parent:'c:demo-cleo',sub:true,task:'log search',goal:'Search the build logs for the first arm64 failure and report the line.',ctx:14000});
   ag('x:demo-esme',{name:'Esme',runtime:'Codex',cwd:P.tidewater,model:'gpt-6-astra',branch:'sessions-migration',goal:'Migrate the sessions table to the new schema without downtime.',ctx:150000,ctxmax:258000});
+  ag('e:demo-dot',{name:'Codex cloud',runtime:'Codex cloud',cwd:P.orchard,observed:'the process list, sampled about once a second (a sample can take longer while a folder is being looked up): a shorter command can be missed; of more than four new commands at once the oldest four are examined and the rest the next sample, so a short-lived one among them can be missed; each command\'s folder from lsof; what a command changed is not recorded here'});
   ag('c:demo-fen',{name:'Fen',runtime:'Claude',cwd:P.tidewater,model:'claude-opus-5-5',branch:'docs',goal:'Rewrite the onboarding guide for the new CLI.',ctx:42000,ctxref:140000});
   /* history, so the desks have something to show */
   for(const [id,g] of [['c:demo-ada','Add the seasonal pricing table to the catalogue and wire it to checkout.'],['x:demo-bram',"Review Ada's pricing change before it ships. Read-only."],['c:demo-cleo','Find out why the nightly build fails on arm64 and fix it.'],['x:demo-esme','Migrate the sessions table to the new schema without downtime.'],['c:demo-fen','Rewrite the onboarding guide for the new CLI.']]){ev(id,{kind:'user',text:g}); t+=20}
+  ev('e:demo-dot',{kind:'run',id:'g1',cmd:'ls -la',cwd:P.orchard,seen:true}); t+=1; ev('e:demo-dot',{kind:'result',id:'g1',text:'',unknown:true,seen:true}); t+=12;
+  ev('e:demo-dot',{kind:'run',id:'g2',cmd:"python3 - <<'PY'\nfrom pathlib import Path\nPath('INVENTORY.md').write_text(inventory)\nPY",cwd:P.orchard,seen:true}); t+=1; ev('e:demo-dot',{kind:'result',id:'g2',text:'',unknown:true,seen:true}); t+=2;
+  ev('e:demo-dot',{kind:'run',id:'g3',cmd:'sleep 120 && git status --short',cwd:P.orchard,seen:true}); t+=1;
   ev('c:demo-fen',{kind:'read',id:'f1',path:'/Users/demo/Projects/Tidewater/docs/onboarding.md'}); t+=4; ev('c:demo-fen',{kind:'result',id:'f1',text:'# Onboarding\n\nInstall the CLI…'}); t+=30;
   ev('c:demo-fen',{kind:'edit',id:'f2',path:'/Users/demo/Projects/Tidewater/docs/onboarding.md',before:'Install the CLI with pip.',after:'Install the CLI with `brew install tidewater`.'}); t+=6; ev('c:demo-fen',{kind:'result',id:'f2',text:'ok'}); t+=40;
   ev('c:demo-fen',{kind:'say',text:'Done. The onboarding guide now covers the brew install, the first login and the three commands people actually use. Three files changed; the docs build passes.'}); t+=2; ev('c:demo-fen',{kind:'turn_end'});

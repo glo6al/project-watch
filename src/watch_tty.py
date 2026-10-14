@@ -20,7 +20,7 @@ PROFILE_KEYS = {'Name', 'Guid', 'Badge Text', 'Background Color', 'Foreground Co
                 'Selection Color', 'Selected Text Color', 'Use Tab Color', 'Tab Color', 'Badge Color', 'Close Sessions On End'}
 UNSHOWN = {'Cc', 'Cf', 'Cs'}    # controls (escape sequences), format characters (bidi, zero-width), lone surrogates
 MAX_VIEWS = 6               # ponytail: the server allows 12 streams in all; this leaves the board, browser windows and --once theirs
-AID_RX = re.compile(r'[cxk]:[0-9a-f-]{8,64}\Z')    # the server's own agent ids; nothing else goes into a tab's command
+AID_RX = re.compile(r'[cxke]:[0-9a-f-]{8,64}\Z')   # the server's own agent ids (hello names the letters); nothing else goes into a tab's command
 ACTS = ('run', 'read', 'write', 'edit', 'tool', 'say', 'result', 'search', 'web', 'patch', 'spawn', 'ask', 'user', 'perm')
 NO_PROXY = urllib.request.build_opener(urllib.request.ProxyHandler({}))      # the key never goes to a proxy
 TOUCHED = []                # what this process changed in its tab, so exiting undoes exactly that
@@ -89,6 +89,11 @@ def track(a, e):
         a['turn'] = 'working'
     elif k == 'turn_end':
         a['turn'] = 'turn ended'
+    if e.get('seen') and k in ('run', 'result'):    # commands seen in the process list: working while one is running, else nothing is claimed
+        (a['cmds'].add if k == 'run' else a['cmds'].discard)(e.get('id'))
+        a['turn'] = 'working' if a['cmds'] else 'no command seen'
+    if k == 'agent' and e.get('observed'):          # an agent read from the process list: its record says whether the list is readable now
+        a['turn'] = 'process list not readable' if e.get('stale') else ('working' if a['cmds'] else 'no command seen')
 
 
 def state(a):
@@ -207,8 +212,9 @@ end tell''' % dict(beside=re.sub(r'[^0-9A-Fa-f-]', '', beside), with_=with_, pan
 
 
 def current(agents, window):
-    """Agents the server still lists, with a log entry inside its window: the rest are history, not the fleet."""
-    return [a for a in agents.values() if a['known'] and a['ts'] > time.time() - window]
+    """Agents the server still lists, with a log entry inside its window, or with a command still seen running in the
+    process list (such a command sends no new event while it runs): the rest are history, not the fleet."""
+    return [a for a in agents.values() if a['known'] and (a['ts'] > time.time() - window or a['cmds'])]
 
 
 def draw(rows, note):       # on each server batch (the stream's 'health' line), so a burst draws once
@@ -246,13 +252,16 @@ def main():
             raise SystemExit('fell behind the server; run again')
         if k == 'hello':
             window = e.get('window') or window
+            if re.fullmatch(r'[a-z]{1,8}', str(e.get('prefixes') or '')):
+                globals()['AID_RX'] = re.compile(r'[%s]:[0-9a-f-]{8,64}\Z' % e['prefixes'])
         if k == 'health':
             live = True         # everything before the first one is the server replaying what it kept
             now = current(agents, window)
             n = sum(state(a).startswith('WAIT') for a in now)
             if once:
                 working = sum(state(a) == 'working' for a in now)
-                print(' · '.join('%d %s' % (c, w) for c, w in ((n, 'waiting'), (working, 'working')) if c) or 'none active')
+                unknown = sum(state(a) == 'process list not readable' for a in now)
+                print(' · '.join('%d %s' % (c, w) for c, w in ((n, 'waiting'), (working, 'working'), (unknown, 'unknown: process list not readable')) if c) or 'none active')
                 return
             if tabs:            # a view for each current agent, once; a closed one stays closed
                 for x, a in sorted(agents.items(), key=lambda xa: -xa[1]['ts']):
@@ -279,7 +288,7 @@ def main():
             agents.pop(aid, None)
             continue
         a = agents.setdefault(aid, {'name': clean(aid[-6:]), 'where': '', 'doing': '', 'ts': 0, 'known': False, 'turn': '',
-                                    'wait': '', 'perms': set(), 'calls': set(), 'asks': set()})
+                                    'wait': '', 'perms': set(), 'calls': set(), 'asks': set(), 'cmds': set()})
         was = state(a).startswith('WAIT')
         if k == 'agent':
             a.update(known=True, name=clean(e.get('name') or aid[-6:], 20), where=clean(os.path.basename(e.get('cwd') or ''), 16))
