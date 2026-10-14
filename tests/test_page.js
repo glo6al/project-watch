@@ -3,12 +3,14 @@
    evaluated with a stub preview key, once as a macOS or demo page (paths split on / only) and once as a page served
    by a Windows server (either slash). Run: node tests/test_page.js */
 'use strict';
-const fs = require('fs'), path = require('path');
+const fs = require('fs'), path = require('path'), vm = require('vm');
 const html = fs.readFileSync(path.join(__dirname, '..', 'src', 'web', 'index.html'), 'utf8');
 const a = html.indexOf('/* path helpers'), b = html.indexOf('/* end path helpers */');
 if (a < 0 || b < 0 || b < a) throw new Error('the path helper markers are missing from index.html');
 const block = html.slice(html.indexOf('\n', a) + 1, b);
-const load = win => new Function('PK', block + ';WINHOST=' + win + ';return {short,tail2,projName,fsUrl}')('k');
+/* Run in a fresh, empty context: the block sees only PK, not Node's globals (process, require), and nothing leaks out but the
+   four helpers. The code is this repository's own page, never input from outside. */
+const load = win => vm.runInNewContext(block + ';WINHOST=' + win + ';({short,tail2,projName,fsUrl})', { PK: 'k' });
 const check = (name, cond) => { if (!cond) { console.log('FAIL ' + name); process.exit(1); } console.log('ok', name); };
 
 const mac = load(false);
