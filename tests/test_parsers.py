@@ -402,8 +402,8 @@ def test_active_log():
         # the tail's cut falls exactly on the newline before a complete recent record: that record must still count
         rec = json.dumps({'type': 'user', 'timestamp': iso(now - 15), 'pad': 'z' * 940})
         edge = os.path.join(d.name, 'edge.jsonl')
-        with open(edge, 'w') as f:
-            f.write('{}\n' + rec + '\n')
+        with open(edge, 'wb') as f:                             # bytes, so the cut lands where the test says on every system (text mode would write \r\n on Windows)
+            f.write(b'{}\n' + rec.encode() + b'\n')
         lim = len(rec) + 2                                      # the read starts at the newline that precedes the record (record, its newline, and that one)
         check('a record whose preceding newline sits at the cut is read', server.last_record_ts(edge, limit=lim) is not None and server.active(edge, now, limit=lim))
         check('a record the cut lands inside is not trusted', server.last_record_ts(edge, limit=lim - 1) is None)
