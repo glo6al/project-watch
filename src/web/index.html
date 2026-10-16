@@ -1855,6 +1855,7 @@ function ofToggle(on){ofEl.classList.toggle('fold',!on); $('#ofB').setAttribute(
 $('#ofB').onclick=()=>ofToggle(ofEl.classList.contains('fold')); $('#ofSend').onclick=ofSend;
 ofIn.addEventListener('keydown',ev=>{if(ev.key==='Enter'){ev.preventDefault(); ofSend()}});
 addEventListener('keydown',e=>{if(e.key==='Escape'&&!ofEl.classList.contains('fold')){ofToggle(false); e.stopImmediatePropagation()}},true);      /* Escape folds the Officer wherever focus sits, without stepping back from a desk */
+addEventListener('pointerdown',e=>{if(!ofEl.classList.contains('fold')&&!ofEl.contains(e.target)) ofToggle(false)},true);      /* so does a click anywhere outside the panel; the click still does what it would have done */
 
 function demo(){
   const now=()=>Date.now()/1000; let t=now()-900;
