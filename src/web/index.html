@@ -57,6 +57,36 @@ code,pre{font:12.5px/1.5 ui-monospace,Menlo,monospace}
 #watchTry{width:100%;box-sizing:border-box;font:inherit;color:var(--ink);background:#0d1a2b;border:1px solid #1f3a52;border-radius:3px;padding:6px 9px;text-transform:none;letter-spacing:0}
 #watchTry:focus{border-color:var(--hl);outline:none}
 #watchP .wkk{font:600 10px ui-monospace,Menlo,monospace;letter-spacing:.14em;text-transform:uppercase;color:#4f7590;display:flex;align-items:center;gap:8px;margin:10px 0 6px}#watchP .wkk::after{content:"";flex:1;height:1px;background:#1f3a52}
+/* the Officer of the Watch: a plate on the bottom band, in the desk's own frame, that opens upward into its panel */
+#officer{position:fixed;right:14px;bottom:76px;z-index:13;--cut:12px;width:400px;max-width:calc(100vw - 28px);height:min(62vh,640px);font:13px/1.45 system-ui,-apple-system,"Segoe UI",sans-serif;color:var(--ink);box-shadow:0 10px 30px rgba(0,0,0,.5)}
+#officer.fold{width:auto;max-width:min(480px,calc(100vw - 28px));height:auto;box-shadow:none}
+body.stepped #officer{bottom:118px}body.stepped.portrait #officer{bottom:296px}body.stepped.portrait.short #officer{bottom:202px}
+#officer>.in{padding:0}
+#ofB{all:unset;display:flex;align-items:center;gap:10px;padding:9px 14px;cursor:pointer;min-width:0;flex:none;box-sizing:border-box}
+#ofB:focus-visible{outline:1px solid var(--hl);outline-offset:-3px}
+#ofB .lamp{width:7px;height:7px;border-radius:50%;background:var(--add);box-shadow:0 0 6px var(--add);flex:none}
+#officer.need #ofB .lamp{background:var(--warn);box-shadow:0 0 6px var(--warn)}#officer.maybe #ofB .lamp{background:#9fc3e0;box-shadow:0 0 6px #9fc3e0}
+#ofB b{font:600 10px ui-monospace,Menlo,monospace;letter-spacing:.16em;text-transform:uppercase;color:var(--hl);white-space:nowrap}
+#ofB i{font:600 10px ui-monospace,Menlo,monospace;letter-spacing:.08em;text-transform:uppercase;font-style:normal;color:#7fa6c2;white-space:nowrap}
+#officer.fold #ofSt{display:none}
+#ofB u{text-decoration:none;color:var(--mute);font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0;flex:1}
+#ofB u:empty{display:none}
+#ofB s{text-decoration:none;color:#7fa6c2;font-size:11px;margin-left:auto;padding-left:6px}
+#officer:not(.fold) #ofB{border-bottom:1px solid #1f3a52}#officer:not(.fold) #ofB s{transform:rotate(180deg)}
+#officer.fold #ofBody{display:none}
+#ofBody{display:flex;flex-direction:column;flex:1;min-height:0}
+#ofLog{flex:1;min-height:120px;overflow:auto;padding:10px 12px;display:flex;flex-direction:column;gap:9px}
+#ofLog .you{align-self:flex-end;max-width:88%;background:#0d1a2b;border:1px solid #1f3a52;border-radius:8px 8px 2px 8px;padding:6px 10px;color:#cfe3f5}
+#ofLog .of{max-width:94%;color:var(--ink)}#ofLog .of p{margin:0 0 6px}#ofLog .of p:last-child{margin:0}
+#ofLog .k{color:var(--mute);font-size:12px}#ofLog .done{color:#9fc3e0;font-size:12px}
+#ofLog .cites{display:flex;flex-wrap:wrap;gap:4px;margin-top:4px}#ofLog .cites button{all:unset;cursor:pointer;font:600 10px ui-monospace,Menlo,monospace;letter-spacing:.06em;color:#9fc3e0;background:#0d1a2b;border:1px solid #1f3a52;border-radius:3px;padding:2px 7px}
+#ofLog .cites button:hover{border-color:var(--hl)}
+#ofLog .draft{white-space:pre-wrap;background:#0d1016;border:1px solid #2a3340;border-radius:3px;padding:8px 10px;font:12px ui-monospace,Menlo,monospace;color:#d7dbe4;margin-top:4px}
+#ofRow{display:flex;gap:6px;padding:8px 10px;border-top:1px solid #1f3a52}
+#ofIn{flex:1;min-width:0;font:inherit;color:var(--ink);background:#0d1a2b;border:1px solid #1f3a52;border-radius:3px;padding:7px 9px}#ofIn:focus{outline:none;border-color:var(--hl)}
+.story p.hl,#comms p.hl{background:#162136;box-shadow:inset 0 0 0 1px #8fb6ff;border-radius:3px;transition:background 1.2s,box-shadow 1.2s}
+#ofSend{font:600 11px ui-monospace,Menlo,monospace;letter-spacing:.1em;text-transform:uppercase;color:#7fa6c2;background:#0d1a2b;border:1px solid #1f3a52;border-radius:3px;padding:4px 12px;cursor:pointer}#ofSend:disabled{opacity:.5;cursor:default}
+
 #watchMiniK{margin-top:10px;font:600 10px ui-monospace,Menlo,monospace;letter-spacing:.14em;text-transform:uppercase;color:#4f7590}
 #watchMini{margin-top:4px;border:1.5px solid #2a3340;border-radius:3px;background:#0d1016;overflow:hidden}
 #watchMini .mf{display:flex;align-items:center;gap:8px;background:#1a1d26;height:26px;padding-right:10px;font-size:11.5px;color:#d7dbe4}
@@ -416,6 +446,7 @@ body.portrait.short #deskB{height:176px}body.portrait.short #bay{height:64px;pad
 <div id="deskT" hidden><span class="lbl">Chain of command</span><div id="crumb"></div></div>
 <div id="deskB" class="hud" hidden><div class="in"><div id="bay"><div id="bayH"><button data-pg="-1" aria-label="Previous panel">‹</button><span id="bayT"></span><button id="bayN" hidden></button><span id="bayD"></span><button data-pg="1" aria-label="Next panel">›</button></div><div id="fleet"></div></div><div id="badge"></div></div></div>
 <div id="empty" hidden></div>
+<div id="officer" class="hud fold" role="region" aria-label="Officer of the Watch"><div class="in"><button id="ofB" aria-expanded="false" aria-controls="ofBody" title="Officer of the Watch: ask about the room, in plain English"><span class="lamp"></span><b>Officer of the Watch</b><i id="ofSt">listening</i><u id="ofLine"></u><s>▴</s></button><div id="ofBody"><div id="ofLog"></div><div id="ofRow"><input id="ofIn" type="text" placeholder="Ask about the room…" autocomplete="off" maxlength="4000"><button id="ofSend">Ask</button></div></div></div></div>
 <div id="lock" hidden><div><img src="/static/icon.svg?v=fleet-3" alt="" style="height:72px;margin-bottom:14px"><h1>W.A.T.C.H. is locked</h1><b style="color:var(--hl);letter-spacing:.06em">Window on Agents, Tools, Changes and Hand-offs.</b><br><br>This window has no key. Press Unlock and the server will open a new tab in your default browser with the room unlocked. The key is kept on this computer in <code>~/.live-room/key</code> and is never sent to a window that merely asks for it.<br><button id="unlock">Unlock</button><br><span id="lockMsg"></span></div></div>
 
 <script>
@@ -756,17 +787,17 @@ function handle(e){
       {const sp=a.spawn&&spawns[a.spawn]; if(sp&&!sp.sent&&!e.old){sp.sent=true;pulse(sp.parent,a.id,'handed off')}}
       break;
     case 'beat': if(!(a.endTs&&e.ts<a.endTs)) a.turn='in'; break;
-    case 'compact': note(a,{t:'compact',pre:e.pre,post:e.post,trigger:e.trigger,ts:e.ts}); break;
-    case 'perm': a.perms[e.pid]=e; a.permMsg=''; note(a,{t:'wait',text:'asked permission: '+e.tool,ts:e.ts}); break;
+    case 'compact': note(a,{t:'compact',pre:e.pre,post:e.post,trigger:e.trigger,ts:e.ts,seq:e.seq}); break;
+    case 'perm': a.perms[e.pid]=e; a.permMsg=''; note(a,{t:'wait',text:'asked permission: '+e.tool,ts:e.ts,seq:e.seq}); break;
     case 'perm_end': delete a.perms[e.pid]; if(a.permScreen===e.pid){a.permScreen=null; hid(a.$.yes,true); hid(a.$.no,true); a.$.yes.dataset.pid=a.$.no.dataset.pid=''}   /* its buttons die with it, at once */
-      note(a,{t:'wait',text:'permission: '+e.how,ts:e.ts}); break;
-    case 'waiting': if(e.sticky){a.asks[e.qid||e.seq]=e}else a.wait=e; note(a,{t:'wait',text:e.text,ts:e.ts}); break;
+      note(a,{t:'wait',text:'permission: '+e.how,ts:e.ts,seq:e.seq}); break;
+    case 'waiting': if(e.sticky){a.asks[e.qid||e.seq]=e}else a.wait=e; note(a,{t:'wait',text:e.text,ts:e.ts,seq:e.seq}); break;
     case 'unask': delete a.asks[e.qid]; break;
     case 'see': a.seen=e; break;
     case 'link': if(!e.old)pulse(e.src,e.dst,e.label); break;
     case 'user': a.user=e; if(!(a.endTs&&e.ts<a.endTs)) a.turn='in';
       for(const k in a.asks) a.asks[k].maybe=true;          /* the log does not say which question a message answers: they become "probably answered" and stay, marked so, until the log withdraws them or you dismiss the notice */
-      a.msgs.push(e); if(a.msgs.length>40)a.msgs.shift(); note(a,{t:'you',text:e.text,ts:e.ts,key:'u'+(e.seq>=0?e.seq:e.ts)}); break;
+      a.msgs.push(e); if(a.msgs.length>40)a.msgs.shift(); note(a,{t:'you',text:e.text,ts:e.ts,key:'u'+(e.seq>=0?e.seq:e.ts),seq:e.seq}); break;
     case 'task': addTask(a,e.num,{text:e.text,status:'pending'}); break;
     case 'task_upd': {const t=a.tasks[e.num]; if(t){if(e.status)t.status=e.status; if(e.text)t.text=e.text}else if(e.num) addTask(a,e.num,{text:e.text||'step '+e.num+' (created before this view began)',status:e.status||'pending'})} break;
     case 'assign': a.assign=e; break;
@@ -776,12 +807,12 @@ function handle(e){
       else if(e.op==='remove'){const i=a.q.findIndex(m=>m.text===e.text); if(i>=0)a.q.splice(i,1)}     /* an unidentified removal changes nothing here */
       else a.q.shift();
       break;
-    case 'say': a.said=e; if(!(a.endTs&&e.ts<a.endTs)) a.turn='in'; note(a,{t:'say',text:e.text,ts:e.ts}); break;
+    case 'say': a.said=e; if(!(a.endTs&&e.ts<a.endTs)) a.turn='in'; note(a,{t:'say',text:e.text,ts:e.ts,seq:e.seq}); break;
     case 'turn_end':                                  /* the log's own end clears the turn; a hook's is provisional: steps still open stay open until the log agrees */
       {const confirms=a.endHook&&!e.hook&&lastBefore<=(a.endTs||0);      /* the log confirming a hook's provisional end, and nothing newer since that end */
       if(a.endTs&&e.ts<a.endTs&&!confirms) break;      /* older than the end we have */
       if(e.ts<lastBefore&&!confirms) break;}             /* older than the latest record: the log has moved on since */
-      a.turn='ended'; a.endHook=!!e.hook; a.how=e.hook?'turn ended · reported by its hook, not yet in its log':(e.how||''); a.endTs=Math.max(e.ts,a.endTs||0); if(!e.hook) a.calls={}; if(!e.hook) note(a,{t:'end',ts:e.ts}); break;
+      a.turn='ended'; a.endHook=!!e.hook; a.how=e.hook?'turn ended · reported by its hook, not yet in its log':(e.how||''); a.endTs=Math.max(e.ts,a.endTs||0); if(!e.hook) a.calls={}; if(!e.hook) note(a,{t:'end',ts:e.ts,seq:e.seq}); break;
     case 'turn_start': if(!(a.endTs&&e.ts<a.endTs)) a.turn='in'; break;
     case 'file': a.html={path:e.path,v:e.seq>=0?e.seq:Date.now(),ts:e.ts}; break;
     case 'result': {const c=a.calls[e.id]; if(c){c.endTs=e.ts; if(e.ts>=c.ts&&!c.guess){const l=((a.durs=a.durs||{})[c.kind]=a.durs[c.kind]||[]); l.push(e.ts-c.ts); if(l.length>40)l.shift()} c.done=true; c.out=e.text; c.err=e.unknown?undefined:!!e.error; c.unknown=!!e.unknown; delete a.calls[e.id];
@@ -942,7 +973,7 @@ function judgeNow(text){               /* the reading after the edits: the serve
 const watchOpen=on=>{const p=$('#watchP'); p.hidden=!on; $('#watchB').setAttribute('aria-expanded',String(on)); if(on) $('#watchTry').focus()};
 $('#watchB').onclick=()=>watchOpen($('#watchP').hidden);
 addEventListener('pointerdown',e=>{if(!$('#watchP').hidden&&!e.target.closest('#watchW')) watchOpen(false)},true);      /* a click anywhere else closes the panel */
-addEventListener('keydown',e=>{if(e.key==='Escape'&&!$('#watchP').hidden){watchOpen(false); $('#watchB').focus(); e.stopPropagation()}},true);      /* so does Escape, without stepping back from a desk */
+addEventListener('keydown',e=>{if(e.key==='Escape'&&!$('#watchP').hidden){watchOpen(false); $('#watchB').focus(); e.stopImmediatePropagation()}},true);      /* so does Escape, without stepping back from a desk */
 {let tT=null; $('#watchTry').oninput=()=>{hid($('#watchSaved'),true); clearTimeout(tT); tT=setTimeout(()=>judge($('#watchTry').value),220)};
   $('#watchAs').onclick=ev=>{const b=ev.target.closest('[data-as]'); if(!b||b.classList.contains('on')||$('#watchAs').classList.contains('busy')) return; teach($('#watchTry').value.trim(), b.dataset.as)};}
 /* teaching: these words mean one thing, so any earlier rule for the same words goes first; 'none' just removes yours */
@@ -1396,7 +1427,7 @@ function onScreen(el){
 const covered=()=>!!narrow&&!portrait()&&!sideW();      /* the log or comms is open over the monitor */
 let narrow=null;       /* on a narrow window the log and comms open over the monitor, one at a time */
 function apply(){
-  room.classList.toggle('stepped',!!focus); document.body.classList.toggle('portrait',portrait());
+  room.classList.toggle('stepped',!!focus); document.body.classList.toggle('stepped',!!focus); document.body.classList.toggle('portrait',portrait());
   if(focus&&pos[focus]){
     const p=pos[focus], pt=portrait(), W=pt?0:sideW(), gap=W?W+34:14, L=$('#deskL'), Rr=$('#deskR'), Tn=$('#deskT');
     const hudH=Math.max(40,$('#hud').offsetHeight); Tn.style.top=(hudH+4)+'px'; const top=hudH+4+Math.max(36,Tn.offsetHeight)+8;      /* the top bar may wrap: measure it */
@@ -1644,11 +1675,11 @@ function desk(){
   const ch=[]; let cur={key:'start',you:null,items:[]};
   a.story.forEach((it,i)=>{if(it.t==='you'){if(cur.you||cur.items.length)ch.push(cur);cur={key:it.key||'t'+it.ts,you:it,items:[]}}else cur.items.push([i,it])}); ch.push(cur);
   const S=stateOf(a,now);
-  const item=([i,it])=>it.t==='say'?`<p class="sv" data-say="${it.n}" title="${esc(one(plain(it.text)).slice(0,400))}"><b>said</b>${esc(one(plain(it.text)).slice(0,160))}<small>${clock(it.ts)}</small></p>`
-    :it.t==='end'?`<p class="end">■ turn ended · ${clock(it.ts)}</p>`
-    :it.t==='wait'?`<p class="w">⏳ ${esc(one(it.text).slice(0,200))}</p>`
-    :it.t==='compact'?`<p class="dv cp">${esc('context summarised'+(it.trigger==='auto'?' automatically':it.trigger==='manual'?' on request':'')+(num(it.pre)||num(it.post)?' · '+tok(it.pre)+' → '+tok(it.post)+' tokens':'')+' · '+clock(it.ts))}</p>`
-    :`<p class="sd${it.e===a.pin?' on':''}${it.e.err||it.e.alert?' bad':''}" data-i="${it.n}">${it.e.alert?'⚠ ':''}${esc(did(it.e))}<small>${clock(it.ts)}</small></p>`;
+  const item=([i,it])=>it.t==='say'?`<p class="sv" data-say="${it.n}" data-s="${it.n}" title="${esc(one(plain(it.text)).slice(0,400))}"><b>said</b>${esc(one(plain(it.text)).slice(0,160))}<small>${clock(it.ts)}</small></p>`
+    :it.t==='end'?`<p class="end" data-s="${it.n}">■ turn ended · ${clock(it.ts)}</p>`
+    :it.t==='wait'?`<p class="w" data-s="${it.n}">⏳ ${esc(one(it.text).slice(0,200))}</p>`
+    :it.t==='compact'?`<p class="dv cp" data-s="${it.n}">${esc('context summarised'+(it.trigger==='auto'?' automatically':it.trigger==='manual'?' on request':'')+(num(it.pre)||num(it.post)?' · '+tok(it.pre)+' → '+tok(it.post)+' tokens':'')+' · '+clock(it.ts))}</p>`
+    :`<p class="sd${it.e===a.pin?' on':''}${it.e.err||it.e.alert?' bad':''}" data-i="${it.n}" data-s="${it.n}">${it.e.alert?'⚠ ':''}${esc(did(it.e))}<small>${clock(it.ts)}</small></p>`;
   let h=(a.partial?'<p class="dv">earlier history not loaded</p>':'')+ch.map((c,ci)=>{
     const dids=c.items.filter(x=>x[1].t==='did'), says=c.items.filter(x=>x[1].t==='say'), open=a.open.has(c.key), last=ci===ch.length-1, live=last&&S.busy&&a.turn==='in';
     const n={r:0,w:0,x:0}; dids.forEach(([,it])=>{const k=it.e.kind; k==='read'?n.r++:['write','edit','patch'].includes(k)?(it.e.done&&!it.e.err?n.w++:0):k==='run'?n.x++:0});
@@ -1662,13 +1693,13 @@ function desk(){
     const nowm=live?`<p class="nowm">${a.observed?'now · a command is running':'now · in a turn'}</p>`:a.observed&&a.over?'<p class="nowm">observation ended</p>':'';
     return head+sum+(open?c.items.map(item).join(''):c.items.filter(x=>x[1].t==='compact'||x[1].t==='end'||(ls&&x[1]===ls)).map(item).join(''))+nowm;      /* in recorded order, never reordered */
   }).join('');
-  if(storyEl._h!==h&&!getSelection().toString()){put(storyEl,h||'<p>Nothing recorded yet.</p>'); if(stick) storyEl.scrollTop=storyEl.scrollHeight}
+  if(storyEl._h!==h&&!getSelection().toString()){put(storyEl,h||'<p>Nothing recorded yet.</p>'); storyEl.dataset.a=a.id; if(stick) storyEl.scrollTop=storyEl.scrollHeight}
   /* comms: only what you said to it, and what it seems to need from you */
   const cm=(a.assign?`<p class="u as">Its assignment: ${esc(one(a.assign.text).slice(0,700))}</p>`:'')
     +a.msgs.map(m=>{const k='u'+(m.seq>=0?m.seq:m.ts); const t=one(m.text), long=t.length>240, wide=a.wide&&a.wide.has(k);
       return `<p class="u jump" data-k="${esc(k)}" title="Show what the agent did after this message">${esc(long&&!wide?t.slice(0,200).replace(/\s+\S*$/,'')+'…':t)}${long?` <u data-more>${wide?'show less':'show all'}</u>`:''}<small>${clock(m.ts)}${a.miss===k?' · '+a.missWhy:''}</small></p>`}).join('')
     +a.q.map(m=>`<p class="qd">✉ Queued in the app<br>${esc(one(m.text).slice(0,300))}</p>`).join('');
-  if(commsEl._h!==cm&&!getSelection().toString()){put(commsEl,cm||(a.observed?'<p>Messages between you and this agent live in ChatGPT; none reaches this computer.</p>':'<p>No message from you found in what has been read of its log.</p>')); if(stickC) commsEl.scrollTop=commsEl.scrollHeight}
+  if(commsEl._h!==cm&&!getSelection().toString()){put(commsEl,cm||(a.observed?'<p>Messages between you and this agent live in ChatGPT; none reaches this computer.</p>':'<p>No message from you found in what has been read of its log.</p>')); commsEl.dataset.a=a.id; if(stickC) commsEl.scrollTop=commsEl.scrollHeight}
   const N=S.need, chan=$('#chan');
   chan.className=N?'warn':a.q.length?'q':'';
   put(chan,N?`▲ ${N.sure?'Agent requests':'Agent may be asking'} · ${N.kind}${N.sure?'':' (probably)'}<p>${esc(one(N.text).slice(0,300))}</p>`:a.q.length?`✉ ${a.q.length} message${a.q.length>1?'s':''} queued in the app`:'● No request detected');
@@ -1707,8 +1738,9 @@ $('#notify').onclick=async()=>{
 paintNotify();
 function attention(now){
   let n=0;
+  let who=null, maybe=0;
   for(const k of order){const a=A[k], N=need(a), sure=!!(N&&N.sure), sig=sure?N.kind+'|'+N.text:'';
-    if(sure) n++;
+    if(sure){n++; who=who||a} else if(N) maybe++;
     if(sig&&sig!==a.needSig&&connectedAt&&now-connectedAt>6&&NOTIFY&&!DEMO&&canNotify()&&(document.hidden||focus!==k)){      /* never from a demo window: its agents are fictional */
       /* nothing from the logs goes to the OS notification surface: not the request, and not the agent's name, which an agent chooses for itself */
       try{const nt=new Notification('An agent is waiting on you',{body:({Approve:'Permission requested',Decide:'A question for you','Needs you':'Needs your attention',Action:'Action requested'}[N.kind]||'Waiting on you')+' — open W.A.T.C.H. to see which agent and what for',tag:'watch-'+k});
@@ -1716,6 +1748,7 @@ function attention(now){
     if(!sig&&a.nt){try{a.nt.close()}catch(err){} a.nt=null}        /* the request ended: take the notice down */
     a.needSig=sig}
   const t=(n?'('+n+') ':'')+'W.A.T.C.H.'; if(document.title!==t) document.title=t;
+  ofStand(n,who,maybe);
 }
 /* ---------- connection ---------- */
 let lastSeq=-1, boot='', connected=false, locked=false, connectedAt=0;
@@ -1760,6 +1793,69 @@ document.body.classList.toggle('steady',STEADY);
    It says so in the bar.
    Nothing here is real; it exists so the room can be seen (and screenshotted) without anyone's sessions in it.
    DEMO itself is decided at the top of the script, before the key is read, so no credential path runs in a demo window. */
+
+/* ---------- the Officer of the Watch ----------
+   A drawer that asks the server's /ask route, which asks the Anthropic API with read-only tools over room state. The
+   page never sees the key. Room actions the Officer proposes (filter, go to, pin, dismiss, a draft) happen here and
+   only here, and are reported as "Done ·" lines. A demo window never connects: it says so instead. */
+const OF={turns:[],busy:false,day:''};
+const ofEl=$('#officer'), ofLog=$('#ofLog'), ofIn=$('#ofIn'), ofSt=$('#ofSt'), ofLine=$('#ofLine');
+function ofStatus(t){txt(ofSt,t)}
+function ofStand(n,who,maybe){const sure=n===0?(order.length?'no confirmed request':''):n===1&&who?(who.name||'an agent')+' is waiting on you':n+' agents are waiting on you'; txt(ofLine,sure+(maybe&&sure?' · '+maybe+' possible':'')); ofEl.classList.toggle('need',n>0); ofEl.classList.toggle('maybe',!n&&maybe>0)}      /* the plate's one line is the room's own count, not the model's: a request the log only suggests is "possible", never absent */
+function ofAdd(cls,html){const d=document.createElement('div'); d.className=cls; d.innerHTML=html; ofLog.appendChild(d); ofLog.scrollTop=ofLog.scrollHeight; return d}
+function ofParas(t){return String(t||'').split(/\n{2,}|\n/).map(x=>x.trim()).filter(Boolean).map(x=>`<p>${esc(x)}</p>`).join('')||'<p class="k">(no words came back)</p>'}
+function ofDay(){const day=new Date().toDateString(); if(OF.day&&OF.day!==day){OF.turns=[]; OF.day=day; ofAdd('k','<span class="k">A new day: the Officer starts a fresh conversation.</span>'); ofSave()} else if(!OF.day) OF.day=day}      /* a window left open overnight does not carry yesterday into today */
+function ofSave(){if(DEMO) return; try{store.setItem('liveRoomShift',JSON.stringify({day:OF.day,turns:OF.turns.slice(-40)}))}catch(err){}}
+function ofLoad(){const day=new Date().toDateString(); OF.day=day; if(DEMO) return; try{const v=JSON.parse(store.getItem('liveRoomShift')||'null'); if(v&&v.day===day&&Array.isArray(v.turns)){OF.turns=v.turns.filter(t=>t&&(t.role==='user'||t.role==='assistant')&&typeof t.content==='string').map(t=>({role:t.role,content:t.content.slice(0,4000)})).slice(-40); for(const t of OF.turns) ofAdd(t.role==='user'?'you':'of',t.role==='user'?esc(t.content):ofParas(t.content)); if(OF.turns.length) ofAdd('k','<span class="k">Earlier today, kept on this computer only; your next question sends it along as context.</span>')}}catch(err){}}
+function ofCite(c){const aid=c.aid||(Object.keys(A).find(k=>A[k].name===c.agent)||''); return `<button data-n="${esc(String(c.n))}" data-a="${esc(aid)}" title="${esc(c.what||'')}">${esc(c.agent||'?')} · ${esc(c.ago||'')} ago</button>`}
+function ofJump(aid,n){const a=A[aid]; if(!a){ofAdd('k','<span class="k">That agent is no longer in the room.</span>'); return}
+  setFocus(aid); const it=a.story.find(x=>x.seq===n||(x.e&&x.e.seq===n));
+  if(!it){ofAdd('k',`<span class="k">That entry is no longer on ${esc(a.name||'the')}'s desk: a desk keeps its last three hundred.</span>`); return}
+  if(it.t==='say'){a.pin=null; a.sayAt=it.n; deskView='said'} else if(it.e){a.pin=it.e; deskView='doing'}
+  let key='start'; for(const x of a.story){if(x.t==='you') key=x.key||'t'+x.ts; if(x===it) break}
+  capAdd(a.open,key); stick=false; if(covered()||(!portrait()&&!sideW())) narrow=it.t==='you'?'R':'L';      /* on a narrow window, open the panel the entry is in */
+  a.dirty=true; render();
+  const t0=performance.now();
+  const land=()=>{      /* only once this desk has drawn: a step-up defers rendering, and the panels may still show the previous desk */
+    if(focus!==aid){ofAdd('k','<span class="k">You moved on before that desk opened.</span>'); return}
+    const pane=it.t==='you'?commsEl:storyEl;
+    if(STEPPING||pane.dataset.a!==aid){if(performance.now()-t0<4000){if(!STEPPING){a.dirty=true; render()} setTimeout(land,120); return} ofAdd('k','<span class="k">That desk did not finish drawing, so the entry was not shown.</span>'); return}
+    const el=it.t==='you'?[...commsEl.querySelectorAll('[data-k]')].find(x=>x.dataset.k===key):storyEl.querySelector(`[data-s="${it.n}"]`);
+    if(el&&el.getClientRects().length){el.scrollIntoView({block:'center'}); el.classList.add('hl'); setTimeout(()=>el.classList.remove('hl'),1600)}
+    else ofAdd('k',`<span class="k">That entry is kept for ${esc(a.name||'this agent')} but is not drawn on its desk right now.</span>`)};
+  land()}
+function ofAct(x){      /* [done, words]: done only when the screen actually changed as asked */
+  if(x.do==='filter'){const n=String(x.project||'').trim(); if(!n){setProj(null); return [true,'showing every project']}
+    const low=n.toLowerCase(), key=order.map(k=>proj(k)).find(k=>k&&(k.toLowerCase()===low||String(projLabel(k)).toLowerCase()===low)); if(!key) return [false,'no project called '+n+' is in the room, so the filter was not changed'];
+    setProj(key); return [PROJ===key,PROJ===key?'showing only '+projLabel(key):'the filter could not be applied']}
+  if(x.do==='go_to'){if(!A[x.agent]) return [false,'that agent is no longer in the room']; setFocus(x.agent); return [true,'went to '+(A[x.agent].name||'the desk')]}
+  if(x.do==='dismiss'){if(!A[x.agent]) return [false,'that agent is no longer in the room']; dismiss(x.agent); return [true,'dismissed '+A[x.agent].name+' (Bring back undoes it)']}
+  if(x.do==='draft'){const t=String(x.text||''); const d=ofAdd('of',`<div class="draft">${esc(t)}</div><div class="cites"><button class="copy">Copy to clipboard</button></div>`); d.querySelector('.copy').onclick=async ev=>{try{await navigator.clipboard.writeText(t); ev.target.textContent='Copied'}catch(err){ev.target.textContent='Select and copy it above'}}; return [true,'drafted the text above; press Copy']}
+  return [false,'']}
+async function ofSend(){
+  const q=ofIn.value.trim(); if(!q||OF.busy) return;
+  ofDay();
+  OF.turns.push({role:'user',content:q}); ofAdd('you',esc(q)); ofIn.value=''; OF.busy=true; $('#ofSend').disabled=true; ofStatus('thinking…');
+  if(DEMO){await new Promise(r=>setTimeout(r,500)); ofAdd('of','<p class="k">The Officer answers from a live room. This demo is not connected to one, so there is nothing to answer from.</p>'); OF.turns.pop(); OF.busy=false; $('#ofSend').disabled=false; ofStatus('not connected · demo'); return}
+  try{
+    const res=await post('/ask',{turns:OF.turns.slice(-20)});
+    if(!res.ok){const t=await res.text(); OF.turns.pop(); ofAdd('of',`<p class="k">${esc(t||('The Officer could not answer ('+res.status+').'))}</p>`); ofStatus(res.status===503?'off':'listening'); return}
+    const r=await res.json();
+    if(r.error){OF.turns.pop(); ofAdd('of',`<p class="k">${esc(r.error)}</p>`); return}
+    OF.turns.push({role:'assistant',content:String(r.text||'').slice(0,4000)});
+    const seen=new Set(), cites=(r.cites||[]).filter(c=>c&&c.n!=null&&!seen.has(c.n)&&seen.add(c.n)).slice(0,12);
+    const d=ofAdd('of',ofParas(r.text)+(cites.length?`<div class="cites">${cites.map(ofCite).join('')}</div><div class="k">log entries it consulted</div>`:''));
+    d.querySelectorAll('.cites button[data-n]').forEach(b=>b.onclick=()=>ofJump(b.dataset.a,+b.dataset.n));
+    for(const x of (r.actions||[])){const [ok,words]=ofAct(x); if(words) ofAdd('done',(ok?'Done · ':'Not done · ')+esc(words))}
+    ofSave();
+  }catch(err){OF.turns.pop(); ofAdd('of','<p class="k">The Officer could not be reached.</p>')}
+  finally{OF.busy=false; $('#ofSend').disabled=false; if(ofSt.textContent==='thinking…') ofStatus('listening'); ofIn.focus()}
+}
+function ofToggle(on){ofEl.classList.toggle('fold',!on); $('#ofB').setAttribute('aria-expanded',String(on)); if(on){if(!OF.loaded){OF.loaded=true; ofLoad(); if(!OF.turns.length) ofAdd('of','<p class="k">Ask what you missed, what an agent is doing, whether anything is stuck, or who changed a file. I answer from the logs the room keeps, in plain English, and say when something is not in them.</p>')} ofStatus(DEMO?'not connected · demo':'listening'); ofIn.focus()} else $('#ofB').focus()}
+$('#ofB').onclick=()=>ofToggle(ofEl.classList.contains('fold')); $('#ofSend').onclick=ofSend;
+ofIn.addEventListener('keydown',ev=>{if(ev.key==='Enter'){ev.preventDefault(); ofSend()}});
+addEventListener('keydown',e=>{if(e.key==='Escape'&&!ofEl.classList.contains('fold')){ofToggle(false); e.stopImmediatePropagation()}},true);      /* Escape folds the Officer wherever focus sits, without stepping back from a desk */
+
 function demo(){
   const now=()=>Date.now()/1000; let t=now()-900;
   KEY=''; APPROVE=false;      /* the two switches work on this page only: presence, decisions and notification permission are all guarded by DEMO */
