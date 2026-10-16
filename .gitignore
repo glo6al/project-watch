@@ -11,3 +11,6 @@ archive/
 brand/reference/
 brand/HANDOFF.md
 brand/studies/
+
+# screen recordings are sources for the GIF, never published
+*.mov

@@ -18,7 +18,7 @@
 </p>
 
 <p align="center">
-  <img src="docs/media/watch-demo.gif" width="1000" alt="The room: a curved row of monitors, one per agent, grouped by project, each showing what its agent is saying as it works. One monitor is picked up, then opened into a desk with its timeline, its screens and its readouts; a held permission request is answered with Allow and the agent carries on. In the demo the outcome is scripted and nothing is sent.">
+  <img src="docs/media/watch-demo.gif" width="1000" alt="The demo room. The Officer of the Watch panel is open at the bottom right, answering What did I miss? with a shift report: a table of agents with project, last step and when, a checklist of who is waiting on you, a quoted verdict, and chips naming the entries it consulted, with a line saying the answer is scripted for the demo. Then Ada's monitor comes to hand and opens into her desk, which steps through its Saying, Doing, Seeing and Changing screens with the timeline and readouts around it, before stepping back into the curved row of monitors and turning along it.">
 </p>
 
 > **Early.** macOS; on Windows only the automated tests have run, in CI. Python 3 standard library, no dependencies, one HTML page. Watching is safe to try today; read the [trust boundary](#trust-boundary) before switching on anything that answers prompts.
