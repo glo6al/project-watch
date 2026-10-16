@@ -79,6 +79,12 @@ body.stepped #officer{bottom:118px}body.stepped.portrait #officer{bottom:296px}b
 #ofLog .you{align-self:flex-end;max-width:88%;background:#0d1a2b;border:1px solid #1f3a52;border-radius:8px 8px 2px 8px;padding:6px 10px;color:#cfe3f5}
 #ofLog .of{max-width:94%;color:var(--ink)}#ofLog .of p{margin:0 0 6px}#ofLog .of p:last-child{margin:0}
 #ofLog .k{color:var(--mute);font-size:12px}#ofLog .done{color:#9fc3e0;font-size:12px}
+#ofLog .of b{color:#eef2f7}#ofLog .of i{color:#cfe3f5}#ofLog .of code{font:12px ui-monospace,Menlo,monospace;background:#0d1016;border:1px solid #2a3340;border-radius:3px;padding:0 4px}
+#ofLog .of ul,#ofLog .of ol{margin:0 0 6px 18px;padding:0}#ofLog .of li{margin:2px 0}#ofLog .of li>ul,#ofLog .of li>ol{margin:2px 0 2px 16px}#ofLog .of .box{color:var(--hl)}
+#ofLog .of .h1{font:700 14px system-ui,-apple-system,sans-serif;color:#eef2f7;margin:10px 0 4px}#ofLog .of .h2{font:600 10px ui-monospace,Menlo,monospace;letter-spacing:.14em;text-transform:uppercase;color:#7fa6c2;margin:8px 0 4px}#ofLog .of .h3{font:600 12px system-ui,-apple-system,sans-serif;color:#cfe3f5;margin:6px 0 2px}
+#ofLog .of s{color:var(--mute)}#ofLog .of blockquote{margin:4px 0 6px;padding:2px 10px;border-left:2px solid #1f3a52;color:#b9c3d1}#ofLog .of hr{border:0;border-top:1px solid #1f3a52;margin:8px 0}
+#ofLog .of pre{margin:4px 0 6px;padding:8px 10px;background:#0d1016;border:1px solid #2a3340;border-radius:3px;overflow:auto;font:12px/1.5 ui-monospace,Menlo,monospace;color:#d7dbe4;white-space:pre}#ofLog .of pre code{border:0;background:none;padding:0}
+#ofLog .of table{border-collapse:collapse;margin:4px 0 8px;font-size:12px;max-width:100%}#ofLog .of th,#ofLog .of td{border:1px solid #1f3a52;padding:3px 8px;text-align:left;vertical-align:top}#ofLog .of th{font:600 10px ui-monospace,Menlo,monospace;letter-spacing:.1em;text-transform:uppercase;color:#7fa6c2;background:#0d1a2b}
 #ofLog .cites{display:flex;flex-wrap:wrap;gap:4px;margin-top:4px}#ofLog .cites button{all:unset;cursor:pointer;font:600 10px ui-monospace,Menlo,monospace;letter-spacing:.06em;color:#9fc3e0;background:#0d1a2b;border:1px solid #1f3a52;border-radius:3px;padding:2px 7px}
 #ofLog .cites button:hover{border-color:var(--hl)}
 #ofLog .draft{white-space:pre-wrap;background:#0d1016;border:1px solid #2a3340;border-radius:3px;padding:8px 10px;font:12px ui-monospace,Menlo,monospace;color:#d7dbe4;margin-top:4px}
@@ -1806,7 +1812,44 @@ const ofEl=$('#officer'), ofLog=$('#ofLog'), ofIn=$('#ofIn'), ofSt=$('#ofSt'), o
 function ofStatus(t){txt(ofSt,t)}
 function ofStand(n,who,maybe){const sure=n===0?(order.length?'no confirmed request':''):n===1&&who?(who.name||'an agent')+' is waiting on you':n+' agents are waiting on you'; txt(ofLine,sure+(maybe&&sure?' · '+maybe+' possible':'')); ofEl.classList.toggle('need',n>0); ofEl.classList.toggle('maybe',!n&&maybe>0)}      /* the plate's one line is the room's own count, not the model's: a request the log only suggests is "possible", never absent */
 function ofAdd(cls,html){const d=document.createElement('div'); d.className=cls; d.innerHTML=html; ofLog.appendChild(d); ofLog.scrollTop=ofLog.scrollHeight; return d}
-function ofParas(t){return String(t||'').split(/\n{2,}|\n/).map(x=>x.trim()).filter(Boolean).map(x=>`<p>${esc(x)}</p>`).join('')||'<p class="k">(no words came back)</p>'}
+/* answer markup (tests/test_page.js evaluates this block on its own; keep it self-contained, up to the end marker)
+   The Officer's answers render a safe slice of Markdown, the parts a README uses: the text is escaped first, and
+   only tags with no attributes are added afterwards (bold, italics, strikethrough, inline and fenced code, bullet,
+   numbered and checklist items one level deep, three heading sizes, quotes, dividers, tables), so nothing written
+   into a log can become markup. Links show as their text and address, never clickable; images are not rendered:
+   an address in an answer may have come from an agent's log, and the room never fetches or follows one. */
+function ofInline(x){
+  const code=[]; x=x.replace(/`([^`\n]+)`/g,(m,c)=>{code.push(c); return '\u0000'+(code.length-1)+'\u0000'});
+  x=x.replace(/!?\[([^\]\n]*)\]\(([^)\n]*)\)/g,(m,t,u)=>m[0]==='!'?`${t||'image'} (image not shown: ${u})`:`${t} (${u})`);      /* a link or image: its words and its address, as text */
+  x=x.replace(/\*\*([^*\n<>]+)\*\*/g,'<b>$1</b>').replace(/~~([^~\n<>]+)~~/g,'<s>$1</s>')      /* no match spans a tag already inserted: crossed delimiters stay as typed */
+     .replace(/(^|[\s(])\*([^*\n<>]+)\*(?=[\s).,;:!?]|$)/g,'$1<i>$2</i>').replace(/(^|[\s(])_([^_\n<>]+)_(?=[\s).,;:!?]|$)/g,'$1<i>$2</i>');
+  return x.replace(/\u0000(\d+)\u0000/g,(m,i)=>`<code>${code[+i]}</code>`)}
+function ofParas(t){
+  const lines=esc(String(t||'')).replace(/\u0000/g,'').split(/\r\n|\r|\n|\u2028|\u2029/).map(x=>x.replace(/\s+$/,'')); let out='', i=0;
+  const item=l=>{const mm=l.match(/^(\s*)([-*+]|\d+[.)])\s+(.*)$/); if(!mm) return null; let body=mm[3]; const box=body.match(/^\[( |x|X)\]\s+(.*)$/); if(box) body=`<span class="box">${box[1]===' '?'☐':'☑'}</span> ${box[2]}`; return {depth:mm[1].length>=2?1:0, kind:/^\d/.test(mm[2])?'ol':'ul', body:ofInline(body)}};
+  const isRow=x=>/^\|.*\|$/.test(x.trim())||/\|/.test(x), isSep=x=>/^\s*\|?\s*:?-{2,}:?\s*(\|\s*:?-{2,}:?\s*)*\|?\s*$/.test(x);
+  const cells=x=>x.trim().replace(/^\|/,'').replace(/\|$/,'').split('|').map(c=>ofInline(c.trim()));
+  while(i<lines.length){
+    const raw=lines[i], x=raw.trim(); let m;
+    if(!x){i++; continue}
+    if(/^```/.test(x)){const body=[]; i++; while(i<lines.length&&!/^```/.test(lines[i].trim())){body.push(lines[i]); i++} i++; out+=`<pre><code>${body.join('\n')}</code></pre>`; continue}
+    if(i+1<lines.length&&isRow(x)&&isSep(lines[i+1])){const head=cells(x); i+=2; let rows=''; while(i<lines.length&&lines[i].trim()&&isRow(lines[i])){rows+=`<tr>${cells(lines[i]).map(c=>`<td>${c}</td>`).join('')}</tr>`; i++}
+      out+=`<table><thead><tr>${head.map(c=>`<th>${c}</th>`).join('')}</tr></thead><tbody>${rows}</tbody></table>`; continue}
+    if(/^&gt;/.test(x)){let q=''; while(i<lines.length&&/^&gt;/.test(lines[i].trim())){const l=lines[i].trim().replace(/^&gt;\s?/,''); if(l) q+=`<p>${ofInline(l)}</p>`; i++} out+=`<blockquote>${q}</blockquote>`; continue}
+    if(/^([-*_])\s*(\1\s*){2,}$/.test(x)){out+='<hr>'; i++; continue}
+    if((m=x.match(/^(#{1,6})\s+(.*)$/))){out+=`<p class="h${Math.min(3,m[1].length)}">${ofInline(m[2])}</p>`; i++; continue}
+    if((m=x.match(/^\*\*([^*]+?):?\*\*:?$/))){out+=`<p class="h2">${ofInline(m[1])}</p>`; i++; continue}      /* a bold line alone is a heading */
+    if(item(raw)){      /* a list, one level of nesting by indent; the same parser decides entry and each item, so the loop always advances */
+      const stack=[];
+      while(i<lines.length){const it=item(lines[i]); if(!it) break;
+        while(stack.length>it.depth+1){out+=`</li></${stack.pop()}>`}
+        if(stack.length===it.depth+1&&stack[stack.length-1]!==it.kind){out+=`</li></${stack.pop()}>`}      /* a change of kind at either depth closes that list and opens the other */
+        if(stack.length<it.depth+1){if(stack.length===0&&it.depth===1){out+='<ul><li>'; stack.push('ul')} out+=`<${it.kind}>`; stack.push(it.kind)} else out+='</li>';
+        out+=`<li>${it.body}`; i++}
+      while(stack.length) out+=`</li></${stack.pop()}>`; continue}
+    out+=`<p>${ofInline(x)}</p>`; i++}
+  return out||'<p class="k">(no words came back)</p>'}
+/* end answer markup */
 function ofDay(){const day=new Date().toDateString(); if(OF.day&&OF.day!==day){OF.turns=[]; OF.day=day; ofAdd('k','<span class="k">A new day: the Officer starts a fresh conversation.</span>'); ofSave()} else if(!OF.day) OF.day=day}      /* a window left open overnight does not carry yesterday into today */
 function ofSave(){if(DEMO) return; try{store.setItem('liveRoomShift',JSON.stringify({day:OF.day,turns:OF.turns.slice(-40)}))}catch(err){}}
 function ofLoad(){const day=new Date().toDateString(); OF.day=day; if(DEMO) return; try{const v=JSON.parse(store.getItem('liveRoomShift')||'null'); if(v&&v.day===day&&Array.isArray(v.turns)){OF.turns=v.turns.filter(t=>t&&(t.role==='user'||t.role==='assistant')&&typeof t.content==='string').map(t=>({role:t.role,content:t.content.slice(0,4000)})).slice(-40); for(const t of OF.turns) ofAdd(t.role==='user'?'you':'of',t.role==='user'?esc(t.content):ofParas(t.content)); if(OF.turns.length) ofAdd('k','<span class="k">Earlier today, kept on this computer only; your next question sends it along as context.</span>')}}catch(err){}}
