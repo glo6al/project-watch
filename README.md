@@ -44,6 +44,7 @@ Everything on screen comes from the tools' own records: their session logs, the 
 - **Which project:** the row is seated in bays by folder, with the project's name set into the floor, and you can give a folder a display name.
 - **Alerts** when a command looks like a deploy, a push, a delete or a send, from a small shell-aware parser. The Watch button in the bar lets you add your own words to that list, or switch the built-in ones off.
 - **Readouts** the log states: model, branch, approval setting, context in use, when the session began, when you last spoke to it.
+- **Answers, when you ask:** the Officer of the Watch, a plate on the bottom band, answers plain-English questions from the same logs: what you missed since some minutes ago, what an agent did, whether anything is stuck, who is waiting on you, who changed a file. It keeps each record's own qualifications ("started", "tried to", "probably", "outcome not recorded"), shows the entries it consulted, and can draft a Watch rule for you to keep with one button. It needs an Anthropic API key on this machine; without one it stays off and says why.
 
 The desk for one agent has four screens on its monitor, Saying, Doing, Seeing and Changing, and you land on the one you were reading. Beside it, a timeline of what the agent did and said, in order, grouped under each of your messages, with each turn's end marked; click a step to see it on the monitor, or a said line to open it on the Saying screen. Then the other agents at a glance and a five-minute activity strip coloured by kind of action.
 
@@ -113,6 +114,12 @@ The board and the tail ring the terminal bell when an agent starts waiting on yo
 
 <p align="center"><img src="docs/media/demo-watch.png" width="1000" alt="The Watch panel open at the top right of the room: a field holding git push origin main, a miniature monitor under it with a red alert tag reading push, a row of kinds with push lit, one rule of your own reading make release is deploy, and the built-in rules unfolded, each with a green switch and a sample of the words it watches."></p>
 <p align="center"><sub><b>Watch.</b> Type a command or a sentence and the panel draws the banner the room would give it. If that is wrong, click what it should be and the room learns those words. Your rules are listed below; the built-in ones are folded under them, each with a switch.</sub></p>
+
+<p align="center"><img src="docs/media/demo-officer.png" width="1000" alt="The Officer of the Watch open as a panel at the bottom right of the room, its header reading demo, scripted answers. Under a short welcome and the question What did I miss?, the start of a shift report: a heading with the time and a table of agents with project, last recorded step and when; the rest of the answer continues below the panel's fold. Under the panel, three question chips and the input."></p>
+<p align="center"><sub><b>The Officer of the Watch.</b> A plate on the bottom band with the room's own count of who is waiting on you; press it, or <code>/</code>, and ask about the room in plain English. The answer comes from the logs the room keeps, laid out like a README when that reads better, with the entries it consulted as chips that jump to them. In the live room the server asks the model; in the demo the answers are scripted from the synthetic agents and say so.</sub></p>
+
+<p align="center"><img src="docs/media/demo-officer-rule.png" width="1000" alt="The Watch panel open with a banner at its top: The Officer suggests a rule: flag alembic upgrade as a deploy. Nothing is saved until you press Keep. Under it a Keep this rule button and a Not now button, then the Try box holding the words, the room's preview reading no tag, and the row of kinds with deploy outlined as suggested."></p>
+<p align="center"><sub><b>A rule it drafted.</b> Ask the Officer to flag something and it drafts the words and the kind into the Watch panel, with the room's preview and one plain button. Nothing is saved until you press Keep this rule; the Officer cannot press it, and no answer can write a rule on its own.</sub></p>
 
 ## How it works
 

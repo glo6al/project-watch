@@ -499,6 +499,7 @@ const DOING={read:'reading',write:'writing a file',edit:'editing',run:'running a
 
 /* ---------- demo decided first: a ?demo window never authenticates, connects, or posts (see the demo section below) ---------- */
 const DEMO=/[?&]demo\b/.test(location.search);
+let DSEQ=0;      /* the demo's one sequence counter: every synthetic event, from the script or from a decision taken on the page, gets its number here */
 /* shared browser storage (pins, dismissed agents, project names and colours, the chosen project, notify, the per-tab
    answering preference, the first-visit hint flag) is this browser's live state; a demo window neither reads nor writes
    any of it, so nothing of yours can show in a demo and nothing from the demo leaks into your room. */
@@ -548,7 +549,7 @@ function agent(id){
     if(yn){const p=a.perms[yn.dataset.pid];        /* exactly the request these buttons were drawn for, and only while it is the one on screen */
       if(!p||p.sent||focus!==id||a.permScreen!==p.pid||!APPROVE||covered()||!onScreen(a.$.code)||Date.now()-(+yn.dataset.at||0)<450) return;      /* measured now, not when it was last painted */ const allow=yn.classList.contains('yes'); p.sent=true; a.dirty=true;
       const back=msg=>{p.sent=false; a.dirty=true; a.permMsg=msg};
-      if(DEMO){const now=()=>Date.now()/1000, H=o=>handle(Object.assign({agent:id,ts:now()},o)), after=(ms,f)=>setTimeout(()=>{f(); render()},ms);      /* nothing leaves the page: the request ends here and the fictional agent carries on for a while */
+      if(DEMO){const now=()=>Date.now()/1000, H=o=>handle(Object.assign({agent:id,ts:now(),seq:++DSEQ},o)), after=(ms,f)=>setTimeout(()=>{f(); render()},ms);      /* numbered from the same counter as the demo's history, so the Officer's chips can cite these too */      /* nothing leaves the page: the request ends here and the fictional agent carries on for a while */
         a.permMsg=(allow?'Allowed':'Denied')+' from here'; render();
         after(600,()=>{H({kind:'perm_end',pid:p.pid,how:(allow?'allowed':'denied')+' from the room'});
           if(allow) H({kind:'run',id:'c9',cmd:'rm -rf build/ && make nightly ARCH=arm64 CRC=soft',why:'rebuild with the soft CRC path'});
@@ -1893,23 +1894,55 @@ async function ofSend(){
   const q=ofIn.value.trim(); if(!q||OF.busy) return;
   ofDay();
   OF.turns.push({role:'user',content:q}); ofAdd('you',esc(q)); ofIn.value=''; OF.busy=true; $('#ofSend').disabled=true; ofStatus('thinking…');
-  if(DEMO){await new Promise(r=>setTimeout(r,500)); ofAdd('of','<p class="k">The Officer answers from a live room. This demo is not connected to one, so there is nothing to answer from.</p>'); OF.turns.pop(); OF.busy=false; $('#ofSend').disabled=false; ofStatus('not connected · demo'); return}
+  if(DEMO){await new Promise(r=>setTimeout(r,700)); const r=ofDemoAnswer(q); ofShow(r); ofAdd('k','<span class="k">A scripted answer for the demo, built from the synthetic agents on screen. In a live room the Officer asks the model.</span>'); OF.turns.pop(); OF.busy=false; $('#ofSend').disabled=false; ofStatus('demo · scripted answers'); ofIn.focus(); return}
   try{
     const res=await post('/ask',{turns:OF.turns.slice(-20)});
     if(!res.ok){const t=await res.text(); OF.turns.pop(); ofAdd('of',`<p class="k">${esc(t||('The Officer could not answer ('+res.status+').'))}</p>`); ofStatus(res.status===503?'off':'listening'); return}
     const r=await res.json();
     if(r.error){OF.turns.pop(); ofAdd('of',`<p class="k">${esc(r.error)}</p>`); return}
     OF.turns.push({role:'assistant',content:String(r.text||'').slice(0,4000)});
-    const seen=new Set(), cites=(r.cites||[]).filter(c=>c&&c.n!=null&&!seen.has(c.n)&&seen.add(c.n)).slice(0,12);
-    const d=ofAdd('of',ofParas(r.text)+(cites.length?`<div class="cites">${cites.map(ofCite).join('')}</div><div class="k">log entries it consulted</div>`:''));
-    d.querySelectorAll('.cites button[data-n]').forEach(b=>b.onclick=()=>ofJump(b.dataset.a,+b.dataset.n));
-    let toWatch=false; OF.drafted=false; for(const x of (r.actions||[])){const [ok,words]=ofAct(x); if(words) ofAdd('done',(ok?'Done · ':'Not done · ')+esc(words)); if(ok&&x.do==='watch_draft') toWatch=true}
-    if(toWatch){ofToggle(false); $('#watchTry').focus()}      /* the draft is in the Watch panel, which this panel would cover: fold, so the chip is in view; the answer stays in the log */
+    ofShow(r);
     ofSave();
   }catch(err){OF.turns.pop(); ofAdd('of','<p class="k">The Officer could not be reached.</p>')}
   finally{OF.busy=false; $('#ofSend').disabled=false; if(ofSt.textContent==='thinking…') ofStatus('listening'); ofIn.focus()}
 }
-function ofToggle(on){ofEl.classList.toggle('fold',!on); $('#ofB').setAttribute('aria-expanded',String(on)); if(on){if(!OF.loaded){OF.loaded=true; ofLoad(); if(!OF.turns.length) ofAdd('of','<p class="k">Ask what you missed, what an agent is doing, whether anything is stuck, or who changed a file. I answer from the logs the room keeps, in plain English, and say when something is not in them.</p>')} ofStatus(DEMO?'not connected · demo':'listening'); ofIn.focus()} else $('#ofB').focus()}
+function ofShow(r){      /* one answer onto the log: its words, the entries it consulted as chips, and what it asked the screen to do */
+  const seen=new Set(), cites=(r.cites||[]).filter(c=>c&&c.n!=null&&!seen.has(c.n)&&seen.add(c.n)).slice(0,12);
+  const d=ofAdd('of',ofParas(r.text)+(cites.length?`<div class="cites">${cites.map(ofCite).join('')}</div><div class="k">log entries it consulted</div>`:''));
+  d.querySelectorAll('.cites button[data-n]').forEach(b=>b.onclick=()=>ofJump(b.dataset.a,+b.dataset.n));
+  let toWatch=false; OF.drafted=false; for(const x of (r.actions||[])){const [ok,words]=ofAct(x); if(words) ofAdd('done',(ok?'Done · ':'Not done · ')+esc(words)); if(ok&&x.do==='watch_draft') toWatch=true}
+  if(toWatch){ofToggle(false); $('#watchTry').focus()}      /* the draft is in the Watch panel, which this panel would cover: fold, so the button is in view; the answer stays in the log */
+}
+function ofDemoAnswer(q){      /* the demo's Officer: four scripted answers, each built from the synthetic agents as they are on screen now, never from a model */
+  const low=q.toLowerCase(), nowS=Date.now()/1000, agoW=ts=>{const s=Math.max(0,nowS-ts); return s<60?'just now':s<3600?Math.round(s/60)+' min ago':Math.round(s/3600)+' h ago'};
+  const who=order.map(k=>A[k]).filter(a=>a&&!a.gone), cites=[], actions=[];
+  const seqOf=it=>it&&(it.seq!=null?it.seq:it.e&&it.e.seq!=null?it.e.seq:null);
+  const cite=(a,it)=>{const n=seqOf(it); if(n!=null&&cites.length<12) cites.push({n,agent:a.name,aid:a.id,what:'',ago:agoW(it.ts).replace(' ago','')})};
+  const lastOf=a=>[...a.story].reverse().find(x=>x.t==='say'||x.t==='did'||x.t==='wait');
+  const words=(a,it)=>{if(!it) return 'nothing recorded yet'; if(it.t==='say') return 'said: '+one(plain(it.text)).slice(0,60); if(it.t!=='did') return it.text.slice(0,60);
+    const e=it.e; if(e.kind!=='run') return did(e).slice(0,60);
+    const open=a.calls&&a.calls[e.id], verb=open?'running':e.err?'tried to run (it failed)':e.unknown?'ran (outcome not recorded)':'ran';      /* the same qualifications the live Officer keeps */
+    return verb+' `'+one(e.cmd).slice(0,40)+'`'+(e.seen||a.observed?' · seen in the process list':'')};
+  const needs=who.map(a=>[a,need(a)]).filter(([,N])=>N);
+  const list=needs.length?needs.map(([a,N])=>`- [ ] **${a.name}** ${N.sure?'':'probably '}${N.kind==='Approve'?'wants permission to run':N.kind==='Decide'?'asked':'needs you'}: ${N.kind==='Approve'?'`'+one(N.text).slice(0,70)+'`':'"'+one(N.text).slice(0,90)+'"'}`).join('\n'):'- [x] nothing is waiting on you';
+  if(/rule|flag|watch|warn/.test(low)){const esme=who.find(a=>a.name==='Esme'), plan=esme&&[...esme.story].reverse().find(x=>x.t==='say'&&/alembic/.test(x.text)); if(esme&&plan) cite(esme,plan);
+    const today=judgeLocal('alembic upgrade').command;      /* what this window makes of the words now, your rules included */
+    if(today==='deploy') return {text:"Esme said her migration will run through `alembic upgrade head`. The room already flags **alembic upgrade** as a deploy (that is your rule), so there is nothing to draft.",cites,actions};
+    actions.push({do:'watch_draft',words:'alembic upgrade',label:'deploy'});
+    return {text:`Esme said her migration will run through \`alembic upgrade head\`, which the room would ${today?'flag as '+today:'not flag'} today.\n\nI drafted a rule to flag **alembic upgrade** as a deploy. It is in the Watch panel with a **Keep this rule** button; nothing is saved until you press it.`,cites,actions}}
+  if(/wait|need|ask|permission|\bme\b/.test(low)){needs.forEach(([a])=>cite(a,lastOf(a)));
+    return {text:`## Waiting on you\n${list}\n\nEveryone else is working or finished.`,cites,actions}}
+  if(/stuck|slow|hang|fail|wrong/.test(low)){const cleo=who.find(a=>a.name==='Cleo'), dov=who.find(a=>a.name==='Dov'), dot=who.find(a=>a.runtime==='Codex cloud'); [cleo,dov,dot].forEach(a=>a&&cite(a,lastOf(a)));
+    const held=cleo&&Object.keys(cleo.perms||{}).length, st=cleo?cleo.story:[], endedAt=st.findLastIndex(x=>x.t==='wait'&&/^permission: /.test(x.text)), retryAt=st.findLastIndex(x=>x.t==='did'&&x.e.kind==='run'&&/CRC=soft/.test(x.e.cmd)), ended=st[endedAt], retry=st[retryAt];      /* whichever the record says last */
+    const cleoNow=held?'She is waiting on your permission to clear the build folder and retry with `CRC=soft`.':retryAt>endedAt?(cleo.calls&&cleo.calls[retry.e.id]?'You allowed the retry; `make nightly ARCH=arm64 CRC=soft` is running now.':retry.e.err?'You allowed the retry and it failed too.':'You allowed the retry; it ran, and the log records no error.'):ended?(/denied/.test(ended.text)?'You denied the clean rebuild; she said she would try an out-of-tree build instead.':'You allowed it; what came next is not recorded yet.'):'Her request ended; what came next is not recorded yet.';
+    const dotRun=dot&&[...dot.story].reverse().find(x=>x.t==='did'&&x.e.kind==='run'), dotOpen=dotRun&&dot.calls&&dot.calls[dotRun.e.id];
+    return {text:`Nothing is stuck. One thing **failed**:\n\n- **Cleo**'s \`make nightly ARCH=arm64\` ended with a linker error (\`_crc32_hw\` missing). ${cleoNow}\n\nTwo things are *long*, not stuck:\n\n1. **Dov** has been reading nightly logs for Cleo${dov?' ('+agoW(dov.story[0]?dov.story[0].ts:nowS).replace(' ago','')+' so far)':''}.\n2. **Codex cloud**'s \`${dotRun?one(dotRun.e.cmd).slice(0,40):'command'}\` ${dotOpen?'is still running, seen in the process list; whether it finished is not recorded here':'was seen in the process list; its outcome is not recorded here'}.`,cites,actions}}
+  if(/miss|happen|since|report|away|summary|shift|what/.test(low)){const rows=who.map(a=>{const it=lastOf(a); cite(a,it); return `| **${a.name}** | ${projLabel(proj(a.id))||'—'} | ${words(a,it)} | ${it?agoW(it.ts):'—'} |`}).join('\n');
+    const bram=who.find(a=>a.name==='Bram'), quote=bram&&bram.said?`\n\n> **Bram:** ${one(plain(bram.said.text)).slice(0,160)}`:'';
+    return {text:`## Shift report · ${clock(nowS)}\n| Agent | Project | Last recorded | When |\n|---|---|---|---|\n${rows}\n\n## Waiting on you\n${list}${quote}`,cites,actions}}
+  return {text:'In this demo I answer four questions from a script: **What did I miss?**, **Anything stuck?**, **Who is waiting on me?**, and a request to **draft a Watch rule**. In a live room, ask anything about what the logs record.',cites,actions}
+}
+function ofToggle(on){ofEl.classList.toggle('fold',!on); $('#ofB').setAttribute('aria-expanded',String(on)); if(on){if(!OF.loaded){OF.loaded=true; ofLoad(); if(!OF.turns.length) ofAdd('of','<p class="k">Ask what you missed, what an agent is doing, whether anything is stuck, or who changed a file. I answer from the logs the room keeps, in plain English, and say when something is not in them.</p>')} ofStatus(DEMO?'demo · scripted answers':'listening'); ofIn.focus()} else $('#ofB').focus()}
 $('#ofB').onclick=()=>ofToggle(ofEl.classList.contains('fold')); $('#ofSend').onclick=ofSend;
 $('#ofQuick').onclick=ev=>{const b=ev.target.closest('[data-q]'); if(b&&!OF.busy){ofIn.value=b.dataset.q; ofSend()}};      /* the three questions you ask most, one tap each */
 ofIn.addEventListener('keydown',ev=>{if(ev.key==='Enter'){ev.preventDefault(); ofSend()}});
@@ -1925,7 +1958,7 @@ function demo(){
   const tag=document.createElement('span'); tag.id='demoTag'; tag.textContent='DEMO · synthetic agents · nothing here is real'; $('#brand').after(tag);
   const P={orchard:'/Users/demo/Projects/Orchard',lighthouse:'/Users/demo/Projects/Lighthouse',tidewater:'/Users/demo/Projects/Tidewater'};
   const ag=(id,o)=>handle(Object.assign({kind:'agent',agent:id,ts:t,started:o.started||t},o));
-  const ev=(id,o)=>handle(Object.assign({agent:id,ts:t},o));
+  const ev=(id,o)=>handle(Object.assign({agent:id,ts:t,seq:++DSEQ},o));
   /* the fleet */
   ag('c:demo-ada',{name:'Ada',runtime:'Claude',cwd:P.orchard,model:'claude-opus-5-5',branch:'pricing-table',goal:'Add the seasonal pricing table to the catalogue and wire it to checkout.',ctx:61000,ctxref:140000});
   ag('x:demo-bram',{name:'Bram',runtime:'Codex',cwd:P.orchard,model:'gpt-6-astra',branch:'pricing-table',goal:"Review Ada's pricing change before it ships. Read-only.",ctx:88000,ctxmax:258000});
@@ -1945,7 +1978,7 @@ function demo(){
   ev('x:demo-bram',{kind:'read',id:'b1',path:'/Users/demo/Projects/Orchard/src/pricing/table.ts'}); t+=5; ev('x:demo-bram',{kind:'result',id:'b1',text:'export const seasons = …'}); t+=90;
   ev('x:demo-bram',{kind:'say',text:'Verdict: GO, with one caveat — the rounding in cents is done after the discount, so a 15% season on $19.99 is $16.9915: the table shows $16.99, but the cart sums the unrounded cents, so four of them come to $67.97 instead of $67.96. Ada should round once, per line.'}); t+=2; ev('x:demo-bram',{kind:'turn_end'});
   ev('x:demo-esme',{kind:'run',id:'e1',cmd:'psql -c "\\d sessions"',why:'inspect the current schema'}); t+=3; ev('x:demo-esme',{kind:'result',id:'e1',text:'Table "public.sessions" … 14 columns'}); t+=60;
-  ev('x:demo-esme',{kind:'say',text:'The table has 2.1 million rows and no created_at index. Should I migrate the old rows too, or only new ones from the cut-over?'}); t+=2; ev('x:demo-esme',{kind:'turn_end'});
+  ev('x:demo-esme',{kind:'say',text:'Plan: run `alembic upgrade head` against the replica first, then cut over. The table has 2.1 million rows and no created_at index. Should I migrate the old rows too, or only new ones from the cut-over?'}); t+=2; ev('x:demo-esme',{kind:'turn_end'});
   ev('c:demo-cleo',{kind:'web',id:'c0',q:'ld: symbol not found _crc32_hw arm64 linker'}); t+=4;
   ev('c:demo-cleo',{kind:'result',id:'c0',text:'3 results\n\n1. _crc32_hw undefined when CRC fast path is enabled on arm64 — build-notes.example\n   The hardware CRC32 path is only compiled in when the target advertises the crc feature; on arm64 builds without it the symbol is declared but never defined, so the link fails. Workaround: CRC=soft.\n\n2. Why does the nightly link fail only on arm64? — forum.example/q/18842\n   Same error after enabling the crc32 fast path. The x86 build has the SSE4.2 implementation; arm64 needs the +crc target feature or the soft fallback.\n\n3. CRC32 build flags reference — docs.example/build/crc\n   CRC=hw (default where supported), CRC=soft (portable, slower), CRC=auto (probe at configure time).'}); t+=12;
   ev('c:demo-cleo',{kind:'run',id:'c1',cmd:'make nightly ARCH=arm64',why:'reproduce the failure'}); t+=40; ev('c:demo-cleo',{kind:'result',id:'c1',text:'…\nld: symbol not found: _crc32_hw\nmake: *** [nightly] Error 1',error:true}); t+=8;
@@ -1968,6 +2001,8 @@ function demo(){
     if(n%9===4){if(n===4) ev('c:demo-dov',{kind:'say',text:'First arm64 failure is in nightly-2026-10-03.log line 1142: ld: symbol not found: _crc32_hw. It appears after the crc32 fast path was enabled.'}); pulse('c:demo-dov','c:demo-cleo','reported back')}      /* said once; the hand-off pulse recurs */
   };
   tick(); setInterval(tick,3500);
+  const asked=location.search.match(/[?&]ask=(report|stuck|waiting|rule)\b/);      /* a staged question, for stills and recordings of the demo */
+  if(asked) setTimeout(()=>{ofToggle(true); ofIn.value={report:'What did I miss?',stuck:'Is anything stuck?',waiting:'Who is waiting on me?',rule:'Draft a rule that flags the sessions migration as a deploy.'}[asked[1]]; ofSend().then(()=>{ofLog.scrollTop=0})},1500);      /* and show the answer from its top, for a still */
 }
 setInterval(render,STEADY?1000:250);
 if(DEMO) demo(); else start();
