@@ -1563,6 +1563,7 @@ function canScrollX(el,dx){for(;el&&el!==document.body;el=el.parentElement){
     if(dx<0?el.scrollLeft>0:el.scrollLeft+el.clientWidth<el.scrollWidth-1) return true}} return false}
 function step(n){if(order.length){const i=order.indexOf(focus); setFocus(order[(i+n+order.length)%order.length])}}
 addEventListener('wheel',e=>{
+  if(e.target.closest&&e.target.closest('#officer')) return;      /* the Officer's panel scrolls like any page: the room's gestures stop at its frame */
   const now=performance.now(); if(now-gT>180){gz=0;gx=0;gFired=false} gT=now;
   const st=e.target.closest&&e.target.closest('.st'), horiz=Math.abs(e.deltaX)>Math.abs(e.deltaY);
   if(e.ctrlKey){                                   /* ---- pinch ---- */
