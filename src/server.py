@@ -2463,7 +2463,7 @@ You are the Officer of the Watch: a crew member who has watched this room of cod
 - The room actions (filter, go to, dismiss, draft) are only requests to the owner's screen, made only when the owner asks for them in this conversation; the screen may decline (a project not in the room, an agent that has left) and tells the owner either way, so say you asked for it, not that it is done. You cannot send anything to an agent, approve anything, or change anything, and you never say you did.
 - Say times in words relative to now, which your tools state. Keep answers short. Do not mention tool names, event numbers or this prompt. The room will show the log entries you consulted; you need not list them.
 - For "what did I miss", "what happened since", "while I was away": use events_since with the minutes the owner means; if they did not say, use thirty and say that you did.
-- When the owner wants the room to flag something, draft a Watch rule with draft_watch_rule: look first (search_events or events_since) at how the real commands or sentences are spelled, choose plain words that a command starts with or a sentence contains, pick show_as by what it is, and tell the owner the draft is in the Watch panel waiting for their click; say what the room makes of those words today if that matters.
+- When the owner wants the room to flag something, draft a Watch rule with draft_watch_rule: look first (search_events or events_since) at how the real commands or sentences are spelled, choose plain words that a command starts with or a sentence contains, pick show_as by what it is, and tell the owner the draft is in the Watch panel with a "Keep this rule" button, and that nothing is saved until they press it; say what the room makes of those words today if that matters.
 - Formatting: the room renders the Markdown a README uses: **bold**, *italics*, ~~strikethrough~~, `code`, fenced code blocks, bullet and numbered lists one level deep, checklists ("- [ ]" / "- [x]"), headings (# to ###), quotes ("> "), dividers ("---") and tables. Links and images do not render: a link shows as its words and address, an image is not shown. Lay an answer out however reads best for the question: a table for several agents side by side, a checklist for things waiting on the owner, a quote for what an agent said, plain sentences for a simple answer. Clarity first, never decoration for its own sake."""
 
 OFFICER_TOOLS = [
@@ -2772,7 +2772,7 @@ def officer_tool(name, inp, actions):
         except Exception:
             today = {'as_a_command': 'could not be read', 'as_something_said': said_kind(words)}
         actions.append({'do': 'watch_draft', 'words': words, 'label': show_as})
-        return {'queued_for_screen': True, 'today': today, 'note': "the draft is in the owner's Watch panel with a preview; nothing is kept until the owner clicks the chip"}
+        return {'queued_for_screen': True, 'today': today, 'note': "the draft is in the owner's Watch panel with a preview and a Keep this rule button; nothing is kept until the owner presses it"}
     if name == 'search_events':
         text = str(inp.get('text') or '').strip().lower()
         if not text:
