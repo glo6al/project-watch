@@ -693,6 +693,33 @@ def test_officer():
         del server.AGENTS['k:cccccccc-3']
         tl2 = server.officer_tool('agent_timeline', {'agent': 'codex', 'limit': 'many'}, acts)
         check('a failed change stays "tried to" and a guessed command stays "probably"; a bad limit is not an error', [s['what'][:12] for s in tl2['steps']][:3] == ['said: All se', 'tried to cha', 'probably sta'] and 'no result yet' in tl2['steps'][2]['what'])
+        es = server.officer_tool('events_since', {'minutes': 5, 'limit': 3}, acts)
+        check('events_since is bounded, oldest first, each step with its agent, and says how many it left out', len(es['steps']) == 3 and es['steps'][-1]['id'] == 'k:cccccccc-3' and es['steps'][-2]['agent'] == 'Codex 6b82' and es['steps'][-2]['what'].startswith('the step') and all('id' in st for st in es['steps']) and 'latest 3' in es['note'])
+        server.AGENTS['k:dddddddd-4'] = {'name': 'Quiet', 'runtime': 'Cursor', 'cwd': '/tmp/q'}
+        check('events_since can be narrowed to one agent, and says when there is nothing', all(st['agent'] == 'Rowan' for st in server.officer_tool('events_since', {'minutes': 10, 'agent': 'rowan'}, acts)['steps']) and 'silence' in server.officer_tool('events_since', {'minutes': 10, 'agent': 'quiet'}, acts)['note'])
+        del server.AGENTS['k:dddddddd-4']
+        server.AGENTS['e:eeeeeeee-5'] = {'name': 'Codex cloud', 'runtime': 'Codex cloud', 'cwd': '/tmp/c', 'observed': 'the process list'}
+        server.emit('e:eeeeeeee-5', 'run', False, now - 8, id='c9', cmd='git status', seen=True)        # arrives after newer records of other agents
+        server.emit('e:eeeeeeee-5', 'result', False, now - 7, id='c9', text='')
+        es2 = server.officer_tool('events_since', {'minutes': 5, 'limit': 60}, acts)
+        ts_order = [st['what'] for st in es2['steps']]
+        at = lambda prefix: next(i for i, w in enumerate(ts_order) if w.startswith(prefix))
+        check('events_since is in time order even when an older record arrived later', at('ran git status') < at('the step "ran git status" returned') < at('started to hand work to worker') and ts_order[-1].startswith('started to run ls'))
+        del server.AGENTS['e:eeeeeeee-5']
+        es3 = server.officer_tool('events_since', {'minutes': 5, 'limit': 60}, acts)
+        gone = [st for st in es3['steps'] if st['id'] == 'e:eeeeeeee-5']
+        check('an observed agent that has left keeps its name and its process-list provenance', len(gone) == 2 and all(st['agent'] == 'Codex cloud (no longer in the room)' and st.get('source') for st in gone))
+        server.AGENTS['e:ffffffff-6'] = {'name': 'Brief', 'runtime': 'Codex cloud', 'cwd': '/tmp/b', 'observed': 'the process list'}
+        server.emit('e:ffffffff-6', 'run', False, now - 3, id='b1', cmd='ls', seen=True)
+        del server.AGENTS['e:ffffffff-6']                   # gone before the Officer was ever asked
+        brief = [st for st in server.officer_tool('events_since', {'minutes': 5, 'limit': 60}, acts)['steps'] if st['id'] == 'e:ffffffff-6']
+        check('an agent that left before the Officer was first asked is still named', brief and brief[0]['agent'] == 'Brief (no longer in the room)' and brief[0].get('source'))
+        check('events_since with an unknown agent is an error, not a crash', 'error' in server.officer_tool('events_since', {'minutes': 5, 'agent': 'nobody'}, acts))
+        acts2 = []
+        dr = server.officer_tool('draft_watch_rule', {'words': '  npm   run migrate ', 'show_as': 'deploy'}, acts2)
+        check('a Watch rule draft is queued for the page with its words tidied, never kept here', dr['queued_for_screen'] and acts2 == [{'do': 'watch_draft', 'words': 'npm run migrate', 'label': 'deploy'}] and 'as_a_command' in dr['today'] and not any(r.get('text') == 'npm run migrate' for r in server.WATCH_RULES))
+        check('a second draft in the same answer is refused, so every "drafted" is a draft the panel holds', 'error' in server.officer_tool('draft_watch_rule', {'words': 'git push', 'show_as': 'push'}, acts2) and len([a for a in acts2 if a['do'] == 'watch_draft']) == 1)
+        check('a draft with a bad kind or no words is refused', 'error' in server.officer_tool('draft_watch_rule', {'words': 'x', 'show_as': 'nuke'}, acts2) and 'error' in server.officer_tool('draft_watch_rule', {'words': '  ', 'show_as': 'check'}, acts2) and 'error' in server.officer_tool('draft_watch_rule', {'words': 'w' * 81, 'show_as': 'check'}, acts2))
         lk = server.officer_tool('open_session_link', {'agent': 'rowan'}, acts)
         check('open_session_link answers from room state and reads no file', lk['how'].startswith('the Open button') and 'checks when the button is pressed' in lk['can_open'])
         check('an unknown agent is said to be unknown, and a non-object input is refused', 'error' in server.officer_tool('agent_timeline', {'agent': 'nobody'}, acts) and 'error' in server.officer_tool('agent_timeline', 'rowan', acts))
@@ -753,6 +780,56 @@ def test_officer():
             return {'stop_reason': 'refusal', 'content': []}, ''
         out = server.officer_ask([{'role': 'user', 'content': 'x'}], call=draft_then_refuse)
         check('a refusal after a draft is scrubbed like every other answer', out['text'] == "I can't answer that one." and 'sk-ant' not in json.dumps(out) and '[a key]' in out['actions'][0]['text'])
+        # last, because it floods the log past its cap and evicts the earlier synthetic steps
+        for i in range(4100):                                 # thousands of other agents come and go
+            server.KNOWN_NAMES['c:%08x-x' % i] = 'Gone %d' % i
+        fill = lambda n: [server.emit('c:aaaaaaaa-1', 'run', False, now, id='f', cmd='true', why='') for _ in range(n)]
+        fill(3990 - len(server.LOG))                          # just under the cap
+        server.AGENTS['e:99999999-7'] = {'name': 'Late', 'runtime': 'Codex cloud', 'cwd': '/tmp/l', 'observed': 'the process list'}
+        server.emit('e:99999999-7', 'run', False, now, id='l1', cmd='pwd', seen=True)
+        del server.AGENTS['e:99999999-7']
+        fill(1100)                                            # the first trim: the filler before Late's event goes, Late's event stays
+        check('a departed agent\'s name survives a trim that keeps its event, while names with no event are evicted', any(e.get('agent') == 'e:99999999-7' for e in server.LOG) and server.KNOWN_NAMES.get('e:99999999-7') == 'Late' and not any(k.startswith('c:0000') for k in server.KNOWN_NAMES))
+        fill(4100)                                            # and once Late's event is gone, so is its name
+        check('and goes once its last event has gone', not any(e.get('agent') == 'e:99999999-7' for e in server.LOG) and 'e:99999999-7' not in server.KNOWN_NAMES)
+        import threading as _th2
+        errs = []
+        def flood():
+            try:
+                for i in range(6000):
+                    server.emit('c:aaaaaaaa-1', 'run', False, now, id='g', cmd='true', why='')
+            except Exception as e:
+                errs.append(e)
+        def churn():
+            try:
+                for i in range(6000):
+                    aid = 'c:%08x-c' % i
+                    server.AGENTS[aid] = {'name': 'Churn %d' % i}
+                    server.remember_name(aid)
+                    del server.AGENTS[aid]
+                    with server.COND:
+                        server.KNOWN_NAMES['c:%08x-z' % i] = 'Z'       # keep the dictionary above the eviction threshold
+            except Exception as e:
+                errs.append(e)
+        ts = [_th2.Thread(target=flood), _th2.Thread(target=churn)]
+        for t in ts: t.start()
+        for t in ts: t.join(60)
+        check('names can be remembered while another thread trims the log and evicts: no crash', not errs and not any(t.is_alive() for t in ts))
+        server.AGENTS['e:88888888-8'] = {'name': 'Snap', 'runtime': 'Codex cloud', 'cwd': '/tmp/s', 'observed': 'the process list'}
+        server.emit('e:88888888-8', 'run', False, now, id='s1', cmd='pwd', seen=True)
+        del server.AGENTS['e:88888888-8']
+        real_step, fired = server.officer_step, [0]
+        def trim_then_step(*a, **k):                      # a trim lands between the tool's snapshot and its formatting
+            if not fired[0]:
+                fired[0] = 1
+                fill(4200)                                # evicts Snap's event and, with it, its name
+            return real_step(*a, **k)
+        server.officer_step = trim_then_step
+        try:
+            snap = [st for st in server.officer_tool('events_since', {'minutes': 5, 'limit': 60}, acts)['steps'] if st['id'] == 'e:88888888-8']
+        finally:
+            server.officer_step = real_step
+        check('a trim between the snapshot and the formatting cannot strip a name from a step already copied', fired[0] and snap and snap[0]['agent'] == 'Snap (no longer in the room)' and 'e:88888888-8' not in server.KNOWN_NAMES)
     finally:
         server.AGENTS.clear(); server.AGENTS.update(saved[0]); server.LOG[:] = saved[1]; server.BASE = saved[2]
 

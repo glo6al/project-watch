@@ -102,6 +102,7 @@ body.stepped #officer{bottom:118px}body.stepped.portrait #officer{bottom:296px}b
 #watchMini .mh{padding:8px 10px;display:flex;gap:10px;align-items:center}#watchMini .mh .av{width:22px;height:22px;border-radius:4px;background:#1b2230;border:1px solid #2a3340;flex:none}
 #watchMini .mh b{color:#ff7bd1;display:block}#watchMini .mh span{color:#d7dbe4;font-size:12px}
 #watchMini .mb{padding:4px 10px 10px;font:11px/1.5 ui-monospace,Menlo,monospace;color:#9aa4b2;white-space:pre-wrap;word-break:break-word}#watchMini .mb .c{color:#d7dbe4}#watchMini .mb .al{color:var(--del);font-weight:700;margin-left:6px}#watchMini .mb .q{font:13px/1.4 -apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-serif;color:#eef2f7}
+#watchP .wch.sug{border-color:var(--hl);box-shadow:0 0 0 1px var(--hl)}#watchP .wch.sug::after{content:" · suggested";font-weight:400;letter-spacing:0;text-transform:none;color:#9fc3e0}
 #watchAs{display:flex;flex-direction:column;gap:6px}#watchAs.busy .wch{opacity:.5;cursor:progress}
 #watchAs .grow{display:flex;flex-wrap:wrap;gap:4px;align-items:center}      /* one row per group: a command, something it says, neither */
 #watchAs .grp{font:600 10px ui-monospace,Menlo,monospace;letter-spacing:.1em;text-transform:uppercase;color:#4f7590;margin-right:4px;white-space:nowrap}
@@ -851,7 +852,7 @@ function applyWatch(w){
   try{ if(typeof w.decide==='string') DEC=w.decide?new RegExp(w.decide,'i'):/(?!)/}catch(err){}
 }
 const WATCH_NAME={deploy:'a deploy',push:'a push',publish:'a publish',delete:'a delete',send:'sending something out',check:'a test or build',action:'probably needs you to act',decide:'probably asking you'};
-let WATCH_RULES=[];
+let WATCH_RULES=[], WATCH_SUG='';      /* WATCH_SUG: the chip the Officer suggested, marked until you edit the words or press a chip */
 /* what the room makes of something an agent said: plain text, the last four sentences, an action to take (any of them) before a question (the last one).
    In a live window ACT and DEC already hold your words (the server joins them in); a demo window adds the words taught here. */
 function saidKind(text){
@@ -944,7 +945,7 @@ function paintMini(text,v){
   txt(mk,'Preview · what the room would show'+(DEMO||!KEY?' · demo: an approximate reading, without the server':'')); hid(mini,false); hid(mk,false);
   if(v.unknown){hid(as,true); hid(ask,true); return}      /* nothing to teach against until the room has answered */
   const cur=(sentence?v.said:v.command)||'none';
-  const chip=k=>`<button type="button" class="wch${k===cur?' on':''}" data-as="${esc(k)}" title="${k===cur?'what it is now':k==='none'?'remove your rule for these words':'teach the room: these words mean '+esc(WATCH_NAME[k]||k)}">${esc(k==='action'?'needs you':k==='decide'?'asking you':k==='none'?'no tag':k)}</button>`;
+  const chip=k=>`<button type="button" class="wch${k===cur?' on':''}${k===WATCH_SUG?' sug':''}" data-as="${esc(k)}" title="${k===cur?'what it is now':k==='none'?'remove your rule for these words':'teach the room: these words mean '+esc(WATCH_NAME[k]||k)}">${esc(k==='action'?'needs you':k==='decide'?'asking you':k==='none'?'no tag':k)}</button>`;
   put(as,`<div class="grow"><span class="grp">as a command</span>`+CMD_KINDS.map(chip).join('')+`</div><div class="grow"><span class="grp">as something it says</span>`+['action','decide'].map(chip).join('')+`</div><div class="grow"><span class="grp">or neither</span>`+chip('none')+`</div>`);
   hid(as,false); hid(ask,false);
 }
@@ -981,8 +982,8 @@ const watchOpen=on=>{const p=$('#watchP'); p.hidden=!on; $('#watchB').setAttribu
 $('#watchB').onclick=()=>watchOpen($('#watchP').hidden);
 addEventListener('pointerdown',e=>{if(!$('#watchP').hidden&&!e.target.closest('#watchW')) watchOpen(false)},true);      /* a click anywhere else closes the panel */
 addEventListener('keydown',e=>{if(e.key==='Escape'&&!$('#watchP').hidden){watchOpen(false); $('#watchB').focus(); e.stopImmediatePropagation()}},true);      /* so does Escape, without stepping back from a desk */
-{let tT=null; $('#watchTry').oninput=()=>{hid($('#watchSaved'),true); clearTimeout(tT); tT=setTimeout(()=>judge($('#watchTry').value),220)};
-  $('#watchAs').onclick=ev=>{const b=ev.target.closest('[data-as]'); if(!b||b.classList.contains('on')||$('#watchAs').classList.contains('busy')) return; teach($('#watchTry').value.trim(), b.dataset.as)};}
+{let tT=null; $('#watchTry').oninput=()=>{WATCH_SUG=''; $('#watchAs').querySelectorAll('.sug').forEach(x=>x.classList.remove('sug')); hid($('#watchSaved'),true); clearTimeout(tT); tT=setTimeout(()=>judge($('#watchTry').value),220)};
+  $('#watchAs').onclick=ev=>{const b=ev.target.closest('[data-as]'); if(!b||$('#watchAs').classList.contains('busy')) return; const sug=b.classList.contains('sug'); WATCH_SUG=''; $('#watchAs').querySelectorAll('.sug').forEach(x=>x.classList.remove('sug')); if(b.classList.contains('on')&&!sug) return; teach($('#watchTry').value.trim(), b.dataset.as)};}
 /* teaching: these words mean one thing, so any earlier rule for the same words goes first; 'none' just removes yours */
 const UNDO={}; let undoN=0;             /* what each Save replaced, kept here rather than in the markup */
 const mine=()=>WATCH_RULES.filter(r=>!r.shipped).map(r=>({label:r.label,text:r.text}));
@@ -1876,6 +1877,10 @@ function ofAct(x){      /* [done, words]: done only when the screen actually cha
     setProj(key); return [PROJ===key,PROJ===key?'showing only '+projLabel(key):'the filter could not be applied']}
   if(x.do==='go_to'){if(!A[x.agent]) return [false,'that agent is no longer in the room']; setFocus(x.agent); return [true,'went to '+(A[x.agent].name||'the desk')]}
   if(x.do==='dismiss'){if(!A[x.agent]) return [false,'that agent is no longer in the room']; dismiss(x.agent); return [true,'dismissed '+A[x.agent].name+' (Bring back undoes it)']}
+  if(x.do==='watch_draft'){const w=[...String(x.words||'').trim().split(/\s+/).join(' ')].slice(0,80).join(''), label=String(x.label||'');      /* eighty characters as the server counts them, never half of one */ if(!w||!KIND_ORDER.includes(label)) return [false,'the Watch rule draft was not usable'];
+    if(OF.drafted) return [false,`a second Watch rule ("${w}") was not drafted: the Watch panel holds one draft at a time; ask for it after keeping or dropping the first`];
+    OF.drafted=true; WATCH_SUG=label; watchOpen(true); const t=$('#watchTry'); t.value=w; hid($('#watchSaved'),true); judge(w);      /* the words go into Try with their preview; the suggested chip is marked, never pressed */
+    return [true,`drafted a Watch rule in the Watch panel: "${w}" shown as ${WATCH_NAME[label]||label}. Press that chip there to keep it; nothing is saved until you do`]}
   if(x.do==='draft'){const t=String(x.text||''); const d=ofAdd('of',`<div class="draft">${esc(t)}</div><div class="cites"><button class="copy">Copy to clipboard</button></div>`); d.querySelector('.copy').onclick=async ev=>{try{await navigator.clipboard.writeText(t); ev.target.textContent='Copied'}catch(err){ev.target.textContent='Select and copy it above'}}; return [true,'drafted the text above; press Copy']}
   return [false,'']}
 async function ofSend(){
@@ -1892,7 +1897,8 @@ async function ofSend(){
     const seen=new Set(), cites=(r.cites||[]).filter(c=>c&&c.n!=null&&!seen.has(c.n)&&seen.add(c.n)).slice(0,12);
     const d=ofAdd('of',ofParas(r.text)+(cites.length?`<div class="cites">${cites.map(ofCite).join('')}</div><div class="k">log entries it consulted</div>`:''));
     d.querySelectorAll('.cites button[data-n]').forEach(b=>b.onclick=()=>ofJump(b.dataset.a,+b.dataset.n));
-    for(const x of (r.actions||[])){const [ok,words]=ofAct(x); if(words) ofAdd('done',(ok?'Done · ':'Not done · ')+esc(words))}
+    let toWatch=false; OF.drafted=false; for(const x of (r.actions||[])){const [ok,words]=ofAct(x); if(words) ofAdd('done',(ok?'Done · ':'Not done · ')+esc(words)); if(ok&&x.do==='watch_draft') toWatch=true}
+    if(toWatch){ofToggle(false); $('#watchTry').focus()}      /* the draft is in the Watch panel, which this panel would cover: fold, so the chip is in view; the answer stays in the log */
     ofSave();
   }catch(err){OF.turns.pop(); ofAdd('of','<p class="k">The Officer could not be reached.</p>')}
   finally{OF.busy=false; $('#ofSend').disabled=false; if(ofSt.textContent==='thinking…') ofStatus('listening'); ofIn.focus()}
