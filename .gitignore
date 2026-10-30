@@ -7,6 +7,9 @@ node_modules/
 # working history kept on disk but not meant for the repository; delete this line to publish it
 archive/
 
+# local investigation evidence may contain personal paths and session metadata
+docs/investigations/
+
 # brand process notes and the AI-generated reference images they describe (carry C2PA provenance manifests); the production SVG/PNG set in brand/ ships
 brand/reference/
 brand/HANDOFF.md

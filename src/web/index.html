@@ -86,6 +86,7 @@ body.stepped #officer{bottom:118px}body.stepped.portrait #officer{bottom:296px}b
 #ofLog .of pre{margin:4px 0 6px;padding:8px 10px;background:#0d1016;border:1px solid #2a3340;border-radius:3px;overflow:auto;font:12px/1.5 ui-monospace,Menlo,monospace;color:#d7dbe4;white-space:pre}#ofLog .of pre code{border:0;background:none;padding:0}
 #ofLog .of table{border-collapse:collapse;margin:4px 0 8px;font-size:12px;max-width:100%}#ofLog .of th,#ofLog .of td{border:1px solid #1f3a52;padding:3px 8px;text-align:left;vertical-align:top}#ofLog .of th{font:600 10px ui-monospace,Menlo,monospace;letter-spacing:.1em;text-transform:uppercase;color:#7fa6c2;background:#0d1a2b}
 #ofLog .cites{display:flex;flex-wrap:wrap;gap:4px;margin-top:4px}#ofLog .cites button{all:unset;cursor:pointer;font:600 10px ui-monospace,Menlo,monospace;letter-spacing:.06em;color:#9fc3e0;background:#0d1a2b;border:1px solid #1f3a52;border-radius:3px;padding:2px 7px}
+#ofLog .message{border-left:2px solid #1f3a52;padding-left:10px;overflow-wrap:anywhere}#ofLog .message-id{overflow-wrap:anywhere}#ofLog .cites button:disabled{opacity:.5;cursor:default}
 #ofLog .cites button:hover{border-color:var(--hl)}
 #ofLog .draft{white-space:pre-wrap;background:#0d1016;border:1px solid #2a3340;border-radius:3px;padding:8px 10px;font:12px ui-monospace,Menlo,monospace;color:#d7dbe4;margin-top:4px}
 #ofQuick{display:flex;gap:6px;flex-wrap:wrap;padding:8px 10px 0;border-top:1px solid #1f3a52}#ofQuick button{all:unset;cursor:pointer;font:600 10px ui-monospace,Menlo,monospace;letter-spacing:.06em;color:#9fc3e0;background:#0d1a2b;border:1px solid #1f3a52;border-radius:3px;padding:3px 8px}#ofQuick button:hover,#ofQuick button:focus-visible{border-color:var(--hl);outline:none}
@@ -1877,6 +1878,46 @@ function ofJump(aid,n){const a=A[aid]; if(!a){ofAdd('k','<span class="k">That ag
     if(el&&el.getClientRects().length){el.scrollIntoView({block:'center'}); el.classList.add('hl'); setTimeout(()=>el.classList.remove('hl'),1600)}
     else ofAdd('k',`<span class="k">That entry is kept for ${esc(a.name||'this agent')} but is not drawn on its desk right now.</span>`)};
   land()}
+/* agent message helpers: display backend requests; replies never become Officer instructions. */
+const OFM={records:new Map(),polling:false,available:null,reason:'',notice:null};
+function ofMessageSave(){if(DEMO) return; try{store.setItem('liveRoomMessages',JSON.stringify([...OFM.records.values()].filter(r=>r.request_id).slice(-100).map(({el,painted,...r})=>r)))}catch(err){}}
+function ofMessageNotice(t){if(!OFM.notice) OFM.notice=ofAdd('k',''); OFM.notice.textContent=t}
+function ofMessagePaint(r){
+  if(!r.el) r.el=ofAdd('of message','');
+  const labels={sending:'Sending · delivery not yet confirmed',queued:'Queued · waiting for a reply',awaiting_reply:'Awaiting reply',answered:'Answered',expired:'Expired · delivery may have occurred; no automatic resend',failed:'Failed · no automatic resend',unknown:'Delivery unknown · check status; do not resend'};
+  const state=labels[r.state]||labels.unknown;
+  const markup=`<b>Message to ${esc(r.name||r.agent)}</b><div class="k message-id">${esc(r.agent)}</div><div class="draft">${esc(r.question)}</div><p class="k" role="status">${esc(state)}${r.error?' · '+esc(r.error):''}</p>${r.state==='answered'?`<b>Reply from ${esc(r.name||r.agent)}</b>${ofParas(String(r.reply||''))}`:''}${r.state==='unknown'?'<div class="cites"><button type="button" class="message-check">Check status</button></div>':''}`;
+  if(r.painted!==markup){r.el.innerHTML=markup; r.painted=markup}
+  const retry=r.el.querySelector('.message-check'); if(retry){retry.onclick=()=>ofMessagePoll()}
+}
+function ofMessageMerge(rows){
+  if(DEMO) return;
+  for(const v of rows){if(!v||typeof v.request_id!=='string'||typeof v.agent!=='string'||typeof v.question!=='string') continue;
+    let r=OFM.records.get(v.request_id);
+    if(!r){r={}; OFM.records.set(v.request_id,r)}
+    Object.assign(r,{request_id:v.request_id,agent:v.agent,name:String(v.name||v.agent),question:v.question,state:v.state,reply:v.reply,error:v.error}); ofMessagePaint(r);
+  }
+  ofMessageSave();
+}
+async function ofMessagePoll(){
+  if(DEMO||!KEY||claiming||!OF.loaded||OFM.polling) return;
+  if(!connected){ofMessageNotice('Room connection is offline. Message status will refresh when it reconnects.'); return}
+  OFM.polling=true;
+  try{
+    const res=await fetch('/agent-messages',{headers:{'X-Live-Room-Key':KEY},cache:'no-store',signal:AbortSignal.timeout(10000)});
+    if(!res.ok) throw new Error(res.status===401||res.status===403?'Message status requires an unlocked room.':'Message status unavailable ('+res.status+').');
+    const v=await res.json(); if(!Array.isArray(v.requests)) throw new Error('Message status response was not valid.');
+    OFM.available=v.available; OFM.reason=String(v.reason||''); ofMessageMerge(v.requests);
+    ofMessageNotice(v.available===false?'Agent messaging unavailable: '+(OFM.reason||'transport is not ready'):'');
+  }catch(err){ofMessageNotice((err.message||'Could not reach message status.')+' Pending questions are kept; nothing was resent.')}
+  finally{OFM.polling=false}
+}
+function ofMessageLoad(){
+  if(DEMO) return;
+  try{const rows=JSON.parse(store.getItem('liveRoomMessages')||'[]'); if(Array.isArray(rows)) ofMessageMerge(rows.slice(-100).map(r=>({...r,state:r.state==='sending'?'unknown':r.state})))}catch(err){}
+  ofMessagePoll();
+}
+/* end agent message helpers */
 function ofAct(x){      /* [done, words]: done only when the screen actually changed as asked */
   if(x.do==='filter'){const n=String(x.project||'').trim(); if(!n){setProj(null); return [true,'showing every project']}
     const low=n.toLowerCase(), key=order.map(k=>proj(k)).find(k=>k&&(k.toLowerCase()===low||String(projLabel(k)).toLowerCase()===low)); if(!key) return [false,'no project called '+n+' is in the room, so the filter was not changed'];
@@ -1896,17 +1937,19 @@ async function ofSend(){
   OF.turns.push({role:'user',content:q}); ofAdd('you',esc(q)); ofIn.value=''; OF.busy=true; $('#ofSend').disabled=true; ofStatus('thinking…');
   if(DEMO){await new Promise(r=>setTimeout(r,700)); const r=ofDemoAnswer(q); ofShow(r); ofAdd('k','<span class="k">A scripted answer for the demo, built from the synthetic agents on screen. In a live room the Officer asks the model.</span>'); OF.turns.pop(); OF.busy=false; $('#ofSend').disabled=false; ofStatus('demo · scripted answers'); ofIn.focus(); return}
   try{
-    const res=await post('/ask',{turns:OF.turns.slice(-20)});
+    const request_id=globalThis.crypto?.randomUUID?.();
+    const res=await post('/ask',{turns:OF.turns.slice(-20),...(request_id?{request_id}:{})});
     if(!res.ok){const t=await res.text(); OF.turns.pop(); ofAdd('of',`<p class="k">${esc(t||('The Officer could not answer ('+res.status+').'))}</p>`); ofStatus(res.status===503?'off':'listening'); return}
     const r=await res.json();
     if(r.error){OF.turns.pop(); ofAdd('of',`<p class="k">${esc(r.error)}</p>`); return}
     OF.turns.push({role:'assistant',content:String(r.text||'').slice(0,4000)});
     ofShow(r);
     ofSave();
-  }catch(err){OF.turns.pop(); ofAdd('of','<p class="k">The Officer could not be reached.</p>')}
+  }catch(err){OF.turns.pop(); ofAdd('of','<p class="k">The Officer could not be reached. If you asked it to message an agent, check the question status before asking again.</p>')}
   finally{OF.busy=false; $('#ofSend').disabled=false; if(ofSt.textContent==='thinking…') ofStatus('listening'); ofIn.focus()}
 }
 function ofShow(r){      /* one answer onto the log: its words, the entries it consulted as chips, and what it asked the screen to do */
+  if(Array.isArray(r.messages)) ofMessageMerge(r.messages);
   const seen=new Set(), cites=(r.cites||[]).filter(c=>c&&c.n!=null&&!seen.has(c.n)&&seen.add(c.n)).slice(0,12);
   const d=ofAdd('of',ofParas(r.text)+(cites.length?`<div class="cites">${cites.map(ofCite).join('')}</div><div class="k">log entries it consulted</div>`:''));
   d.querySelectorAll('.cites button[data-n]').forEach(b=>b.onclick=()=>ofJump(b.dataset.a,+b.dataset.n));
@@ -1942,7 +1985,8 @@ function ofDemoAnswer(q){      /* the demo's Officer: four scripted answers, eac
     return {text:`## Shift report · ${clock(nowS)}\n| Agent | Project | Last recorded | When |\n|---|---|---|---|\n${rows}\n\n## Waiting on you\n${list}${quote}`,cites,actions}}
   return {text:'In this demo I answer four questions from a script: **What did I miss?**, **Anything stuck?**, **Who is waiting on me?**, and a request to **draft a Watch rule**. In a live room, ask anything about what the logs record.',cites,actions}
 }
-function ofToggle(on){ofEl.classList.toggle('fold',!on); $('#ofB').setAttribute('aria-expanded',String(on)); if(on){if(!OF.loaded){OF.loaded=true; ofLoad(); if(!OF.turns.length) ofAdd('of','<p class="k">Ask what you missed, what an agent is doing, whether anything is stuck, or who changed a file. I answer from the logs the room keeps, in plain English, and say when something is not in them.</p>')} ofStatus(DEMO?'demo · scripted answers':'listening'); ofIn.focus()} else $('#ofB').focus()}
+function ofToggle(on){ofEl.classList.toggle('fold',!on); $('#ofB').setAttribute('aria-expanded',String(on)); if(on){if(!OF.loaded){OF.loaded=true; ofLoad(); ofMessageLoad(); if(!OF.turns.length) ofAdd('of','<p class="k">Ask what you missed, what an agent is doing, whether anything is stuck, or who changed a file. I answer from the logs the room keeps, in plain English, and say when something is not in them.</p>')} ofStatus(DEMO?'demo · scripted answers':'listening'); ofIn.focus()} else $('#ofB').focus()}
+setInterval(()=>ofMessagePoll(),3000);
 $('#ofB').onclick=()=>ofToggle(ofEl.classList.contains('fold')); $('#ofSend').onclick=ofSend;
 $('#ofQuick').onclick=ev=>{const b=ev.target.closest('[data-q]'); if(b&&!OF.busy){ofIn.value=b.dataset.q; ofSend()}};      /* the three questions you ask most, one tap each */
 ofIn.addEventListener('keydown',ev=>{if(ev.key==='Enter'){ev.preventDefault(); ofSend()}});

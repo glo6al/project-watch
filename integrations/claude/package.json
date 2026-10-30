@@ -1,0 +1,1 @@
+{"name":"watch-claude-channel","version":"1.0.0","private":true,"type":"module","scripts":{"test":"node --test channel.test.mjs"},"dependencies":{"@modelcontextprotocol/sdk":"1.32.2"}}

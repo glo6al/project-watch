@@ -16,4 +16,14 @@ jobs:
         with:
           python-version: ${{ matrix.python }}
       - run: python tests/test_parsers.py
+      - run: python tests/test_officer_messaging.py
+      - run: python tests/test_officer_routing.py
+      - run: python tests/test_claude_channel.py
+      - run: python tests/test_watch_claude.py
+      - run: npm --prefix integrations/claude ci --ignore-scripts --no-audit --no-fund
+        if: runner.os != 'Windows'
+      - run: npm --prefix integrations/claude test
+        if: runner.os != 'Windows'
+      - run: python tests/test_claude_integration.py
+        if: runner.os != 'Windows'
       - run: node tests/test_page.js      # the page's path helpers, outside a browser
