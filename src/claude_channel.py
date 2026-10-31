@@ -9,7 +9,9 @@ import stat
 import threading
 import uuid
 
-START_HINT = 'Start a new Claude session with python3 scripts/watch_claude.py; already-open sessions cannot attach.'
+PEER_IDENTITY_REASON = 'Claude peer receiving is unavailable: native conversation identity can change while its channel remains connected.'
+START_HINT = ('Start a new owner-connected Claude session with python3 scripts/watch_claude.py; already-open sessions cannot attach. '
+              'After /clear, /resume or a fork, owner messages go to the conversation currently open in that process; close and relaunch to restore targeting.')
 MAX_RESPONSE = 100000
 
 
@@ -61,11 +63,16 @@ def discover(root, session_id):
         if len(raw) > 8192:
             raise ChannelError('Claude channel discovery is too large.')
         d = json.loads(raw)
-        if (not isinstance(d, dict) or type(d.get('version')) is not int or d['version'] != 1 or d.get('session_id') != session_id
+        if (not isinstance(d, dict) or type(d.get('version')) is not int or d['version'] not in (1, 2) or d.get('session_id') != session_id
                 or not is_uuid(d.get('instance_id')) or type(d.get('port')) is not int or not 1 <= d['port'] <= 65535
                 or not isinstance(d.get('token'), str) or not re.fullmatch(r'[0-9a-f]{64}', d['token'])):
             raise ChannelError('Claude channel discovery has invalid identity or connection fields. ' + START_HINT)
-        return {k: d[k] for k in ('version', 'session_id', 'instance_id', 'port', 'token')}
+        if d['version'] == 2 and (type(d.get('peer_protocol')) is not int or d['peer_protocol'] != 1
+                or not isinstance(d.get('project'), str) or not os.path.isabs(d['project'])
+                or os.path.realpath(d['project']) != d['project']):
+            raise ChannelError('Claude peer channel has invalid project or protocol.')
+        keys = ('version', 'session_id', 'instance_id', 'port', 'token') + (('peer_protocol', 'project') if d['version'] == 2 else ())
+        return {k: d[k] for k in keys}
     except (OSError, ValueError, TypeError):
         raise ChannelError('No readable private Claude channel is connected. ' + START_HINT) from None
     finally:
@@ -75,13 +82,14 @@ def discover(root, session_id):
 
 
 def identity(descriptor):
-    return {k: descriptor[k] for k in ('session_id', 'instance_id', 'port')} | {
+    return {k: descriptor[k] for k in ('version', 'session_id', 'instance_id', 'port') + (('peer_protocol', 'project') if descriptor['version'] == 2 else ())} | {
         'token_hash': hashlib.sha256(descriptor['token'].encode()).hexdigest()}
 
 
 def pinned(root, expected):
     d = discover(root, expected['session_id'])
-    if identity(d) != expected:
+    # Pre-v2 owner rows pinned the same v1 fields without an explicit version.
+    if identity(d) != {'version': 1, **expected}:
         raise ChannelError('The Claude channel instance changed. WATCH will not redirect or resend this request.')
     return d
 
@@ -104,10 +112,17 @@ def any_configured(root):
     return False
 
 
-def exchange(descriptor, request_id, content=None, timeout=3):
+def exchange(descriptor, request_id, content=None, timeout=3, origin='owner'):
     """No proxies/redirects; after an attempted HTTP write all errors are uncertain."""
+    if content is not None and origin == 'peer':
+        # A channel's descriptor does not attest the native conversation that is
+        # current after /clear, /resume or fork. No channel-published flag can lift
+        # this gate; peer GETs remain available for already-written requests.
+        raise ChannelError(PEER_IDENTITY_REASON)
     if not is_uuid(request_id):
         raise ChannelError('Invalid request identifier.')
+    if origin not in ('owner', 'peer') or (origin == 'peer' and (descriptor.get('version') != 2 or descriptor.get('peer_protocol') != 1)):
+        raise ChannelError('Peer delivery requires a v2 Claude channel.')
     connection = http.client.HTTPConnection('127.0.0.1', descriptor['port'], timeout=timeout)
     connected = [None]
     def interrupt():
@@ -122,7 +137,7 @@ def exchange(descriptor, request_id, content=None, timeout=3):
     timer.start()
     try:
         headers = {'Authorization': 'Bearer ' + descriptor['token'], 'Content-Type': 'application/json'}
-        body = None if content is None else json.dumps({'session_id': descriptor['session_id'], 'instance_id': descriptor['instance_id'], 'request_id': request_id, 'content': content}, ensure_ascii=False).encode('utf-8')
+        body = None if content is None else json.dumps({'session_id': descriptor['session_id'], 'instance_id': descriptor['instance_id'], 'request_id': request_id, 'content': content, **({'origin': origin} if descriptor['version'] == 2 else {})}, ensure_ascii=False).encode('utf-8')
         connection.request('GET' if content is None else 'POST', '/requests/' + request_id if content is None else '/requests', body, headers)
         connected[0] = connection.sock
         response = connection.getresponse()
@@ -134,6 +149,8 @@ def exchange(descriptor, request_id, content=None, timeout=3):
                 (('session_id', descriptor['session_id']), ('instance_id', descriptor['instance_id']), ('request_id', request_id)))
                 or d.get('state') not in ('transport_written', 'answered', 'unknown')
                 or not isinstance(d.get('reply', ''), str) or len(d.get('reply', '')) > 16000
+                or (descriptor['version'] == 2 and d.get('origin') != origin)
+                or type(d.get('peer_input_seen', False)) is not bool
                 or not isinstance(d.get('error', ''), str) or len(d.get('error', '')) > 2000):
             raise ChannelError('Claude returned a mismatched or invalid request record.')
         return d

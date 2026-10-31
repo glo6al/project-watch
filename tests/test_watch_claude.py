@@ -21,7 +21,7 @@ class LauncherTests(unittest.TestCase):
                 m.parser().parse_args([flag, 'anything'])
 
     def test_same_identity_without_permission_or_tool_overrides(self):
-        args = m.command('/claude', '/node', '/channel.mjs', '/state', 'session', 'instance', 'Rook')
+        args = m.command('/claude', '/node', '/channel.mjs', '/state', 'session', 'instance', 'Atlas')
         self.assertEqual(args[args.index('--session-id') + 1], 'session')
         config = json.loads(args[args.index('--mcp-config') + 1])['mcpServers']['watch']
         self.assertEqual(config['env']['WATCH_CLAUDE_SESSION_ID'], 'session')
@@ -29,10 +29,38 @@ class LauncherTests(unittest.TestCase):
         self.assertEqual(config['env']['WATCH_CLAUDE_STATE_DIR'], '/state')
         self.assertEqual(config['command'], '/node')
         self.assertEqual(config['args'], ['/channel.mjs'])
-        self.assertEqual(args[-2:], ['--name', 'Rook'])
+        self.assertEqual(args[-2:], ['--name', 'Atlas'])
         for forbidden in ('--tools', '--allowedTools', '--strict-mcp-config', '--setting-sources', '--permission-mode', '--dangerously-skip-permissions', '--model', '--effort'):
             self.assertNotIn(forbidden, args)
         self.assertEqual(args[args.index('--dangerously-load-development-channels') + 1], 'server:watch')
+
+    def test_removed_peer_refuses_before_runtime_checks_or_state_writes(self):
+        with patch.object(m, 'executable') as executable, patch.object(m, 'ensure_private') as private, patch.object(m.os, 'execv') as execv:
+            with self.assertRaisesRegex(ValueError, 'shared WATCH MCP separately'):
+                m.main(['--peer', 'Example'])
+            executable.assert_not_called()
+            private.assert_not_called()
+            execv.assert_not_called()
+        args = m.command('/claude', '/node', '/channel.mjs', '/state', 'session', 'instance')
+        self.assertEqual(set(json.loads(args[args.index('--mcp-config') + 1])['mcpServers']), {'watch'})
+
+    @unittest.skipIf(os.name == 'nt', 'POSIX launcher state')
+    def test_launcher_notice_discloses_current_conversation_switching(self):
+        with tempfile.TemporaryDirectory() as folder:
+            home = Path(folder).resolve()
+            output = io.StringIO()
+            with patch.object(m.sys, 'platform', 'darwin'), patch.object(m.sys.stdin, 'isatty', return_value=True), \
+                    patch.object(m, 'executable', side_effect=['/fixture/claude', '/fixture/node']), \
+                    patch.object(m, 'check_runtime'), patch.object(m.Path, 'home', return_value=home), \
+                    patch.object(m.Path, 'is_file', return_value=True), patch.object(m.os, 'execv') as execute, \
+                    contextlib.redirect_stdout(output):
+                m.main([])
+            notice = output.getvalue()
+            for text in ('/clear', '/resume', 'fork', 'conversation currently open', 'close and relaunch', 'Shared peer receiving is unavailable'):
+                self.assertIn(text, notice)
+            self.assertNotIn('Existing tools, permissions, model settings and project instructions remain in effect', notice)
+            self.assertIn('does not preserve a prior session', notice)
+            execute.assert_called_once()
 
     def test_bad_name(self):
         for name in ('\nname', ' ' * 3, 'a' * 121):

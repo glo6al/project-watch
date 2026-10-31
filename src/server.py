@@ -3449,6 +3449,21 @@ class H(BaseHTTPRequestHandler):
 
     def do_POST(self):
         global LAST_PAIR, APPROVER
+        if self.path.startswith('/bridge/v2/'):
+            if MESSAGING is None:
+                self.close_connection = True
+                return self.send(503, b'{"error":"Shared messaging unavailable."}', 'application/json')
+            import peer_bridge
+            return peer_bridge.handle_shared_http(self, MESSAGING.shared)
+        if self.path.startswith('/peer/'):
+            if MESSAGING is not None and MESSAGING.shared.enabled:
+                self.close_connection = True
+                return self.send(410, b'{"error":"Legacy peer endpoints are disabled."}', 'application/json')
+            if MESSAGING is None:
+                self.close_connection = True
+                return self.send(503, b'{"error":"Peer messaging unavailable."}', 'application/json')
+            import peer_bridge
+            return peer_bridge.handle_http(self, MESSAGING.peers)
         if not self.host_ok():
             return self.send(403, b'forbidden')
         route = urllib.parse.urlparse(self.path).path
@@ -3815,11 +3830,56 @@ class Server(ThreadingHTTPServer):
                 Server.active -= 1
 
 
+def shared_directory_snapshot(store):
+    """Read readiness facts without holding SQLite's lock or exposing transcript text."""
+    import claude_channel
+    with LOCK:
+        active = {aid: dict(agent) for aid, agent in AGENTS.items()}
+    ready = (store.available if store.codex_available is None else store.codex_available) and not store.worker_failed
+    desktop = False
+    if ready and sys.platform == 'darwin':
+        try:
+            proc = subprocess.run(['/usr/bin/pgrep', '-f', r'^/Applications/(ChatGPT|Codex)\.app/Contents/MacOS/'],
+                                  stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=1)
+            desktop = proc.returncode == 0
+        except (OSError, subprocess.SubprocessError):
+            pass
+    result = {'__codex_transport__': {'capability': 'unavailable' if not ready or not desktop else 'unverified',
+                                    'reason': 'Codex desktop and verified queue transport are required.'}}
+    for aid, agent in active.items():
+        if (aid.startswith('x:') and agent.get('runtime') == 'Codex' and not agent.get('parent')
+                and not agent.get('observed') and not agent.get('stale')):
+            result[aid] = {'capability': 'reachable' if ready and desktop else 'unavailable',
+                           'reason': '' if ready and desktop else 'Codex desktop or queue transport is unavailable.'}
+    # MCP channels follow the current native conversation after an in-process
+    # switch. Descriptor identity and a listening socket cannot prove targeting.
+    result['__claude_transport__'] = {'capability': 'unavailable', 'reason': claude_channel.PEER_IDENTITY_REASON}
+    return result
+
+
+def configure_shared_directory(store, home):
+    import chat_directory
+    import claude_channel
+    def factory(policy):
+        live = {'snapshot': {'__claude_transport__': {'capability': 'unavailable', 'reason': claude_channel.PEER_IDENTITY_REASON}}}
+        def capture():
+            while not store.stop.is_set():
+                live['snapshot'] = shared_directory_snapshot(store)
+                store.stop.wait(1)
+        store.shared.readiness_thread = threading.Thread(target=capture, daemon=True, name='watch-chat-readiness')
+        store.shared.readiness_thread.start()
+        return chat_directory.ChatDirectory(
+            os.path.join(home, '.codex'), os.path.join(home, '.claude', 'projects'), policy=policy,
+            codex_sessions=store.sessions_dir, live_snapshot=lambda: live['snapshot'])
+    store.shared.directory_factory = factory
+
+
 if __name__ == '__main__':
     KEY = load_key()
     if sys.platform == 'darwin':
         try:
             MESSAGING = MessagingStore(os.path.join(HOME, '.live-room'), os.path.join(HOME, '.codex', 'sessions'))
+            configure_shared_directory(MESSAGING, HOME)
             MESSAGING.start()
         except (OSError, sqlite3.Error, ValueError, KeyError, TypeError):
             MESSAGING = None

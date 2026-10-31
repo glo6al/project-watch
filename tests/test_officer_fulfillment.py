@@ -192,6 +192,71 @@ class FulfillmentTests(unittest.TestCase):
         self.reconcile()
         self.assertNotIn('fulfillment', self.row())
 
+    def test_peer_transport_blocks_owner_pause_fulfillment_without_public_leak(self):
+        self.source()
+        other = ident()
+        with patch.object(m.time, 'time', return_value=self.base + 6):
+            self.store.submit(self.aid, 'Peer follow-up', other, self.agents)
+        peer = next(r for r in self.store._rows() if r['request_id'] == other)
+        peer['origin'] = 'peer'
+        self.store._save(peer)
+        self.store.db.execute('INSERT INTO peer_requests VALUES (?,?,?,?,?,?,NULL)',
+                              (ident(), ident(), ident(), 'hash', other, self.base + 6))
+        self.store.db.commit()
+        self.interrupt()
+        self.assertNotIn('fulfillment', self.row())
+        self.assertEqual(len(self.store.snapshot()['requests']), 1)
+        self.assertEqual(peer['agent'], self.aid)
+
+    def test_corrupt_launched_legacy_payload_still_blocks_pause_fulfillment(self):
+        self.assert_corrupt_peer_launch_blocks(1)
+
+    def test_corrupt_launched_shared_payload_still_blocks_pause_fulfillment(self):
+        self.assert_corrupt_peer_launch_blocks(2)
+
+    def test_peer_launch_outside_pause_interval_does_not_block_fulfillment(self):
+        for launch_offset in (-5, 21):
+            with self.subTest(launch_offset=launch_offset):
+                self.source()
+                transport_id = ident()
+                self.store.db.execute('INSERT INTO shared_bridge_requests VALUES (?,?,?,?,?,?,?,?,?)',
+                    (ident(), self.aid, '{}', 'hash', transport_id, ident(), self.base-10, self.base+launch_offset, ''))
+                self.store.db.execute('INSERT INTO requests VALUES (?,?)', (transport_id, '{corrupt'))
+                self.store.db.commit()
+                self.interrupt()
+                self.assertEqual(self.row()['fulfillment']['state'], 'fulfilled')
+                self.store.db.execute('DELETE FROM request_fulfillments')
+                self.store.db.execute('DELETE FROM requests WHERE id=?', (transport_id,))
+                self.store.db.execute('DELETE FROM shared_bridge_requests')
+                self.store.db.execute('DELETE FROM controls')
+                self.store.db.commit()
+
+    def assert_corrupt_peer_launch_blocks(self, version):
+        self.source()
+        transport_id, client_id, target_id = ident(), ident(), ident()
+        # Reservation predates authority; launch falls inside it. Only
+        # durable launch metadata proves this interference after corruption.
+        if version == 1:
+            self.store.db.execute('INSERT INTO peer_principals VALUES (?,?,?,?,?,?,?,?,?,?,?)',
+                (target_id, 'Recipient', 'codex', self.sid, self.tmp.name, 'declared', '{}', 'a'*64, 1, 1, self.base-30))
+            self.store.db.execute('INSERT INTO peer_requests VALUES (?,?,?,?,?,?,?)',
+                (ident(), client_id, target_id, 'hash', transport_id, self.base-10, self.base+6))
+        else:
+            self.store.db.execute('INSERT INTO shared_bridge_requests VALUES (?,?,?,?,?,?,?,?,?)',
+                (client_id, self.aid, '{}', 'hash', transport_id, ident(), self.base-10, self.base+6, ''))
+        self.store.db.execute('INSERT INTO requests VALUES (?,?)', (transport_id, '{corrupt'))
+        self.store.db.commit()
+        self.interrupt()
+        self.assertNotIn('fulfillment', self.row())
+        self.assertEqual(len(self.store.snapshot()['requests']), 1)
+        self.reopen()
+        self.assertNotIn('fulfillment', self.row())
+        self.store.db.execute('DELETE FROM requests WHERE id=?', (transport_id,))
+        self.store.db.execute('DELETE FROM peer_requests')
+        self.store.db.execute('DELETE FROM shared_bridge_requests')
+        self.store.db.execute('DELETE FROM controls')
+        self.store.db.commit()
+
     def test_delayed_source_interpretation_does_not_hide_intervening_resume(self):
         self.source()
         source = self.store._rows()[0]

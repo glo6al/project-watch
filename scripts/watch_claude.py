@@ -16,6 +16,7 @@ ROOT = Path(__file__).resolve().parent.parent
 
 def parser():
     p = argparse.ArgumentParser(description=__doc__, allow_abbrev=False)
+    p.add_argument('--peer', metavar='LABEL', help='Removed: configure the shared WATCH MCP separately from the inbound channel')
     p.add_argument('--name', help='Display name for the new Claude session')
     p.add_argument('--claude', help='Claude executable path (defaults to ~/.local/bin/claude, then PATH)')
     p.add_argument('--node', help='Node.js executable path (defaults to PATH)')
@@ -47,11 +48,12 @@ def ensure_private(path, create=True):
 
 
 def command(claude, node, channel, state, session_id, instance_id, name=None):
-    # No free-form passthrough: resume/continue/session/MCP overrides cannot change this binding.
+    # No free-form launch overrides. Native in-process conversation switches can
+    # still outlive the MCP channel; the launcher notice discloses this limit.
     config = {'mcpServers': {'watch': {
         'command': node, 'args': [str(channel)],
         'env': {'WATCH_CLAUDE_SESSION_ID': session_id, 'WATCH_CLAUDE_INSTANCE_ID': instance_id,
-                'WATCH_CLAUDE_STATE_DIR': str(state)},
+                'WATCH_CLAUDE_STATE_DIR': str(state), 'WATCH_CLAUDE_PROJECT': os.path.realpath(os.getcwd())},
     }}}
     args = [claude, '--session-id', session_id, '--mcp-config', json.dumps(config),
             '--dangerously-load-development-channels', 'server:watch']
@@ -77,6 +79,8 @@ def check_runtime(claude, node):
 
 def main(argv=None):
     args = parser().parse_args(argv)
+    if args.peer is not None:
+        raise ValueError('--peer is no longer supported. Configure the shared WATCH MCP separately; this launcher only creates the inbound channel for a new session.')
     if sys.platform != 'darwin':
         raise ValueError('This first WATCH Claude launcher supports macOS only.')
     if not sys.stdin.isatty():
@@ -95,7 +99,8 @@ def main(argv=None):
     cmd = command(claude, node, channel, state, session_id, instance_id, args.name)
     state.mkdir(mode=0o700)  # Exclusive: no existing session is claimed or resumed.
     print('Starting a new WATCH-connected Claude session. Accept Claude’s local development channel notice to enable it.', flush=True)
-    print('Existing tools, permissions, model settings and project instructions remain in effect.', flush=True)
+    print('This launcher adds the WATCH channel and a new session ID. It does not override tool, permission or model flags; this does not preserve a prior session’s transient settings.', flush=True)
+    print('Owner messages go to the conversation currently open in this process. After /clear, /resume or a fork, close and relaunch to restore targeting. Shared peer receiving is unavailable because native conversation identity is not bound to the channel.', flush=True)
     os.execv(claude, cmd)
 
 

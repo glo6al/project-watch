@@ -17,6 +17,7 @@ import threading
 import time
 import uuid
 import claude_channel
+import peer_bridge
 
 CLI = '/Applications/ChatGPT.app/Contents/Resources/codex-cli/bin/codex'
 ACTIVE = ('sending', 'queued', 'awaiting_reply', 'unknown', 'expired')
@@ -111,8 +112,8 @@ class MessagingStore:
                     raise OSError('Messaging database must be a private regular file.')
             finally:
                 os.close(fd)
-            self.db = sqlite3.connect(path, check_same_thread=False)
-            self.db.execute('CREATE TABLE IF NOT EXISTS requests (id TEXT PRIMARY KEY, data TEXT NOT NULL)')
+            self.db = sqlite3.connect(path, check_same_thread=False, timeout=peer_bridge.DB_TIMEOUT)
+            peer_bridge.shared_schema(self.db)
             self.db.execute('CREATE TABLE IF NOT EXISTS controls (id TEXT PRIMARY KEY, data TEXT NOT NULL)')
             self.db.execute('CREATE TABLE IF NOT EXISTS expired_controls (id TEXT PRIMARY KEY)')
             self.db.execute('CREATE TABLE IF NOT EXISTS request_fulfillments (request_id TEXT PRIMARY KEY, control_request_id TEXT NOT NULL, confirmed_at REAL NOT NULL)')
@@ -124,10 +125,16 @@ class MessagingStore:
             self.db.execute('CREATE TABLE IF NOT EXISTS asks (id TEXT PRIMARY KEY, user_text TEXT NOT NULL, created REAL NOT NULL, decision TEXT)')
             for row in self._rows():
                 if row['state'] == 'sending':
-                    row.update(state='unknown', error='WATCH restarted during sending. Delivery is unknown; it will not resend.')
+                    peer_meta = peer_bridge.transport_metadata(self.db, transport_ids=(row['request_id'],)).get(row['request_id'])
+                    if peer_meta is not None and peer_meta['launched_at'] is None:
+                        row.update(state='failed', settled=True, error='WATCH restarted before peer dispatch was authorized. Nothing was sent.')
+                    else:
+                        row.update(state='unknown', error='WATCH restarted during sending. Delivery is unknown; it will not resend.')
                     self._save(row)
             self._reconcile_fulfillments()
             self.db.commit()
+            self.peers = peer_bridge.PeerBridge(self)
+            self.shared = peer_bridge.SharedBridge(self)
         except BaseException:
             if self.db is not None:
                 self.db.close()
@@ -191,11 +198,39 @@ class MessagingStore:
             raise MessagingError(409, 'This control request has expired and cannot be replayed. Issue a new explicit request; nothing was sent.')
 
     def _rows(self):
-        return [json.loads(x[0]) for x in self.db.execute('SELECT data FROM requests')]
+        rows = []
+        stored = self.db.execute('SELECT id,data FROM requests').fetchall()
+        peer_meta = peer_bridge.transport_metadata(self.db, transport_ids=(ident for ident, _ in stored))
+        peer_ids = set(peer_meta)
+        for ident, raw in stored:
+            try:
+                row = json.loads(raw)
+                if not isinstance(row, dict) or row.get('request_id') != ident:
+                    raise ValueError()
+                if ident in peer_ids and (row.get('origin') != 'peer' or
+                        (peer_meta[ident]['version'] == 2 and row.get('bridge_version') != 2)):
+                    raise ValueError()
+                if row.get('origin') == 'peer':
+                    if (not self._timestamp(row.get('created')) or row.get('state') not in
+                            ('sending', 'queued', 'awaiting_reply', 'quarantined', 'unknown', 'expired', 'failed', 'answered')
+                            or not isinstance(row.get('agent'), str) or row['agent'][:2] not in ('x:', 'c:')
+                            or not valid_uuid(row['agent'][2:]) or type(row.get('launched')) is not bool):
+                        raise ValueError()
+                rows.append(row)
+            except (ValueError, TypeError):
+                # Corrupt peer payloads must not take down owner reply tracking.
+                if ident in peer_ids:
+                    continue
+                raise
+        return rows
 
     def _save(self, row):
-        self.db.execute('INSERT OR REPLACE INTO requests VALUES (?,?)', (row['request_id'], json.dumps(row)))
-        self.db.commit()
+        try:
+            self.db.execute('INSERT OR REPLACE INTO requests VALUES (?,?)', (row['request_id'], json.dumps(row)))
+            self.db.commit()
+        except sqlite3.OperationalError:
+            self.db.rollback()
+            raise
 
     def probe(self):
         if sys.platform != 'darwin':
@@ -212,6 +247,13 @@ class MessagingStore:
     def start(self):
         self.codex_available, self.reason = self.probe()
         self.available = self.codex_available or claude_channel.any_configured(self.channel_root)
+        if self.shared.enabled:
+            try:
+                self.shared.ensure_directory()
+            except Exception:
+                # Discovery failure must not disable owner messaging. RPC retains
+                # its normal retry path if setup becomes available later.
+                pass
         self.thread = threading.Thread(target=self._run, daemon=True, name='watch-agent-messages')
         self.thread.start()
 
@@ -219,6 +261,11 @@ class MessagingStore:
         self.stop.set()
         if self.thread:
             self.thread.join(15)
+        directory_thread = self.shared.directory_thread
+        if directory_thread:
+            directory_thread.join(2)
+        if self.shared.readiness_thread:
+            self.shared.readiness_thread.join(2)
         with self.lock:
             if self.thread and self.thread.is_alive():
                 raise RuntimeError('Messaging worker is still stopping; ownership retained.')
@@ -265,7 +312,7 @@ class MessagingStore:
             now = time.time()
             controls = [json.loads(raw) for (raw,) in self.db.execute('SELECT data FROM controls')]
             retained = [r for r in controls if r['state'] == 'sending' or now - r['created'] <= RETENTION]
-            return {'requests': [self._public_request(r) for r in sorted(self._rows(), key=lambda x: x['created'])],
+            return {'requests': [self._public_request(r) for r in sorted((r for r in self._rows() if r.get('origin') != 'peer'), key=lambda x: x['created'])],
                     'controls': [self._public_control(r) for r in sorted(retained, key=lambda x: (x['created'], x['request_id']))],
                     'available': codex_ready or claude_ready, 'reason': '' if codex_ready or claude_ready else self.reason,
                     'capabilities': {'codex': codex_ready, 'claude': claude_ready}}
@@ -279,6 +326,8 @@ class MessagingStore:
             rows = self._rows()
             old = next((r for r in rows if r['request_id'] == request_id), None)
             if old:
+                if old.get('origin') == 'peer':
+                    raise MessagingError(409, 'That identifier is reserved for a different origin.')
                 if old['agent'] != agent or old['question'] != question:
                     raise MessagingError(409, 'That request identifier belongs to a different question.')
                 return self._public_request(old)
@@ -288,7 +337,7 @@ class MessagingStore:
             if self.worker_failed or (agent.startswith('x:') and not (self.available if self.codex_available is None else self.codex_available)):
                 raise MessagingError(503, self.reason)
             now = time.time()
-            rows = self._prune(rows, now)
+            rows = [r for r in self._prune(rows, now) if r.get('origin') != 'peer']
             active = [r for r in rows if r['state'] in ACTIVE]
             # An unresolved request is not a lock on the whole conversation.
             # A distinct explicit instruction gets its own delivery/reply identity.
@@ -575,7 +624,7 @@ class MessagingStore:
         for row in requests:
             rid, agent = row['request_id'], row.get('agent')
             source = asks.get(rid)
-            if (rid in fulfilled or not valid_uuid(rid) or not source or not isinstance(agent, str) or not agent.startswith('x:')
+            if (row.get('origin') == 'peer' or rid in fulfilled or not valid_uuid(rid) or not source or not isinstance(agent, str) or not agent.startswith('x:')
                     or not valid_uuid(agent[2:]) or not self._timestamp(row.get('created'))
                     or not self._timestamp(source[1]) or source[1] > row['created']):
                 continue
@@ -631,6 +680,13 @@ class MessagingStore:
                         blocked = True; break
                 if blocked:
                     continue
+                # Launched peer input remains interference even if its payload
+                # was malformed and isolated by _rows(). Reservation may predate
+                # the authority interval, so compare durable launch time instead.
+                peer_launches = peer_bridge.transport_metadata(self.db, agent_id=agent, launched_since=source[1])
+                if any(not self._timestamp(meta['launched_at']) or source[1] <= meta['launched_at'] <= ended
+                       for meta in peer_launches.values()):
+                    continue
                 # Direct message/control endpoints may have no asks provenance.
                 if any(other.get('request_id') not in (rid, cid) and other.get('agent') == agent
                        and (not self._timestamp(other.get('created')) or source[1] <= other['created'] <= ended)
@@ -644,6 +700,8 @@ class MessagingStore:
             if now - r['created'] > RETENTION:
                 self.db.execute('DELETE FROM request_fulfillments WHERE request_id=?', (r['request_id'],))
                 self.db.execute('DELETE FROM requests WHERE id=?', (r['request_id'],))
+        self.db.execute("DELETE FROM requests WHERE id IN (SELECT transport_id FROM shared_bridge_requests WHERE created < ?)", (now - RETENTION,))
+        self.db.execute("UPDATE shared_bridge_requests SET preview='' WHERE created < ? AND preview<>''", (now - RETENTION,))
         self.db.commit()
         return [r for r in rows if now - r['created'] <= RETENTION]
 
@@ -679,18 +737,23 @@ class MessagingStore:
     def _apply_claude(self, row, record):
         if record['state'] == 'answered':
             row.update(state='answered', reply=record.get('reply', ''), error='')
+            if row.get('origin') != 'peer' and record.get('peer_input_seen') is True:
+                row['delivery_warning'] = (row.get('delivery_warning', '') + ' ' + peer_bridge.PEER_WARNING).strip()
         elif record['state'] == 'unknown':
             row.update(state='unknown', error='Claude could not confirm delivery. WATCH will not resend.')
         elif row['state'] not in ('expired', 'unknown'):
             row.update(state='queued', error='')
 
     def _send_claude(self, row):
+        if row.get('origin') == 'peer':
+            return 'failed', claude_channel.PEER_IDENTITY_REASON + ' Nothing was sent.'
         try:
             descriptor = claude_channel.pinned(self.channel_root, row['channel'])
         except claude_channel.ChannelError:
             return 'failed', 'The Claude channel disappeared or changed before sending; nothing was sent. ' + claude_channel.START_HINT
         try:
-            record = claude_channel.exchange(descriptor, row['request_id'], row['envelope'])
+            record = (claude_channel.exchange(descriptor, row['request_id'], row['envelope'], origin='peer')
+                      if row.get('origin') == 'peer' else claude_channel.exchange(descriptor, row['request_id'], row['envelope']))
             self._apply_claude(row, record)
             return row['state'], row['error']
         except claude_channel.ChannelError:
@@ -699,7 +762,8 @@ class MessagingStore:
     def _poll_claude(self, row):
         try:
             descriptor = claude_channel.pinned(self.channel_root, row['channel'])
-            record = claude_channel.exchange(descriptor, row['request_id'])
+            record = (claude_channel.exchange(descriptor, row['request_id'], origin='peer')
+                      if row.get('origin') == 'peer' else claude_channel.exchange(descriptor, row['request_id']))
             self._apply_claude(row, record)
         except claude_channel.ChannelError:
             row.update(state='unknown', error='The original Claude channel or its reply is unavailable. WATCH will not redirect or resend.')
@@ -713,6 +777,12 @@ class MessagingStore:
         typ = data.get('type')
         if typ == 'event_msg' and p.get('type') == 'task_started':
             row['current_turn'] = p.get('turn_id') if isinstance(p.get('turn_id'), str) else ''
+            if row.get('origin') == 'peer' and row['current_turn']:
+                starts = row.setdefault('peer_turn_starts', [])
+                if row['current_turn'] not in starts:
+                    if len(starts) >= 128:
+                        row['peer_context_overflow'] = True
+                    starts[:] = starts[-127:] + [row['current_turn']]
         elif typ == 'turn_context' and isinstance(p.get('turn_id'), str):
             row['current_turn'] = p['turn_id']
         elif typ == 'response_item' and p.get('type') == 'message':
@@ -733,7 +803,21 @@ class MessagingStore:
             if len(set(explicit)) > 1:
                 return
             turn = explicit[0] if explicit else row['current_turn']
+            if row.get('origin') == 'peer' and p.get('role') == 'user' and text != outgoing_message(row):
+                if turn and turn == row.get('bound_turn'):
+                    row['peer_mixed_input'] = True
+                foreign = row.setdefault('peer_foreign_turns', [])
+                if not turn:
+                    row['peer_mixed_input'] = True
+                elif turn not in foreign:
+                    if len(foreign) >= 128:
+                        row['peer_context_overflow'] = True
+                    foreign[:] = foreign[-127:] + [turn]
             if p.get('role') == 'user' and text == outgoing_message(row) and turn:
+                if row.get('origin') == 'peer':
+                    if (turn not in row.get('peer_turn_starts', []) or turn in row.get('peer_foreign_turns', [])
+                            or row.get('peer_context_overflow') or row.get('bound_turn') == turn):
+                        row['peer_mixed_input'] = True
                 if row['bound_turn'] != turn:
                     row['final'], row['final_turn'] = '', ''
                 row['bound_turn'] = turn
@@ -743,6 +827,15 @@ class MessagingStore:
         elif typ == 'event_msg' and p.get('type') == 'task_complete' and p.get('turn_id') and p['turn_id'] == row['bound_turn']:
             answer = p.get('last_agent_message') or (row['final'] if row.get('final_turn') == row['bound_turn'] else '')
             marker = 'WATCH_REPLY ' + row['request_id']
+            if row.get('origin') == 'peer':
+                row['settled'] = True
+                markers = [line for line in answer.splitlines() if 'WATCH_REPLY' in line] if isinstance(answer, str) else []
+                if markers != [marker]:
+                    row.update(state='unknown', reply='', tracking_stopped=True, error='Peer reply has missing or ambiguous correlation markers.')
+                    return
+                row.update(state='quarantined', complete_offset=row['cursor'], quarantined_at=time.time(),
+                           candidate_reply='\n'.join(line for line in answer.splitlines() if line != marker).strip()[:16000], error='')
+                return
             if isinstance(answer, str) and marker in answer.splitlines():
                 row.update(state='answered', reply='\n'.join(line for line in answer.splitlines() if line != marker).strip()[:16000], error='')
 
@@ -761,14 +854,17 @@ class MessagingStore:
             for raw in lines[:-1]:
                 row['cursor'] += len(raw) + 1
                 if len(raw) > MAX_LINE:
+                    if row.get('origin') == 'peer':
+                        row['peer_mixed_input'] = True
                     continue
                 try:
                     event = json.loads(raw)
                     if isinstance(event, dict):
                         self._consume(row, event)
                 except (ValueError, TypeError):
-                    pass
-                if row['state'] == 'answered':
+                    if row.get('origin') == 'peer':
+                        row['peer_mixed_input'] = True
+                if row['state'] in ('answered', 'quarantined') or row.get('tracking_stopped'):
                     break
             if len(lines[-1]) > MAX_LINE:
                 row.update(state='unknown', error='A transcript record exceeded the safe limit; reply tracking stopped.')
@@ -779,25 +875,76 @@ class MessagingStore:
             row.update(state='expired', error='No matching reply yet. The question may still be queued; WATCH will not resend.')
 
     def tick(self):
+        # A competing owner CLI transaction is transient; never kill the owner worker.
         with self.lock:
-            rows = self._prune(self._rows(), time.time())
+            try:
+                rows = self._prune(self._rows(), time.time())
+            except sqlite3.OperationalError:
+                self.db.rollback()
+                return
         for row in rows:
             if self.stop.is_set():
                 break
-            if row['state'] == 'sending' and not row['launched']:
+            peer = row.get('origin') == 'peer'
+            was_answered = row['state'] == 'answered'
+            try:
+                if row['state'] == 'sending' and not row['launched']:
+                    if peer:
+                        if row.get('bridge_version') == 2:
+                            self.shared.authorize(row)
+                        elif self.shared.enabled:
+                            raise peer_bridge.PeerError(409, 'Legacy peer dispatch is disabled in shared mode.')
+                        else:
+                            self.peers.authorize(row)
+                    else:
+                        with self.lock:
+                            row['launched'] = True
+                            self._save(row)
+                    row['state'], row['error'] = self._send(row)
+                elif row['state'] == 'sending' and row['launched']:
+                    # A post-launch persistence failure cannot authorize a second send.
+                    row.update(state='unknown', error='Delivery outcome could not be persisted. WATCH will not resend.')
+                if row['state'] in ACTIVE and row['state'] != 'sending' and not row.get('tracking_stopped'):
+                    self._poll(row)
+            except sqlite3.OperationalError:
                 with self.lock:
-                    row['launched'] = True
-                    self._save(row)
-                row['state'], row['error'] = self._send(row)
-            if row['state'] in ACTIVE and row['state'] != 'sending' and not row.get('tracking_stopped'):
-                self._poll(row)
+                    self.db.rollback()
+                continue
+            except peer_bridge.PeerRetry:
+                # A partial target tail is temporary; authorization has not committed.
+                continue
+            except Exception as error:
+                if not peer:
+                    raise
+                reason = 'Peer delivery could not be safely completed. WATCH will not resend.'
+                if not row.get('launched'):
+                    reason = (str(error) if isinstance(error, peer_bridge.PeerError) else reason) + ' Nothing was sent.'
+                row.update(state='unknown' if row.get('launched') else 'failed', reply='', candidate_reply='', tracking_stopped=True,
+                           error=reason)
             with self.lock:
-                self._save(row)
+                try:
+                    # Codex candidates are private until all owner cursors catch up.
+                    if not was_answered and row['state'] == 'answered':
+                        self.peers.owner_warning(row)
+                    self._save(row)
+                except sqlite3.OperationalError:
+                    self.db.rollback()
+        with self.lock:
+            try:
+                current = self._rows()
+                self.peers.reconcile(current)
+                for row in current:
+                    self._save(row)
+            except sqlite3.OperationalError:
+                self.db.rollback()
 
     def _run(self):
         while not self.stop.is_set():
             try:
                 self.tick()
+            except sqlite3.OperationalError:
+                with self.lock:
+                    self.db.rollback()
             except Exception:
                 # No exception text: it can contain user content or local paths.
                 self.worker_failed = True

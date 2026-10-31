@@ -13,6 +13,8 @@ from unittest.mock import patch
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
 import claude_channel as channel
 import officer_messaging as messaging
+import peer_bridge
+import server
 
 
 @unittest.skipIf(os.name == 'nt', 'POSIX-private channel discovery')
@@ -77,6 +79,128 @@ class ClaudeChannelTests(unittest.TestCase):
         raw = json.dumps(self.store._rows())
         self.assertNotIn('a' * 64, raw)
         self.assertIn('reply tool', raw)
+
+    def test_v2_project_protocol_identity_and_peer_preflight(self):
+        self.descriptor.update(version=2, peer_protocol=1, project=self.base)
+        self.write_manifest()
+        found = channel.discover(self.root, self.sid)
+        self.assertEqual(found, self.descriptor)
+        pin = channel.identity(found)
+        self.assertEqual(pin['version'], 2)
+        self.assertEqual(pin['peer_protocol'], 1)
+        self.assertEqual(pin['project'], self.base)
+        self.descriptor['project'] = self.base + '/..'
+        self.write_manifest()
+        with self.assertRaises(channel.ChannelError): channel.discover(self.root, self.sid)
+        self.descriptor.update(project=self.base, peer_protocol=2)
+        self.write_manifest()
+        with self.assertRaises(channel.ChannelError): channel.discover(self.root, self.sid)
+        self.descriptor.update(peer_protocol=1, version=1)
+        self.write_manifest()
+        with self.assertRaises(channel.ChannelError): channel.exchange(self.descriptor, self.rid, 'peer body', origin='peer')
+        self.assertEqual(self.calls, [], 'v1 peer refusal precedes HTTP side effects')
+        legacy_pin = channel.identity(channel.discover(self.root, self.sid))
+        legacy_pin.pop('version')
+        self.assertEqual(channel.pinned(self.root, legacy_pin)['version'], 1)
+        self.descriptor.update(version=2, peer_protocol=1, project=self.base)
+        self.write_manifest()
+        with self.assertRaises(channel.ChannelError): channel.pinned(self.root, legacy_pin)
+
+    def test_legacy_owner_default_and_v2_peer_origin_validation(self):
+        result = channel.exchange(self.descriptor, self.rid, 'legacy owner')
+        self.assertEqual(result['state'], 'transport_written')
+        self.descriptor.update(version=2, peer_protocol=1, project=self.base)
+        self.records[self.rid]['origin'] = 'peer'
+        self.records[self.rid]['peer_input_seen'] = False
+        self.assertEqual(channel.exchange(self.descriptor, self.rid, origin='peer')['origin'], 'peer')
+        self.records[self.rid]['origin'] = 'owner'
+        with self.assertRaises(channel.ChannelError): channel.exchange(self.descriptor, self.rid, origin='peer')
+        self.records[self.rid]['origin'] = 'peer'
+        self.records[self.rid]['peer_input_seen'] = 'yes'
+        with self.assertRaises(channel.ChannelError): channel.exchange(self.descriptor, self.rid, origin='peer')
+
+    def test_peer_post_gate_precedes_connection_despite_valid_live_v2_descriptor(self):
+        self.descriptor.update(version=2, peer_protocol=1, project=self.base, native_identity_verified=True)
+        self.write_manifest()
+        with patch.object(channel.http.client, 'HTTPConnection', wraps=channel.http.client.HTTPConnection) as connection:
+            with self.assertRaisesRegex(channel.ChannelError, 'native conversation identity'):
+                channel.exchange(self.descriptor, self.rid, 'peer payload', origin='peer')
+            connection.assert_not_called()
+        self.assertEqual(self.calls, [])
+        self.records[self.rid] = dict(session_id=self.sid, instance_id=self.instance, request_id=self.rid,
+            state='answered', reply='Previously delivered reply', error='', origin='peer')
+        self.assertEqual(channel.exchange(self.descriptor, self.rid, origin='peer')['reply'], 'Previously delivered reply')
+        owner_id = str(uuid.uuid4())
+        self.records[owner_id] = dict(session_id=self.sid, instance_id=self.instance, request_id=owner_id,
+            state='transport_written', reply='', error='', origin='owner')
+        self.assertEqual(channel.exchange(self.descriptor, owner_id, 'owner payload')['origin'], 'owner')
+        self.assertEqual([call[0] for call in self.calls], ['GET', 'POST'])
+
+    def test_shared_and_legacy_claude_selection_is_unavailable_with_gate_reason(self):
+        self.descriptor.update(version=2, peer_protocol=1, project=self.base)
+        self.write_manifest()
+        facts = server.shared_directory_snapshot(self.store)
+        self.assertEqual(facts['__claude_transport__'], {'capability': 'unavailable', 'reason': channel.PEER_IDENTITY_REASON})
+        sender = peer_bridge.enroll(self.store.db, 'Legacy sender', 'codex', str(uuid.uuid4()), self.base, {})
+        recipient = peer_bridge.enroll(self.store.db, 'Claude', 'claude', self.sid, self.base,
+            {'instance_id': self.instance}, binding='launch')
+        sender = peer_bridge.principal(self.store.db, sender['endpoint_id'])
+        recipient = peer_bridge.principal(self.store.db, recipient['endpoint_id'])
+        listing = self.store.peers.list_peers(sender)
+        self.assertEqual((listing[0]['reachable'], listing[0]['reason']), (False, channel.PEER_IDENTITY_REASON))
+        with self.assertRaisesRegex(peer_bridge.PeerError, 'native conversation identity'):
+            self.store.peers._preflight(recipient)
+        with self.assertRaises(peer_bridge.PeerError) as legacy_rejected:
+            self.store.peers.send(sender, recipient['id'], 'legacy peer payload', str(uuid.uuid4()))
+        self.assertEqual(legacy_rejected.exception.status, 409)
+        credential = peer_bridge.initialize_service(self.store.db, {'providers': ['claude']})
+        auth = peer_bridge.service_credential(self.store.db, credential['credential_id'])
+        with self.assertRaises(peer_bridge.PeerError) as rejected:
+            self.store.shared.send(auth, self.agent, 'a'*64, 'peer payload', str(uuid.uuid4()))
+        self.assertEqual(rejected.exception.status, 409)
+        self.assertEqual(str(rejected.exception), channel.PEER_IDENTITY_REASON)
+        self.assertEqual(self.calls, [])
+
+    def test_reserved_peer_send_fails_without_network_and_prior_peer_reply_still_polls(self):
+        self.descriptor.update(version=2, peer_protocol=1, project=self.base)
+        self.write_manifest()
+        self.submit()
+        row = self.store._rows()[0]
+        row.update(origin='peer', channel=channel.identity(self.descriptor))
+        state, reason = self.store._send_claude(row)
+        self.assertEqual(state, 'failed')
+        self.assertIn('Nothing was sent', reason)
+        self.assertEqual(self.calls, [])
+        row.update(state='queued', launched=True)
+        self.records[self.rid] = dict(session_id=self.sid, instance_id=self.instance, request_id=self.rid,
+            state='answered', reply='Prior peer reply', error='', origin='peer')
+        self.store._poll_claude(row)
+        self.assertEqual((row['state'], row['reply']), ('answered', 'Prior peer reply'))
+        self.assertEqual([call[0] for call in self.calls], ['GET'])
+
+    def test_reserved_shared_claude_row_fails_truthfully_before_dispatch(self):
+        self.descriptor.update(version=2, peer_protocol=1, project=self.base)
+        self.write_manifest()
+        self.submit()
+        row = self.store._rows()[0]
+        identity = {'instance_id': self.instance}
+        row.update(origin='peer', bridge_version=2, channel=channel.identity(self.descriptor),
+            identity_revision='a'*64, target_identity=identity, target_project=self.base)
+        self.store._save(row)
+        credential = peer_bridge.initialize_service(self.store.db, {'providers':['claude']})
+        with self.store.db:
+            self.store.db.execute('INSERT INTO shared_bridge_requests VALUES (?,?,?,?,?,?,?,NULL,?)',
+                (str(uuid.uuid4()), self.agent, '{}', 'hash', self.rid, credential['credential_id'], row['created'], 'fixture'))
+        target = dict(agent_id=self.agent, native_id=self.sid, identity=identity, project=self.base,
+            provider='claude', capability='reachable', identity_revision='a'*64)
+        with patch.object(self.store.shared, '_resolve', return_value=target):
+            self.store.tick()
+        persisted = self.store._rows()[0]
+        self.assertEqual(persisted['state'], 'failed')
+        self.assertIn('native conversation identity', persisted['error'])
+        self.assertIn('Nothing was sent', persisted['error'])
+        self.assertFalse(persisted['launched'])
+        self.assertEqual(self.calls, [])
 
     def test_http_auth_queue_and_correlated_reply(self):
         self.submit(); self.store.tick()
