@@ -393,11 +393,11 @@ function sourceChecks(mutate=false){
   class Node{constructor(){this.dataset={};this.paints=0}set innerHTML(v){this.html=v;this.paints++;this.detail=v.includes('<details')?{open:v.includes('<details open')}:null}get innerHTML(){return this.html}querySelector(){return this.detail}remove(){this.removed=true}}
   const helpers=vm.runInNewContext(unifiedCode+';({cuSourceRows,cuEventKey,cuEnvelopeMatch})');const pending={state:'queued'},ctx={...helpers,CU:{nodes:new Map()},OFM:{records:new Map([['pending',pending]])},document:{createElement:()=>new Node()},plain:String,one:String,esc:String,clock:String,STEADY:false,need:a=>a.need};
   const sources=vm.runInNewContext(code+';cuSources',ctx),a={id:'A',name:'Ada',story:[{t:'say',n:1,seq:1,ts:1,text:'First'}],msgs:[],q:[{seq:2,ts:2,text:'Queued task'}],need:{sure:false,kind:'Decide',text:'Choose one'}};
-  sources(a);const row=ctx.CU.nodes.get('source:A:seq:1'),card=row.el;card.detail.open=false;const paints=card.paints;sources(a);assert.equal(ctx.CU.nodes.get('source:A:seq:1').el,card);assert.equal(card.paints,paints);assert.equal(card.detail.open,false,'expanded state survives refresh');assert.match(ctx.CU.nodes.get('queue:A:seq:2').el.innerHTML,/Queue observation does not confirm delivery/);assert.match(ctx.CU.nodes.get('source:A:request').el.innerHTML,/Possible request · inferred/);
-  a.name='Renamed';a.need.sure=true;a.q=[];sources(a);assert.equal(row.context.name,'Ada');assert.match(ctx.CU.nodes.get('source:A:request').el.innerHTML,/Confirmed request/);assert.equal(ctx.CU.nodes.has('queue:A:seq:2'),false);assert.equal(pending.state,'queued','queue removal never changes independent delivery');
+  sources(a);const row=ctx.CU.nodes.get('source:A:seq:1'),card=row.el;card.detail.open=false;const paints=card.paints;sources(a);assert.equal(ctx.CU.nodes.get('source:A:seq:1').el,card);assert.equal(card.paints,paints);assert.equal(card.detail.open,false,'expanded state survives refresh');assert.match(ctx.CU.nodes.get('queue:A:seq:2').el.innerHTML,/Queue observation does not confirm delivery/);assert.equal(ctx.CU.nodes.has('source:A:request'),false,'response card owns current requests without duplicate pseudo-messages');
+  a.name='Renamed';a.need.sure=true;a.q=[];sources(a);assert.equal(row.context.name,'Ada');assert.equal(ctx.CU.nodes.has('source:A:request'),false);assert.equal(ctx.CU.nodes.has('queue:A:seq:2'),false);assert.equal(pending.state,'queued','queue removal never changes independent delivery');
   a.story.push({t:'say',n:3,seq:3,ts:3,text:'Later'});sources(a);assert.equal(card.detail.open,false);assert.equal(ctx.CU.nodes.get('source:A:seq:3').el.detail.open,true);assert.equal(row.el,card);
 }
-sourceChecks();let reconciliationCaught=false;try{sourceChecks(true)}catch(e){reconciliationCaught=true}assert.ok(reconciliationCaught);console.log('ok stable source DOM/details, immutable name, confirmed/inferred requests and independent native queue; recreation mutation detected');
+sourceChecks();let reconciliationCaught=false;try{sourceChecks(true)}catch(e){reconciliationCaught=true}assert.ok(reconciliationCaught);console.log('ok stable source DOM/details, immutable name, no duplicate current request and independent native queue; recreation mutation detected');
 
 /* Unsupported stations explain their limitation before a send is attempted. */
 {
@@ -450,30 +450,21 @@ function composerKeyChecks(code=deskHelpers){
 composerKeyChecks();for(const guard of ['&&!e.shiftKey','&&!e.isComposing','&&e.keyCode!==229']){let caught=false;try{composerKeyChecks(deskHelpers.replace(guard,''))}catch(e){caught=true}assert.ok(caught,'removed composer guard '+guard+' must fail')}
 console.log('ok desk widths: finite clamps/transients/readable split; composer: actual Enter handler, modifiers and IME; mutations detected');
 
-/* A pending permission remains discoverable with Work closed; Review only reveals evidence. */
-function deskReviewChecks(mutate=false){
+/* Agent rail signals preserve their existing alternate views without duplicate lists. */
+function deskSignalsChecks(mutate=false){
   const nodes=new Map(),node=id=>{if(!nodes.has(id))nodes.set(id,{hidden:false,textContent:'',firstElementChild:null,children:[],setAttribute(k,v){this[k]=v}});return nodes.get(id)};
-  let rendered=0,focused=0;const reveals=[];
-  const ctx={focus:'A',A:{A:{name:'Ada',runtime:'Codex',goal:'Test',pin:{old:true},$: {split:{style:{setProperty(){}}}}}},DESK:{open:false,agents:new Map()},bayPg:0,PINS:{},STEADY:false,order:[],document:{activeElement:null},$:node,txt:(el,text)=>el.textContent=text,one:String,stateOf:a=>({label:'Waiting',need:a.request}),need:a=>a.request,deskSetViewUI(){},deskReveal:view=>reveals.push(view),deskFocus:()=>focused++,render:()=>rendered++,APPROVE:false,post(){throw Error('Review must never submit')},cuSend(){throw Error('Review must never send')}};
+  const requests=[];
+  const ctx={focus:'A',A:{A:{name:'Ada',runtime:'Codex'}},DESK:{open:false,agents:new Map()},bayPg:0,PINS:{},STEADY:false,order:[],document:{activeElement:null},$:node,txt:(el,text)=>el.textContent=text,one:String,stateOf:a=>({label:'Waiting',need:a.request}),responsePaint:(a,n)=>requests.push(n),deskSetViewUI(){},deskFocus(){},render(){}};
   let code=html.slice(html.indexOf('function deskPaint('),html.indexOf('function deskTheme('));
-  const review=html.split('\n').find(x=>x.startsWith("$('#deskReview').onclick="));assert.ok(review);code+='\n'+html.split('\n').find(x=>x.startsWith('function setView('))+'\n'+review;
-  if(mutate===true)code=code.replace('if(!request?.perm||request.perm.sent)return;','');
-  if(mutate==='duplicate')code=code.replace("$('#bay').hidden=bayPg===0;","$('#bay').hidden=false;");
+  if(mutate)code=code.replace("$('#bay').hidden=bayPg===0;","$('#bay').hidden=false;");
   const signals=[1,2].map(page=>({dataset:{bay:String(page)},setAttribute(k,v){this[k]=v}}));node('#deskSignals').children=signals;
   code+='\n'+html.split('\n').find(x=>x.startsWith("$('#deskSignals').onclick="));
-  vm.createContext(ctx);const paint=vm.runInContext(code+';deskPaint',ctx);
-  ctx.desk=paint;
-  paint();assert.equal(node('#bay').hidden,true,'default agent rail hides duplicate legacy station list');assert.equal(node('#deskAgentList').hidden,false);
-  for(const signal of signals){node('#deskSignals').onclick({target:{closest:()=>signal}});assert.equal(ctx.bayPg,Number(signal.dataset.bay));assert.equal(node('#bay').hidden,false,'alerts/activity remain reachable');assert.equal(signal['aria-pressed'],'true');node('#deskSignals').onclick({target:{closest:()=>signal}});assert.equal(ctx.bayPg,0);assert.equal(node('#bay').hidden,true);assert.equal(signal['aria-pressed'],'false')}
-  assert.equal(node('#deskRequest').hidden,true);assert.equal(node('#deskReview').hidden,true);
-  ctx.A.A.request={kind:'Approve',text:'Inspect this command',sure:true,perm:{pid:'p1',sent:false}};paint();assert.equal(node('#deskRequest').hidden,false);assert.equal(node('#deskReview').hidden,false,'late permission remains reachable while Work is closed');assert.equal(ctx.DESK.open,false);
-  node('#deskReview').onclick();assert.deepEqual(reveals,['doing']);assert.equal(ctx.A.A.pin,null,'Review removes stale pinned evidence');assert.equal(ctx.APPROVE,false,'Review never enables Answer here');assert.equal(ctx.A.A.request.perm.sent,false);assert.equal(rendered,1);assert.equal(focused,1);
-  ctx.A.A.request.perm.sent=true;paint();assert.equal(node('#deskReview').hidden,true);node('#deskReview').onclick();assert.equal(reveals.length,1,'stale displayed Review cannot act after request ends');
-  ctx.A.B={name:'Bram'};ctx.focus='B';node('#deskReview').onclick();assert.equal(reveals.length,1,'station switch revalidates the current request');
-  ctx.focus=null;node('#deskReview').onclick();assert.equal(reveals.length,1);
-  assert.match(html,/<button\b[^>]*id="deskReview"[^>]*type="button"|<button\b[^>]*type="button"[^>]*id="deskReview"/,'Review is a real keyboard-accessible non-submit button');
+  vm.createContext(ctx);const paint=vm.runInContext(code+';deskPaint',ctx);ctx.desk=paint;
+  paint();assert.equal(node('#bay').hidden,true);assert.equal(node('#deskAgentList').hidden,false);assert.equal(node('#deskRespond').hidden,true);
+  for(const signal of signals){node('#deskSignals').onclick({target:{closest:()=>signal}});assert.equal(ctx.bayPg,Number(signal.dataset.bay));assert.equal(node('#bay').hidden,false);assert.equal(signal['aria-pressed'],'true');node('#deskSignals').onclick({target:{closest:()=>signal}});assert.equal(ctx.bayPg,0);assert.equal(node('#bay').hidden,true);assert.equal(signal['aria-pressed'],'false')}
+  ctx.A.A.request={kind:'Approve',perm:{pid:'p1'}};paint();assert.equal(requests.at(-1),ctx.A.A.request);assert.equal(node('#deskRespond').hidden,false);assert.equal(ctx.DESK.open,false);
 }
-deskReviewChecks();let duplicateCaught=false;try{deskReviewChecks('duplicate')}catch(e){duplicateCaught=true}assert.ok(duplicateCaught,'duplicated default agent list must fail');let reviewCaught=false;try{deskReviewChecks(true)}catch(e){reviewCaught=true}assert.ok(reviewCaught,'stale Review guard mutation must fail');console.log('ok persistent Review: closed-work arrival, stale request/station revalidation, reveals actual evidence without sending or enabling approvals; mutation detected');
+deskSignalsChecks();let duplicateCaught=false;try{deskSignalsChecks(true)}catch(e){duplicateCaught=true}assert.ok(duplicateCaught);console.log('ok rail signals and request-to-card handoff; duplicate-list mutation detected');
 
 /* Live command alerts remain visible outside closed Work, without replacing a pending request. */
 function deskAlertChecks(mutation=''){
@@ -485,7 +476,7 @@ function deskAlertChecks(mutation=''){
   list.insertBefore=(el,at)=>{const old=list.children.indexOf(el);if(old>=0)list.children.splice(old,1);const pos=list.children.indexOf(at);list.children.splice(pos<0?list.children.length:pos,0,el)};
   const agents=new Map();for(const id of ['A','B']){const row=node('row '+id);row.dataset.agent=id;row.querySelector=selector=>node(id+' '+selector);Object.defineProperty(row,'nextElementSibling',{get:()=>list.children[list.children.indexOf(row)+1]||null});agents.set(id,row);list.children.push(row)}
   for(const el of [node('#deskAlert'),node('A small'),node('B small')])Object.defineProperty(el,'innerHTML',{set(){throw Error('Alert data must remain text, never HTML')}});
-  const ctx={focus:'A',A:{A:{name:'Ada',runtime:'Codex'},B:{name:'Bram',runtime:'Claude'}},DESK:{open:false,agents},bayPg:0,PINS:{},STEADY:false,order:['A','B'],document:{activeElement:null},Date:{now:()=>1000*1000},$:node,one:t=>String(t||'').replace(/\s+/g,' '),stateOf:a=>({label:'between actions',need:a.request,busy:!!a.busy}),deskSetViewUI(){},deskFocus(){},post(){throw Error('Painting alerts must not submit')},cuSend(){throw Error('Painting alerts must not send')}};
+  const ctx={focus:'A',A:{A:{name:'Ada',runtime:'Codex'},B:{name:'Bram',runtime:'Claude'}},DESK:{open:false,agents},bayPg:0,PINS:{},STEADY:false,order:['A','B'],document:{activeElement:null},Date:{now:()=>1000*1000},$:node,one:t=>String(t||'').replace(/\s+/g,' '),stateOf:a=>({label:'between actions',need:a.request,busy:!!a.busy}),responsePaint:(a,n)=>ctx.cardRequest=n,deskSetViewUI(){},deskFocus(){},post(){throw Error('Painting alerts must not submit')},cuSend(){throw Error('Painting alerts must not send')}};
   let code=html.slice(html.indexOf('function deskPaint('),html.indexOf('function deskTheme('));
   const mutations={
     hide:c=>c.replace("$('#deskAlert').hidden=!alert;","$('#deskAlert').hidden=true;"),
@@ -502,7 +493,7 @@ function deskAlertChecks(mutation=''){
   assert.equal(ctx.DESK.open,false);assert.equal(node('#deskAlert').hidden,false);assert.equal(node('#deskAlert').textContent,'Looks like a push · '+command);assert.equal(agents.get('A').dataset.state,'alarm');assert.equal(node('A small').textContent,'Looks like a push','rail alarm remains compact');assert.equal(agents.get('A').title,undefined,'rail has no raw-command tooltip');
   assert.equal(ctx.DESK.agents.get('A'),list.children[0],'keyed agent identity survives the alert repaint');
   ctx.A.A.request={kind:'Approve',text:'Inspect a different command',sure:true,perm:{pid:'p1',sent:false}};paint();
-  assert.equal(node('#deskAlert').hidden,false);assert.equal(node('#deskRequest').hidden,false);assert.equal(node('#deskReview').hidden,false);assert.match(node('#deskRequestText').textContent,/Request · Approve/);assert.equal(agents.get('A').dataset.state,'need');assert.equal(node('A small').textContent,'Approve','pending request keeps rail priority');
+  assert.equal(node('#deskAlert').hidden,false);assert.equal(ctx.cardRequest,ctx.A.A.request,'independent response card receives the concurrent request');assert.equal(node('#deskRespond').hidden,false);assert.equal(agents.get('A').dataset.state,'need');assert.equal(node('A small').textContent,'Approve','pending request keeps rail priority');
   ctx.A.A.request.sure=false;paint();assert.equal(node('A small').textContent,'Approve · possible');assert.equal(node('#deskAlert').hidden,false);
   delete ctx.A.A.request;ctx.focus='B';paint();assert.equal(node('#deskAlert').hidden,true);assert.equal(node('#deskAlert').textContent,'','station switch clears previous alert');assert.equal(agents.get('A').dataset.state,'alarm','other agent still carries its live rail alarm');
   ctx.A.B.alert={ts:995,label:'a delete',text:'remove generated files'};paint();assert.equal(node('#deskAlert').textContent,'Looks like a delete · remove generated files');delete ctx.A.B.alert;paint();assert.equal(node('#deskAlert').hidden,true);assert.equal(node('#deskAlert').textContent,'');
@@ -575,3 +566,68 @@ workTransitionChecks();let closingCaught=false;try{workTransitionChecks(true)}ca
   assert.deepEqual(reveals,['doing']);assert.equal(ctx.A.A.pin,evidence);assert.equal(ctx.deskView,'doing');assert.equal(scrolled,1);
   console.log('ok work citation: Activity revealed, exact historical pin and entry preserved');
 }
+
+/* Run the real response-card lifecycle and shared dispatch against synthetic requests only. */
+const responseSource=html.slice(html.indexOf('/* Desk response card:'),html.indexOf('/* end desk response card */'));
+const dispatchSource=html.slice(html.indexOf('function permissionDispatch('),html.indexOf('/* end permission dispatch */'));
+const needSource=html.slice(html.indexOf('function need('),html.indexOf('/* Context in use.'));
+function responseFixture(source=responseSource,dispatch=dispatchSource){
+  const nodes=new Map(),listeners={},posts=[],pending=[],reveals=[];let now=1000,focusCalls=0;
+  const rect=(top=100,bottom=600)=>({top,bottom,left:0,right:600,width:600,height:bottom-top});
+  function node(id){if(!nodes.has(id)){const el={id,hidden:false,disabled:false,textContent:'',value:'my unchanged draft',children:[],rect:rect(),setAttribute(k,v){this[k]=v},getBoundingClientRect(){return this.rect},addEventListener(k,f){this[k]=f},focus(){focusCalls++}};Object.defineProperty(el,'innerHTML',{set(){throw Error('Request text must not become HTML')}});nodes.set(id,el)}return nodes.get(id)}
+  function button(kind){return {kind,disabled:true,classList:{contains:c=>c==='response-'+kind},closest(){return this},cloneNode(){return button(kind)},replaceWith(b){const holder=this.parentNode,i=holder.children.indexOf(this);holder.children[i]=b;b.parentNode=holder;this.parentNode=null}}}
+  const holder=node('#responseDecisions');holder.children=['allow','deny'].map(button);for(const b of holder.children)b.parentNode=holder;
+  node('#responseCard').rect=rect(200,500);node('#responseEvidence').rect=rect(240,400);node('#responseActions').rect=rect(410,445);
+  const a={id:'c:A',name:'Ada',runtime:'Claude',perms:{},calls:{},asks:{}},b={id:'x:B',name:'Bram',runtime:'Codex',perms:{},calls:{},asks:{}};
+  const ctx={focus:a.id,A:{[a.id]:a,[b.id]:b},APPROVE:true,STEADY:false,DEMO:false,document:{hidden:false},Date:{now:()=>now},$:node,txt:(el,t)=>{if(el.textContent!==t)el.textContent=t},saidKind:()=>null,covered:()=>ctx.coveredNow,onScreen:()=>ctx.visible&&!ctx.inert,visible:true,inert:false,coveredNow:false,render(){},deskReveal:v=>reveals.push(v),addEventListener:(k,f)=>listeners[k]=f,post:(route,body)=>{posts.push({route,body});return new Promise((resolve,reject)=>pending.push({resolve,reject}))}};
+  vm.createContext(ctx);const api=vm.runInContext(needSource+'\n'+dispatch+'\n'+source+';({responsePaint,responseGate,responseCanDecide,responseInvalidate,responseReveal,RESPONSE,permissionDispatch,need})',ctx);
+  const paint=()=>api.responsePaint(ctx.A[ctx.focus],ctx.A[ctx.focus]?api.need(ctx.A[ctx.focus]):null);
+  const perm=(id='p1',text='rm build\n'+('Full evidence <b>not markup</b>\n'.repeat(60)))=>{const p={pid:id,tool:'Bash',text};a.perms={[id]:p};return p};
+  const allow=()=>holder.children[0],click=b=>holder.onclick({target:b||allow()});
+  const ready=()=>{paint();now+=450;api.responseGate();assert.equal(allow().disabled,false)};
+  return {ctx,api,node,posts,pending,listeners,a,b,perm,paint,ready,allow,click,tick:ms=>now+=ms,focusCalls:()=>focusCalls,reveals};
+}
+function responseGuardChecks(source=responseSource){
+  const cases=[
+    ['station',t=>t.ctx.focus=t.b.id],['room',t=>t.ctx.focus=null],['ended',t=>t.a.perms={}],
+    ['replacement object',t=>t.a.perms.p1={...t.a.perms.p1}],['changed text',t=>{t.a.perms.p1.text+=' changed';t.node('#responseEvidence').textContent='Bash\n\n'+t.a.perms.p1.text}],['changed tool',t=>t.a.perms.p1.tool='Edit'],
+    ['new PID',t=>t.perm('p2')],['sent',t=>t.a.perms.p1.sent=true],['uncertain',t=>t.a.perms.p1.uncertain=true],
+    ['collapsed',t=>t.api.RESPONSE.current.entry.collapsed=true],['Answer here off',t=>t.ctx.APPROVE=false],['steady',t=>t.ctx.STEADY=true],
+    ['covered',t=>t.ctx.coveredNow=true],['offscreen',t=>t.ctx.visible=false],['inert conversation',t=>t.ctx.inert=true],['hidden tab',t=>t.ctx.document.hidden=true],
+    ['masked evidence',t=>t.node('#responseEvidence').textContent='masked'],['clipped card',t=>t.node('#responseCard').rect.bottom=700]
+  ];
+  for(const [name,change] of cases){const t=responseFixture(source);t.perm();t.ready();change(t);assert.equal(t.api.responseCanDecide(t.allow()),false,name);t.click();assert.equal(t.posts.length,0,name+' cannot dispatch')}
+  const t=responseFixture(source);t.perm();t.paint();t.tick(449);assert.equal(t.api.responseCanDecide(t.allow()),false,'450ms dwell');t.tick(1);assert.equal(t.api.responseCanDecide(t.allow()),true);const foreign={parentNode:t.node('#responseDecisions')};assert.equal(t.api.responseCanDecide(foreign),false,'only freshly bound controls act');
+}
+responseGuardChecks();
+for(const [from,to] of [['p===e.perm&&',''],['p.tool===e.tool&&p.text===e.text&&',''],['&&!p.sent',''],['&&!p.uncertain',''],['&&!c.entry.collapsed',''],['&&APPROVE',''],['&&!STEADY',''],['&&!covered()',''],['&&responseVisible()',''],['&&Date.now()-e.at>=450','']]){const altered=responseSource.replace(from,to);assert.notEqual(altered,responseSource);let caught=false;try{responseGuardChecks(altered)}catch(e){caught=true}assert.ok(caught,'response guard mutation '+from+' must fail')}
+function responseLifecycleChecks(){
+  const t=responseFixture(),p=t.perm();t.paint();assert.equal(t.node('#responseEvidence').textContent,'Bash\n\n'+p.text,'full evidence is not truncated');assert.equal(t.node('#responseTitle').textContent,'Approval requested');assert.equal(t.focusCalls(),0,'new request does not steal focus');
+  const initial=t.allow();t.paint();assert.equal(t.allow(),initial,'unchanged painting retains buttons');t.tick(450);t.api.responseGate();assert.equal(t.allow().disabled,false);
+  t.node('#responseToggle').onclick();assert.equal(t.node('#responseBody').hidden,true);assert.equal(t.allow().disabled,true);assert.equal(p.sent,undefined,'collapse does not answer');t.paint();assert.equal(t.node('#responseBody').hidden,true,'collapse survives painting');
+  t.node('#responseToggle').onclick();assert.notEqual(t.allow(),initial);assert.equal(t.allow().disabled,true,'reopen restarts dwell');t.tick(450);t.api.responseGate();assert.equal(t.allow().disabled,false);
+  const beforeHidden=t.allow();t.ctx.visible=false;t.api.responseGate();t.ctx.visible=true;t.api.responseGate();assert.notEqual(t.allow(),beforeHidden);assert.equal(t.allow().disabled,true,'visibility return restarts dwell');
+  t.tick(450);t.api.responseGate();const beforeReplace=t.allow();p.text+=' amended';t.paint();assert.notEqual(t.allow(),beforeReplace);assert.equal(t.allow().disabled,true,'text replacement restarts dwell');
+  t.node('#responseToggle').onclick();t.perm('p2');t.paint();assert.equal(t.node('#responseBody').hidden,false,'new request autoexpands');assert.equal(t.focusCalls(),0);
+  t.ctx.STEADY=true;t.paint();assert.match(t.node('#responseEvidence').textContent,/hidden/);assert.equal(t.node('#responseDecisions').hidden,true);assert.equal(t.node('#responseOpenApp').hidden,false);
+  t.ctx.STEADY=false;t.ctx.APPROVE=false;t.paint();assert.equal(t.node('#responseDecisions').hidden,true);assert.match(t.node('#responseNote').textContent,/Answer here is off/);assert.equal(t.ctx.APPROVE,false);
+  t.ctx.APPROVE=true;t.a.perms={};t.a.asks={q1:{text:'Choose a release channel?',maybe:false}};t.paint();assert.equal(t.node('#responseTitle').textContent,'Question');assert.equal(t.node('#responseDecisions').hidden,true);assert.equal(t.node('#responseOpenApp').hidden,false);t.click();assert.equal(t.posts.length,0,'question has no fake Allow action');
+  t.a.asks.q1.maybe=true;t.paint();assert.equal(t.node('#responseTitle').textContent,'Possible request');assert.match(t.node('#responseNote').textContent,/Possible request/);
+  t.node('#responseToggle').onclick();t.api.responseReveal();assert.deepEqual(t.reveals,['conversation']);assert.equal(t.node('#responseBody').hidden,false);assert.equal(t.ctx.APPROVE,true);assert.equal(t.posts.length,0);
+  t.a.asks={};t.paint();assert.equal(t.node('#responseCard').hidden,true);assert.equal(t.api.RESPONSE.exposure,null);assert.equal(t.node('#ofIn').value,'my unchanged draft');
+  const monitor=html.slice(html.indexOf("const yn=t.closest('.yes,.no')"),html.indexOf("if(t.closest('.go'))"));assert.match(monitor,/!p\|\|p.sent\|\|focus!==id\|\|a.permScreen!==p.pid\|\|!APPROVE\|\|covered\(\)\|\|!onScreen\(a\.\$\.code\)\|\|Date.now\(\)-\(\+yn.dataset.at\|\|0\)<450/);assert.match(monitor,/permissionDispatch\(a,p,/,'old monitor validates before shared dispatch');
+}
+responseLifecycleChecks();
+async function responseDispatchChecks(dispatch=dispatchSource){
+  const t=responseFixture(responseSource,dispatch),p=t.perm();t.ready();t.click();t.click();assert.equal(t.posts.length,1,'duplicate click cannot dispatch twice');assert.deepEqual(JSON.parse(JSON.stringify(t.posts[0])),{route:'/decide',body:{pid:'p1',allow:true}});assert.equal(p.sent,true);
+  t.ctx.focus=t.b.id;t.b.asks={q2:{text:'Which plan?',maybe:false}};t.paint();t.pending.shift().reject(Error('accepted but response lost'));await new Promise(setImmediate);assert.equal(p.sent,true,'uncertain decision remains non-retriable');assert.equal(p.uncertain,true);assert.equal(p.notice,'Outcome unknown. Check the app before trying again.');assert.equal(t.b.permMsg,undefined,'late response cannot update another agent');
+  t.ctx.focus=t.a.id;t.paint();t.api.RESPONSE.current.entry.note='Opened app.';t.paint();assert.match(t.node('#responseNote').textContent,/Outcome unknown/,'app-open notice cannot mask uncertain decision');t.tick(1000);t.click();assert.equal(t.posts.length,1,'uncertain result never retries');
+  const p2=t.perm('p2');t.ready();t.click();assert.equal(t.posts.length,2,'new independent request remains answerable');assert.equal(t.posts[1].body.pid,'p2');t.pending.shift().resolve({ok:false,status:409});await new Promise(setImmediate);assert.equal(p2.sent,true);assert.match(p2.notice,/Already answered/);
+  const p3=t.perm('p3');t.ready();t.click();const oldPending=t.pending.shift(),p4=t.perm('p4');t.paint();oldPending.reject(Error('lost'));await new Promise(setImmediate);assert.equal(p4.sent,undefined);assert.equal(t.a.permMsg,p2.notice,'old response cannot overwrite current request message');t.ready();t.click();t.pending.shift().resolve({ok:false,status:404});await new Promise(setImmediate);assert.match(p4.notice,/expired/);
+  t.a.perms={};t.a.asks={q:{text:'Pick a color',maybe:false}};t.paint();const open=t.node('#responseOpenApp').onclick();assert.equal(t.posts.at(-1).route,'/open');assert.equal(t.posts.at(-1).body.agent,t.a.id);t.pending.shift().resolve({ok:false,status:404});await open;assert.match(t.node('#responseNote').textContent,/Could not open/);assert.equal(t.node('#ofIn').value,'my unchanged draft');
+  t.ctx.DEMO=true;const count=t.posts.length;await t.node('#responseOpenApp').onclick();assert.equal(t.posts.length,count);assert.match(t.node('#responseNote').textContent,/no app was opened/);
+  t.ctx.DEMO=false;t.a.observed=true;t.paint();assert.equal(t.node('#responseOpenApp').disabled,true);await t.node('#responseOpenApp').onclick();assert.equal(t.posts.length,count,'observed ChatGPT targets do not attempt unsupported open');
+  t.a.asks={};await t.node('#responseOpenApp').onclick();assert.equal(t.posts.length,count,'ended request cannot open from stale card');
+  assert.ok(t.posts.every(x=>['/decide','/open'].includes(x.route)),'no question masquerades as queued message or steering');
+}
+(async()=>{await responseDispatchChecks();const changed=dispatchSource.replaceAll('p.uncertain=true;', 'p.sent=false;p.uncertain=true;');let caught=false;try{await responseDispatchChecks(changed)}catch(e){caught=true}assert.ok(caught,'uncertain outcome retry mutation must fail');console.log('ok response card: real lifecycle/dispatch, full safe evidence, native question routing, precise identity/visibility/dwell, collapse, independent requests, late and unknown outcomes; eleven mutations detected')})().catch(e=>{console.error(e);process.exitCode=1});
