@@ -15,6 +15,7 @@ import claude_channel as channel
 import officer_messaging as messaging
 import peer_bridge
 import server
+from legacy_claude_fixture import seed_legacy_claude
 
 
 @unittest.skipIf(os.name == 'nt', 'POSIX-private channel discovery')
@@ -68,7 +69,7 @@ class ClaudeChannelTests(unittest.TestCase):
         with open(self.path, 'w') as f: json.dump(self.descriptor, f)
         os.chmod(self.path, 0o600)
 
-    def submit(self): return self.store.submit(self.agent, 'How is the work going?', self.rid, self.agents)
+    def submit(self): return seed_legacy_claude(self.store, self.agent, 'How is the work going?', self.rid, self.agents)
     def row(self): return self.store.snapshot()['requests'][0]
 
     def test_discovery_and_capabilities_without_codex(self):
@@ -214,7 +215,7 @@ class ClaudeChannelTests(unittest.TestCase):
     def test_distinct_pending_messages_keep_separate_channel_replies(self):
         self.submit(); self.store.tick()
         other = str(uuid.uuid4())
-        self.store.submit(self.agent, 'Please focus on the tests next.', other, self.agents)
+        seed_legacy_claude(self.store, self.agent, 'Please focus on the tests next.', other, self.agents)
         self.store.tick()
         self.assertEqual(sum(c[0] == 'POST' for c in self.calls), 2)
         self.records[other].update(state='answered', reply='Tests next.')
@@ -231,7 +232,7 @@ class ClaudeChannelTests(unittest.TestCase):
 
     def test_full_length_unicode_message_uses_utf8(self):
         question = '😀' * 2000
-        self.store.submit(self.agent, question, self.rid, self.agents)
+        seed_legacy_claude(self.store, self.agent, question, self.rid, self.agents)
         self.store.tick()
         self.assertEqual(self.row()['state'], 'queued')
         self.assertIn(question, self.sent_content)
@@ -264,7 +265,7 @@ class ClaudeChannelTests(unittest.TestCase):
 
     def test_missing_connection_actionable_and_codex_independent(self):
         os.unlink(self.path)
-        with self.assertRaises(messaging.MessagingError) as error: self.submit()
+        with self.assertRaises(channel.ChannelError) as error: self.submit()
         self.assertIn('scripts/watch_claude.py', str(error.exception))
         self.store.codex_available = True
         self.assertTrue(self.store.snapshot()['available'])

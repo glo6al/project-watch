@@ -22,6 +22,7 @@ import officer_messaging
 import peer_bridge
 import chat_directory
 import claude_channel
+from legacy_claude_fixture import seed_legacy_claude
 import server
 
 RPC = r'''
@@ -251,9 +252,9 @@ with open(LAUNCHES,'a') as f:f.write(json.dumps(args)+'\\n')
                     self.assertEqual(len(launches.read_text().splitlines()),4)
                     self.assertFalse(events.exists())
                     self.assertEqual(store.snapshot()['requests'],[])
-                    # The peer gate leaves the existing owner channel semantics intact.
+                    # Legacy owner rows retain their existing transport and reply behavior.
                     owner_id = str(uuid.uuid4())
-                    store.submit('c:'+claude_session, 'Owner fixture question', owner_id,
+                    seed_legacy_claude(store, 'c:'+claude_session, 'Owner fixture question', owner_id,
                         {'c:'+claude_session:{'runtime':'Claude','name':'Claude fixture'}})
                     store.tick()
                     self.wait_for(lambda: events.exists(),channel)

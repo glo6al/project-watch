@@ -15,6 +15,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / 'src'))
 from officer_messaging import MessagingStore
 import claude_channel
+from legacy_claude_fixture import seed_legacy_claude
 
 PEER = r'''
 import {Client} from '@modelcontextprotocol/sdk/client/index.js';
@@ -82,7 +83,7 @@ class IntegrationTests(unittest.TestCase):
                 store = MessagingStore(str(base / 'state'), str(base / 'codex'), channel_root=str(channel_root))
                 owner_id, peer_id = str(uuid.uuid4()), str(uuid.uuid4())
                 aid = 'c:' + session
-                store.submit(aid, 'How is the work progressing?', owner_id, {aid: {'name': 'Claude', 'runtime': 'Claude'}})
+                seed_legacy_claude(store, aid, 'How is the work progressing?', owner_id, {aid: {'name': 'Claude', 'runtime': 'Claude'}})
                 store.tick()
                 self.assertEqual(store.snapshot()['requests'][0]['state'], 'queued')
                 with self.assertRaisesRegex(claude_channel.ChannelError, 'native conversation identity'):
@@ -137,7 +138,7 @@ class IntegrationTests(unittest.TestCase):
                     time.sleep(.02)
                 store=MessagingStore(str(base/'state'),str(base/'codex'),channel_root=str(channel_root))
                 rid=str(uuid.uuid4()); aid='c:'+session; agents={aid:{'name':'Claude test peer','runtime':'Claude'}}
-                initial=store.submit(aid,'Implement the test feature',rid,agents)
+                initial=seed_legacy_claude(store,aid,'Implement the test feature',rid,agents)
                 self.assertEqual(initial['state'],'sending')
                 self.assertFalse(store.snapshot()['capabilities']['codex'])
                 self.assertTrue(store.snapshot()['capabilities']['claude'])

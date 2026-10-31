@@ -23,6 +23,8 @@ CLI = '/Applications/ChatGPT.app/Contents/Resources/codex-cli/bin/codex'
 ACTIVE = ('sending', 'queued', 'awaiting_reply', 'unknown', 'expired')
 MAX_RECORDS, MAX_PENDING, MAX_LINE, MAX_READ = 256, 8, 1_000_000, 2_000_000
 TTL, RETENTION = 900, 86400
+CLAUDE_OWNER_UNAVAILABLE = ("Exact named-chat delivery to Claude is unavailable. "
+                           "Its channel targets a process whose conversation can change. Nothing was sent.")
 
 
 class MessagingError(Exception):
@@ -49,13 +51,13 @@ def validate_question(question):
 
 def validate_target(agent, agents):
     if not isinstance(agent, str) or agent[:2] not in ('x:', 'c:') or not valid_uuid(agent[2:]):
-        raise MessagingError(400, 'Messaging supports local Codex chats and channel-connected Claude sessions only.')
+        raise MessagingError(400, 'Select an exact local chat identifier. New named-chat delivery currently supports Codex only.')
     a = agents.get(agent)
     if not a:
         raise MessagingError(404, 'That agent is no longer in the room.')
     expected = 'Claude' if agent.startswith('c:') else 'Codex'
     if a.get('runtime') != expected or a.get('observed') or (expected == 'Claude' and a.get('sub')):
-        raise MessagingError(400, 'Only local Codex chats and parent Claude sessions can receive messages. ' + claude_channel.START_HINT)
+        raise MessagingError(400, 'That target is not an eligible local parent chat. New named-chat delivery currently supports Codex only.')
     return str(a.get('name') or agent)[:120]
 
 
@@ -317,6 +319,42 @@ class MessagingStore:
                     'available': codex_ready or claude_ready, 'reason': '' if codex_ready or claude_ready else self.reason,
                     'capabilities': {'codex': codex_ready, 'claude': claude_ready}}
 
+    def owner_capabilities(self, agent, agents):
+        """Advisory eligibility only; never starts native observation or resolves a turn."""
+        reason = ''
+        try:
+            validate_target(agent, agents)
+        except MessagingError as error:
+            reason = str(error)
+        codex = not reason and agent.startswith('x:')
+        queue_reason = reason
+        if not reason and not codex:
+            queue_reason = CLAUDE_OWNER_UNAVAILABLE
+        elif codex and (self.worker_failed or not (self.available if self.codex_available is None else self.codex_available)):
+            queue_reason = self.reason or 'Codex queue transport is unavailable.'
+        control_reason = reason
+        if not reason and (not codex or agents[agent].get('sub') or agents[agent].get('parent')):
+            control_reason = 'Live controls support local parent Codex desktop chats only.'
+        elif not reason and sys.platform != 'darwin':
+            control_reason = 'Codex desktop controls require macOS.'
+        return {'agent': agent, 'actions': {
+            'queue': {'available': not bool(queue_reason), 'reason': queue_reason, 'mode': 'queue'},
+            'steer': {'supported': not bool(control_reason), 'reason': control_reason, 'mode': 'new_instruction'},
+            'interrupt': {'supported': not bool(control_reason), 'reason': control_reason, 'mode': 'interrupt'},
+            'promote_queued': {'available': False, 'reason': 'Promoting an existing queued message is unavailable.', 'mode': 'queued_promotion'}}}
+
+    def owner_action(self, action, agent, text, request_id, agents):
+        """The authenticated owner gateway. Replay checks precede new-send eligibility.
+
+        The ledger methods own atomic duplicate/conflict checks and dispatch preflight;
+        preview capabilities are never caller authority and never gate a durable replay.
+        """
+        if action == 'queue':
+            return self.submit(agent, text, request_id, agents)
+        if action in ('steer', 'interrupt'):
+            return self.submit_control(action, agent, text, request_id, agents)
+        raise MessagingError(400, 'Unsupported owner action. Promoting queued messages is unavailable.')
+
     def submit(self, agent, question, request_id, agents):
         validate_question(question)
         if not valid_uuid(request_id):
@@ -334,8 +372,9 @@ class MessagingStore:
             if self.db.execute('SELECT 1 FROM controls WHERE id=?', (request_id,)).fetchone():
                 raise MessagingError(409, 'That request identifier already belongs to a live control.')
             name = validate_target(agent, agents)
-            if self.worker_failed or (agent.startswith('x:') and not (self.available if self.codex_available is None else self.codex_available)):
-                raise MessagingError(503, self.reason)
+            queue = self.owner_capabilities(agent, agents)['actions']['queue']
+            if not queue['available']:
+                raise MessagingError(503, queue['reason'])
             now = time.time()
             rows = [r for r in self._prune(rows, now) if r.get('origin') != 'peer']
             active = [r for r in rows if r['state'] in ACTIVE]

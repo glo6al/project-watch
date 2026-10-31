@@ -2993,7 +2993,7 @@ def officer_dispatch(user_text, request_id, call):
         if not MESSAGING:
             return {'error': MESSAGING_WHY}
         if decision['kind'] == 'control':
-            result = MESSAGING.submit_control(decision['action'], decision['agent'], decision['instruction'], request_id, dict(AGENTS))
+            result = MESSAGING.owner_action(decision['action'], decision['agent'], decision['instruction'], request_id, dict(AGENTS))
             name, state = result['name'], result['state']
             if state == 'acknowledged':
                 text = 'Codex acknowledged the steering request for ' + name + '. This does not confirm the agent has read or acted on it; Codex may apply it to the turn active at dispatch.'
@@ -3008,7 +3008,7 @@ def officer_dispatch(user_text, request_id, call):
             else:
                 text = 'The control for ' + name + ' failed. ' + result['error']
             return {'text': text, 'controls': [result], 'actions': [], 'cites': []}
-        result = MESSAGING.submit(decision['agent'], decision['question'], request_id, dict(AGENTS))
+        result = MESSAGING.owner_action('queue', decision['agent'], decision['question'], request_id, dict(AGENTS))
         return {'text': 'The message and its delivery status are shown here.',
                 'messages': [result], 'actions': [], 'cites': []}
     except MessagingError as e:
@@ -3337,7 +3337,7 @@ class H(BaseHTTPRequestHandler):
         if not self.host_ok():
             return self.send(403, b'forbidden')
         u = urllib.parse.urlparse(self.path)
-        q = urllib.parse.parse_qs(u.query)
+        q = {} if u.path == '/agent-capabilities' else urllib.parse.parse_qs(u.query)
         if u.path == '/':
             body, csp = page_with_nonce()
             return self.send(200, body, 'text/html; charset=utf-8',
@@ -3351,6 +3351,24 @@ class H(BaseHTTPRequestHandler):
                 except OSError:
                     pass
             return self.send(404, b'not found')
+        if u.path == '/agent-capabilities':
+            if not self.keyed(self.headers.get('X-Live-Room-Key', '')):
+                return self.send(403, b'forbidden')
+            try:
+                if len(u.query) > 256 or u.fragment or re.search(r'%(?![0-9a-fA-F]{2})', u.query):
+                    raise ValueError()
+                pairs = urllib.parse.parse_qsl(u.query, keep_blank_values=True, strict_parsing=True, max_num_fields=2)
+                if len(pairs) != 1 or pairs[0][0] != 'agent':
+                    raise ValueError()
+                agent = pairs[0][1]
+                if agent[:2] not in ('x:', 'c:') or not valid_uuid(agent[2:]):
+                    raise ValueError()
+            except ValueError:
+                return self.send(400, b'Invalid agent capability query.')
+            if MESSAGING is None:
+                return self.send(503, json.dumps({'error': MESSAGING_WHY}).encode(), 'application/json')
+            out = MESSAGING.owner_capabilities(agent, dict(AGENTS))
+            return self.send(200, json.dumps(out).encode(), 'application/json')
         if u.path == '/agent-messages':
             if not self.keyed(self.headers.get('X-Live-Room-Key', '')):
                 return self.send(403, b'forbidden')
@@ -3535,7 +3553,9 @@ class H(BaseHTTPRequestHandler):
             if MESSAGING is None:
                 return self.send(503, json.dumps({'error': MESSAGING_WHY}).encode(), 'application/json')
             try:
-                out = MESSAGING.submit(d.get('agent'), d.get('question'), d.get('request_id'), dict(AGENTS))
+                if set(d) != {'agent', 'question', 'request_id'}:
+                    raise MessagingError(400, 'Expected agent, question, and request_id only.')
+                out = MESSAGING.owner_action('queue', d.get('agent'), d.get('question'), d.get('request_id'), dict(AGENTS))
             except MessagingError as e:
                 return self.send(e.status, json.dumps({'error': str(e)}).encode(), 'application/json')
             except (OSError, ValueError, sqlite3.Error):
