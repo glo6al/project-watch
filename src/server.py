@@ -38,6 +38,7 @@ from datetime import datetime
 from officer_messaging import MessagingStore, MessagingError, validate_question, validate_target, valid_uuid
 
 MESSAGING = None
+NATIVE_OBSERVATIONS = None
 MESSAGING_WHY = "Agent messaging has not started."
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
@@ -3330,6 +3331,9 @@ class H(BaseHTTPRequestHandler):
         return isinstance(given, str) and hmac.compare_digest(given.encode(), KEY.encode())
 
     def do_GET(self):
+        if self.path.startswith('/native/v1/'):
+            import native_observation
+            return native_observation.handle_http(self, NATIVE_OBSERVATIONS, KEY, PORT)
         if not self.host_ok():
             return self.send(403, b'forbidden')
         u = urllib.parse.urlparse(self.path)
@@ -3449,6 +3453,9 @@ class H(BaseHTTPRequestHandler):
 
     def do_POST(self):
         global LAST_PAIR, APPROVER
+        if self.path.startswith('/native/v1/'):
+            import native_observation
+            return native_observation.handle_http(self, NATIVE_OBSERVATIONS, KEY, PORT)
         if self.path.startswith('/bridge/v2/'):
             if MESSAGING is None:
                 self.close_connection = True
@@ -3874,6 +3881,13 @@ def configure_shared_directory(store, home):
     store.shared.directory_factory = factory
 
 
+def resolve_native_agent(agent_id):
+    # Snapshot only: no discovery, native I/O or general room publication.
+    with LOCK:
+        row = AGENTS.get(agent_id)
+        return dict(row) if row is not None else None
+
+
 if __name__ == '__main__':
     KEY = load_key()
     if sys.platform == 'darwin':
@@ -3899,4 +3913,10 @@ if __name__ == '__main__':
         raise SystemExit('Port %d is busy (%s). Another W.A.T.C.H. may be running; a server just stopped can hold it for a '
                          'minute or two on Windows. Try again shortly, or set PORT.' % (PORT, e))
     print('W.A.T.C.H. on http://127.0.0.1:%d/  — open it and press Unlock (sessions active in the last %d min)' % (PORT, WINDOW // 60))
-    srv.serve_forever()
+    from native_observation import NativeObservationService
+    NATIVE_OBSERVATIONS = NativeObservationService(resolve_native_agent)
+    NATIVE_OBSERVATIONS.start()
+    try:
+        srv.serve_forever()
+    finally:
+        NATIVE_OBSERVATIONS.close()

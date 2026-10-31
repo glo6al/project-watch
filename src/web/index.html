@@ -643,6 +643,8 @@ body.stepped #hud #roomTheme{display:none}
   #deskToolbar .theme-choices{display:flex;gap:4px}
 }
 
+
+#nativeCard{flex:0 1 auto;min-height:0;max-height:min(280px,32vh);overflow:auto;overscroll-behavior:contain;scrollbar-width:thin;border:1px solid var(--line);padding:12px;margin:10px 0;min-width:0;font:inherit}#nativeCard header{display:flex;align-items:center;justify-content:space-between;gap:8px}#nativeCard p{margin:8px 0;overflow-wrap:anywhere;white-space:pre-wrap}#nativeCard small{display:block;color:var(--mute)}#nativeCard ol{padding-left:24px}#nativeCard li{margin:8px 0;white-space:pre-wrap;overflow-wrap:anywhere}#nativeCard article{border-top:1px solid var(--line);margin-top:12px;padding-top:8px}#nativeCard article>b{display:block;margin:6px 0}#nativeCard button{min-height:44px;font:inherit;color:var(--ink);background:var(--panel);border:1px solid var(--line);padding:6px 10px;cursor:pointer}#nativeCard button:disabled{opacity:.55;cursor:default}#nativeCard button:focus-visible,#nativeCard:focus-visible{outline:2px solid var(--ink);outline-offset:-2px}#nativeModel{overflow-wrap:anywhere}#nativeCard[hidden]{display:none}
 </style>
 </head>
 <body>
@@ -675,7 +677,7 @@ body.stepped #hud #roomTheme{display:none}
 <div id="deskT" hidden><span class="lbl">Chain of command</span><div id="crumb"></div><div id="deskChainTools"><button type="button" data-drawer="facts" aria-controls="deskFacts" aria-expanded="false">Details</button><span class="theme-choices" role="group" aria-label="Visual theme"><button type="button" data-theme="original" aria-pressed="true">Original</button><button type="button" data-theme="neutral" aria-pressed="false">Neutral</button></span></div></div>
 <div id="deskB" class="hud" hidden><div class="in"><div id="bay"><div id="bayH"><button data-pg="-1" aria-label="Previous panel">‹</button><span id="bayT"></span><button id="bayN" hidden></button><span id="bayD"></span><button data-pg="1" aria-label="Next panel">›</button></div><div id="fleet"></div></div><div id="badge"></div></div></div>
 <div id="empty" hidden></div>
-<span id="officerHome" hidden></span><div id="officer" class="hud fold" role="region" aria-label="Officer of the Watch"><div class="in"><button id="ofB" aria-expanded="false" aria-controls="ofBody" title="Officer of the Watch: ask about the room, in plain English"><span class="lamp"></span><b>Officer of the Watch</b><i id="ofSt">listening</i><u id="ofLine"></u><s>▴</s></button><div id="ofBody"><div id="ofContext"><div id="ofScope" role="group" aria-label="Officer question scope"><button type="button" data-scope="station" aria-pressed="false">Station</button><button type="button" data-scope="room" aria-pressed="true" aria-label="Whole room">Room</button></div><div id="ofTarget"><b id="ofSubject">Whole room</b><span id="ofProgress" role="status" hidden>Ready</span></div></div><div id="ofLog" role="log" aria-label="Conversation history"></div><div id="ofQuick"><button data-q="What did I miss?">What did I miss?</button><button data-q="Is anything stuck?">Anything stuck?</button><button data-q="Who is waiting on me?">Who is waiting on me?</button></div><section id="responseCard" aria-label="Agent request" hidden><header><div><b id="responseTitle"></b><small id="responseAgent"></small></div><button type="button" id="responseToggle" aria-expanded="true" aria-controls="responseBody" aria-label="Collapse request">⌄</button></header><div id="responseBody"><pre id="responseEvidence" tabindex="0" aria-label="Request details"></pre><div id="responseActions"><span id="responseDecisions"><button type="button" class="response-allow" disabled>Allow</button><button type="button" class="response-deny" disabled>Deny</button></span><button type="button" id="responseOpenApp">Answer in app ↗</button><button type="button" id="responseDismiss" hidden>Dismiss notice</button></div><small id="responseNote" role="status"></small></div></section><section id="pendingQueue" aria-label="Pending messages and steering" hidden><div id="pendingQueueTitle" role="status"></div><div id="pendingQueueList"></div></section><div id="recipient" role="group" aria-label="Message recipient"><span>TO</span><button type="button" data-recipient="agent" aria-pressed="false">Agent</button><button type="button" data-recipient="watch" aria-pressed="true">Ask WATCH</button></div><div id="ofRow"><textarea id="ofIn" rows="2" placeholder="Ask about the room…" autocomplete="off" maxlength="4000"></textarea><button id="ofSend">Ask WATCH</button></div><div id="sendHint"></div></div></div></div>
+<span id="officerHome" hidden></span><div id="officer" class="hud fold" role="region" aria-label="Officer of the Watch"><div class="in"><button id="ofB" aria-expanded="false" aria-controls="ofBody" title="Officer of the Watch: ask about the room, in plain English"><span class="lamp"></span><b>Officer of the Watch</b><i id="ofSt">listening</i><u id="ofLine"></u><s>▴</s></button><div id="ofBody"><div id="ofContext"><div id="ofScope" role="group" aria-label="Officer question scope"><button type="button" data-scope="station" aria-pressed="false">Station</button><button type="button" data-scope="room" aria-pressed="true" aria-label="Whole room">Room</button></div><div id="ofTarget"><b id="ofSubject">Whole room</b><span id="ofProgress" role="status" hidden>Ready</span></div></div><div id="ofLog" role="log" aria-label="Conversation history"></div><div id="ofQuick"><button data-q="What did I miss?">What did I miss?</button><button data-q="Is anything stuck?">Anything stuck?</button><button data-q="Who is waiting on me?">Who is waiting on me?</button></div><section id="responseCard" aria-label="Agent request" hidden><header><div><b id="responseTitle"></b><small id="responseAgent"></small></div><button type="button" id="responseToggle" aria-expanded="true" aria-controls="responseBody" aria-label="Collapse request">⌄</button></header><div id="responseBody"><pre id="responseEvidence" tabindex="0" aria-label="Request details"></pre><div id="responseActions"><span id="responseDecisions"><button type="button" class="response-allow" disabled>Allow</button><button type="button" class="response-deny" disabled>Deny</button></span><button type="button" id="responseOpenApp">Answer in app ↗</button><button type="button" id="responseDismiss" hidden>Dismiss notice</button></div><small id="responseNote" role="status"></small></div></section><section id="nativeCard" aria-label="Native observations" tabindex="0" hidden><header><b>Native observations</b><button type="button" id="nativeRefresh">Refresh</button></header><p id="nativeStatus" role="status"></p><div id="nativeModel"></div><small id="nativeRequestStatus"></small><div id="nativeQuestions"></div><button type="button" id="nativeOpenApp">Open app ↗</button></section><section id="pendingQueue" aria-label="Pending messages and steering" hidden><div id="pendingQueueTitle" role="status"></div><div id="pendingQueueList"></div></section><div id="recipient" role="group" aria-label="Message recipient"><span>TO</span><button type="button" data-recipient="agent" aria-pressed="false">Agent</button><button type="button" data-recipient="watch" aria-pressed="true">Ask WATCH</button></div><div id="ofRow"><textarea id="ofIn" rows="2" placeholder="Ask about the room…" autocomplete="off" maxlength="4000"></textarea><button id="ofSend">Ask WATCH</button></div><div id="sendHint"></div></div></div></div>
 <div id="lock" hidden><div><img src="/static/icon.svg?v=fleet-3" alt="" style="height:72px;margin-bottom:14px"><h1>W.A.T.C.H. is locked</h1><b style="color:var(--hl);letter-spacing:.06em">Window on Agents, Tools, Changes and Hand-offs.</b><br><br>This window has no key. Press Unlock and the server will open a new tab in your default browser with the room unlocked. The key is kept on this computer in <code>~/.live-room/key</code> and is never sent to a window that merely asks for it.<br><button id="unlock">Unlock</button><br><span id="lockMsg"></span></div></div>
 
 <script>
@@ -1436,6 +1438,7 @@ function subs(now){
 $('#subs').onclick=ev=>{const b=ev.target.closest('[data-go]'); if(b) setFocus(b.dataset.go)};
 let STEPPING=false;      /* while a monitor is stepping up, periodic repaints wait: nothing competes with the move for frames */
 function render(){
+  nativeSync();
   if(STEPPING){render._deferred=true; return}
   const now=Date.now()/1000, sec=Math.floor(now);
   for(const id of order){ try{
@@ -2128,7 +2131,7 @@ function desk(){
   cuSources(a); cuPaint(); deskPaint();
   /* readouts: recorded facts, labelled as what they are */
   const par=a.parent&&A[a.parent], f=(k,v)=>`<span><b>${k}</b><em>${esc(v)}</em></span>`;
-  put($('#badge'),f('Model',(a.model||'not recorded')+(a.effort?' · '+a.effort+' effort':''))+f('Approval setting',a.perm||'not recorded')
+  put($('#badge'),f('Last recorded model',(a.model||'not recorded')+(a.effort?' · '+a.effort+' effort':''))+f('Approval setting',a.perm||'not recorded')
     +f('Evidence',a.observed?a.observed+(a.over?' · observation ended':a.stale?' · not readable now':''):'its session log')+f('Context in use',(fuelOf(a)||{long:'not recorded'}).long)+f('Project',((proj(a.id)?projLabel(proj(a.id))+(projLabel(proj(a.id))!==proj(a.id)?' · folder '+proj(a.id):''):'')||(a.cwd||'').split(SEP()).pop()||'not recorded')+(a.observed&&a.cur&&a.cur.seen&&!a.cur.cwd?' · latest command: folder not readable':''))+f('Branch',a.branch||'none recorded')
     +f(a.maybe&&!a.parent?'Possibly started by (a guess from script text)':!a.soft?'Started by':/^related/.test(a.via||'')?'Related to':'Started by (inferred)',par?par.name+(a.via?' · '+a.via:''):a.parent?'an agent not in the room':a.maybe?(A[a.maybe.parent]?A[a.maybe.parent].name:'an agent not in the room')+' · '+a.maybe.via:'no parent recorded')
     +f(a.observed?'Exec server started':'Session created',a.started?clock(a.started)+' · '+ago(now-a.started):'not recorded')
@@ -2180,7 +2183,103 @@ let lastSeq=-1, boot='', connected=false, locked=false, connectedAt=0;
 let APPROVE=false; try{APPROVE=!DEMO&&sessionStorage.getItem('liveRoomApprove')==='1'}catch(err){}
 const here=()=>{if(APPROVE&&KEY&&connected&&!DEMO&&document.visibilityState==='visible')post('/presence',{visible:true}).catch(()=>{})};      /* never from a demo window: it could not show a held prompt */
 $('#appr').onclick=()=>{if(DEMO){APPROVE=!APPROVE; render(); return} APPROVE=!APPROVE; try{sessionStorage.setItem('liveRoomApprove',APPROVE?'1':'0')}catch(err){} here(); render()};
-function lock(on){locked=on; hid($('#lock'),!on)}
+function lock(on){locked=on; hid($('#lock'),!on);nativeSync()}
+/* native observation reader: private focused state, never LOG or message transport */
+function createNativeReader({request,paint,clock=()=>Date.now()/1000,later=setTimeout,cancel=clearTimeout}){
+  const state={agent:null,key:null,epoch:0,snapshot:null,note:'',busy:false,timer:null,abort:null};
+  const integer=v=>Number.isSafeInteger(v)&&v>=0;
+  const uuid=v=>typeof v==='string'&&/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(v);
+  const text=(v,max=65536)=>typeof v==='string'&&v.length<=max;
+  const obj=v=>v!==null&&typeof v==='object'&&!Array.isArray(v);
+  function valid(v){
+    if(!obj(v)||JSON.stringify(v).length>1048576||v.version!==1||v.agent_id!==state.agent||!['codex','claude'].includes(v.provider)||!uuid(v.observation_epoch)||!integer(v.revision))return false;
+    const m=v.model_settings,i=v.inputs;
+    if(!obj(m)||!obj(i)||!obj(m.capability)||!obj(i.capability)||m.capability.selectModel!==false||m.capability.selectEffort!==false||i.capability.answer!==false||m.catalog!==null||typeof m.capability.read!=='boolean'||typeof i.capability.observe!=='boolean'||m.capability.scope!=='next_turn')return false;
+    for(const p of [m,i])if(typeof p.read_active!=='boolean'||typeof p.stale!=='boolean'||!['reading','observed','unavailable','stale_observation'].includes(p.state)||!(p.expires_at===null||typeof p.expires_at==='number'&&Number.isFinite(p.expires_at)&&p.expires_at>0&&p.expires_at<=clock()+30)||p.read_active&&p.expires_at===null||p.state==='observed'&&p.expires_at===null)return false;
+    if(m.settings!==null){const s=m.settings;if(!obj(s)||!text(s.model,256)||!s.model||!(s.effort===null||text(s.effort,64))||![null,'default','plan'].includes(s.mode)||!(s.modelProvider===null||text(s.modelProvider,128))||s.source!=='native_desktop_settings'||typeof s.observedAt!=='number'||!Number.isFinite(s.observedAt))return false}
+    if(!Array.isArray(i.requests)||i.requests.length>32)return false;
+    const handles=new Set();
+    for(const r of i.requests){
+      if(!obj(r)||!uuid(r.handle)||handles.has(r.handle)||!integer(r.revision)||!obj(r.capability)||r.capability.answer!==false||!['observed','stale_observation'].includes(r.state))return false;handles.add(r.handle);
+      if(r.presentation===null)continue;
+      if(r.kind!=='question'||['secret_native_only','unsupported_schema'].includes(r.capability.reason))return false;
+      if(!obj(r.presentation)||!Array.isArray(r.presentation.questions)||!r.presentation.questions.length||r.presentation.questions.length>16||JSON.stringify(r.presentation).length>262144)return false;
+      for(const q of r.presentation.questions){
+        if(!obj(q)||q.isSecret===true||!text(q.question)||!text(q.header,4096)||!(q.options===null||Array.isArray(q.options)&&q.options.length<=64&&q.options.every(o=>obj(o)&&text(o.label)&&text(o.description))))return false;
+        for(const flag of ['isOther','isSecret','multiSelect'])if(flag in q&&typeof q[flag]!=='boolean')return false;
+      }
+    }
+    return true;
+  }
+  function stale(){if(state.snapshot)for(const p of [state.snapshot.model_settings,state.snapshot.inputs]){p.stale=true;p.read_active=false}}
+  function publish(){paint(state)}
+  function schedule(){
+    cancel(state.timer);state.timer=null;const s=state.snapshot;if(!s)return;
+    const parts=[s.model_settings,s.inputs],now=clock();
+    for(const p of parts)if(p.expires_at!==null&&p.expires_at<=now){p.stale=true;p.read_active=false}
+    const active=parts.some(p=>p.read_active),future=parts.filter(p=>!p.stale&&p.expires_at>now).map(p=>p.expires_at-now);
+    if(active||future.length){const delay=active?.6:Math.min(...future);state.timer=later(()=>{schedule();publish();if(!state.busy&&parts.some(p=>p.read_active))load(false)},Math.max(20,delay*1000))}
+  }
+  async function load(start){
+    if(!state.agent||state.busy)return;const epoch=state.epoch,agent=state.agent,key=state.key;state.busy=true;const controller=new AbortController();state.abort=controller;state.note=start?'Reading native settings and requests…':'';publish();
+    const timeout=later(()=>controller.abort(),10000);
+    try{
+      const response=await request(start?'/native/v1/read':'/native/v1/agents/'+encodeURIComponent(agent),{method:start?'POST':'GET',headers:{'X-Live-Room-Key':key,...start?{'Content-Type':'application/json'}:{}},cache:'no-store',signal:controller.signal,...start?{body:JSON.stringify({agent_id:agent,include:['model_settings','native_inputs']})}:{}});
+      if(epoch!==state.epoch)return;
+      if(!response.ok)throw Error('unavailable');
+      const v=await response.json();if(epoch!==state.epoch)return;
+      if(!valid(v))throw Error('invalid');
+      const old=state.snapshot;if(old&&!start&&(old.observation_epoch!==v.observation_epoch||v.revision<old.revision))throw Error('changed');
+      state.snapshot=v;state.note='';schedule();
+    }catch(error){if(epoch!==state.epoch)return;stale();state.note='Native observations unavailable or stale. Refresh to check again.';cancel(state.timer);state.timer=null}
+    finally{cancel(timeout);if(epoch===state.epoch){state.busy=false;state.abort=null;publish()}}
+  }
+  function sync(agent,key,{auto=true}={}){
+    if(state.agent===agent&&state.key===key)return;
+    state.epoch++;state.abort?.abort();cancel(state.timer);state.timer=null;state.abort=null;state.agent=agent;state.key=key;state.snapshot=null;state.note='';state.busy=false;publish();if(agent&&auto)load(true);else if(agent){state.note='Native observations cleared. Refresh to read this agent again.';publish()}
+  }
+  return {sync,refresh:()=>{if(!state.busy){cancel(state.timer);state.timer=null;state.snapshot=null;load(true)}},state};
+}
+/* end native observation reader */
+
+const NATIVE=createNativeReader({request:(...args)=>fetch(...args),paint:nativePaint});
+const NATIVE_VISIT={agent:null,key:null,read:false};
+function nativePaint(s){
+  const card=$('#nativeCard');card.hidden=!s.agent;if(!s.agent){$('#nativeModel').replaceChildren();$('#nativeQuestions').replaceChildren();$('#nativeModel')._nativeSignature=null;$('#nativeQuestions')._nativeSignature=null;txt($('#nativeStatus'),'');txt($('#nativeRequestStatus'),'');return}
+  $('#nativeRefresh').disabled=s.busy;txt($('#nativeStatus'),s.note||'Read-only observations. Answers and model selection are not enabled here.');
+  const snapshot=s.snapshot,m=snapshot?.model_settings,i=snapshot?.inputs;
+  const make=(tag,value)=>{const el=document.createElement(tag);el.textContent=value;return el};
+  const model=$('#nativeModel'),questions=$('#nativeQuestions');
+  const modelSignature=JSON.stringify([m?.settings?.model,m?.settings?.effort,m?.settings?.mode,m?.stale,!!m?.settings,!m?.settings&&s.busy]);
+  if(model._nativeSignature!==modelSignature){model._nativeSignature=modelSignature;model.replaceChildren();
+  if(m?.settings){const v=m.settings;model.append(make('p',(m.stale?'Last observed selection for next turn: ':'Selected for next turn: ')+v.model+' · Effort: '+(v.effort===null?'Default (unspecified)':v.effort)));model.append(make('small','Mode: '+(v.mode===null?'Unknown':v.mode)+'. Model selection unavailable: native model list is not connected.'))}
+  else model.append(make('p',s.busy?'Native model settings: reading…':'Native model settings unavailable. Recorded model information remains in Details.'));}
+  txt($('#nativeRequestStatus'),i?(i.stale?'Last observed requests; live observation ended or expired.':i.read_active?'Observing native requests…':'Native request observations unavailable.'):'');
+  const questionSignature=JSON.stringify([snapshot?.provider,i?.requests.map(r=>[r.handle,r.revision,r.presentation]),i?.requests.length?null:i?.state]);
+  if(questions._nativeSignature!==questionSignature){questions._nativeSignature=questionSignature;questions.replaceChildren();
+  if(i){
+    if(i.requests.length)questions.append(make('p',i.requests.length+' native request observation'+(i.requests.length===1?'':'s')));
+    for(const [index,r] of i.requests.entries()){const article=document.createElement('article');article.append(make('b','Native request '+(index+1)+' of '+i.requests.length));
+      if(r.presentation===null)article.append(make('p','Request details are available only in the native app.'));
+      else for(const q of r.presentation.questions){if(q.header)article.append(make('b',q.header));article.append(make('p',q.question));if(q.options?.length){const list=document.createElement('ol');for(const o of q.options)list.append(make('li',o.label+(o.description?' — '+o.description:'')));article.append(list)}if(q.options===null)article.append(make('small','This native question accepts a written response.'));else if(q.isOther)article.append(make('small','The native question also accepts a custom response.'));if(typeof q.multiSelect==='boolean')article.append(make('small',q.multiSelect?'Multiple selections allowed in the native app.':'Single selection in the native app.'))}
+      article.append(make('small','Answer in '+(snapshot.provider==='codex'?'Codex':'Claude')+'. Answering this request in WATCH is not enabled yet.'));questions.append(article)
+    }
+    if(!i.requests.length)questions.append(make('p',i.state==='observed'?'No requests in this observed snapshot.':'No native request observation available.'));
+  }}
+  const a=A[s.agent];$('#nativeOpenApp').disabled=!a||!!responseOpenReason(a);
+}
+function nativeSync(){
+  const agent=focus&&A[focus]?focus:null;
+  if(NATIVE_VISIT.agent!==agent||NATIVE_VISIT.key!==KEY){NATIVE_VISIT.agent=agent;NATIVE_VISIT.key=KEY;NATIVE_VISIT.read=false}
+  const eligible=!DEMO&&KEY&&!claiming&&!locked&&connected&&!document.hidden&&agent&&!STEADY;
+  if(!eligible){NATIVE.sync(null,null);return}
+  const auto=!NATIVE_VISIT.read;NATIVE_VISIT.read=true;NATIVE.sync(agent,KEY,{auto});
+}
+$('#nativeRefresh').onclick=()=>NATIVE.refresh();
+$('#nativeOpenApp').onclick=async()=>{const id=NATIVE.state.agent,epoch=NATIVE.state.epoch;if(!id||!A[id]||responseOpenReason(A[id]))return;try{const r=await post('/open',{agent:id});if(epoch===NATIVE.state.epoch){NATIVE.state.note=r.ok?'Opened the native app.':'Open this session in its native app to answer.';nativePaint(NATIVE.state)}}catch(e){if(epoch===NATIVE.state.epoch){NATIVE.state.note='Open this session in its native app to answer.';nativePaint(NATIVE.state)}}};
+addEventListener('visibilitychange',nativeSync);
+/* end native observation presentation */
+
 let ES=null, authN=0;       /* one stream at a time; an answer about an older key never touches newer state */
 function connect(){
   if(DEMO) return;

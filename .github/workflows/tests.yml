@@ -27,6 +27,7 @@ jobs:
       - run: python tests/test_codex_desktop_control.py
       - run: python tests/test_codex_native_input.py
       - run: python tests/test_codex_model_settings.py
+      - run: python tests/test_native_observation.py
       - run: python tests/test_claude_native_input.py
       - run: python tests/test_watch_claude_input.py
       - run: python tests/test_claude_channel.py

@@ -472,7 +472,9 @@ class ReviewRegressionTests(unittest.TestCase):
             directory.refresh(force=True)
         self.complete(directory)
         added, _ = self.codex_chat(name='Added')
-        for _ in range(20):
+        # An existing iterator may miss the addition: allow the remainder of
+        # that bounded scan plus a full next scan, regardless of scandir order.
+        for _ in range(60):
             status = directory.refresh(force=True)
             if added in directory._entries:
                 self.assertFalse(status['complete'])

@@ -979,3 +979,66 @@ responseFallbackHeightChecks();
   const changed=responseSource.replace(before,after);assert.notEqual(changed,responseSource);let caught=false;try{responseFallbackHeightChecks(changed)}catch(e){caught=true}assert.ok(caught,'measuring before fallback text mutation must fail');
 }
 console.log('ok fallback height: measures geometry and uncertainty text after rendering, retains app result, stable instruction; premature-measurement mutation detected');
+
+/* Native observations execute their actual private reader and inert renderer. */
+const nativeReaderSource=html.split('/* native observation reader: private focused state, never LOG or message transport */')[1].split('/* end native observation reader */')[0];
+function nativeFixture(source=nativeReaderSource){
+  let time=1000;const jobs=new Map(),requests=[],paints=[];let seq=0;
+  const create=vm.runInNewContext(source+';createNativeReader',{AbortController,Date,JSON,Number,Set,Error});
+  const api=create({clock:()=>time,later:(fn,ms)=>{jobs.set(++seq,{fn,at:time+ms/1000});return seq},cancel:id=>jobs.delete(id),paint:s=>paints.push(s.agent),request:(url,opts)=>new Promise((resolve,reject)=>requests.push({url,opts,resolve,reject}))});
+  return {api,requests,jobs,paints,tick(seconds){time+=seconds;for(const [id,j] of [...jobs])if(j.at<=time){jobs.delete(id);j.fn()}},answer(row,value){row.resolve({ok:true,json:async()=>value})}};
+}
+const nativeAgent='x:11111111-1111-4111-8111-111111111111',nativeOther='x:22222222-2222-4222-8222-222222222222';
+function nativeSnapshot(agent=nativeAgent){return {version:1,agent_id:agent,provider:'codex',observation_epoch:'33333333-3333-4333-8333-333333333333',revision:1,model_settings:{state:'observed',read_active:false,expires_at:1015,stale:false,catalog:null,settings:{model:'fixture-model',effort:null,mode:null,modelProvider:'fixture-provider',source:'native_desktop_settings',observedAt:1000},capability:{read:true,selectModel:false,selectEffort:false,reason:'catalog_unavailable',scope:'next_turn'}},inputs:{state:'observed',read_active:true,expires_at:1010,stale:false,requests:[{handle:'44444444-4444-4444-8444-444444444444',revision:1,kind:'question',state:'observed',presentation:{questions:[{id:'q0',header:'Choose',question:'<img src=x onerror=alert(1)> **plain**',options:[{label:'One',description:'[link](https://example.test)'}],isOther:true}]},capability:{answer:false,reason:'native_generation_unproven'}}],capability:{observe:true,answer:false,reason:'read_only'}}}}
+const nativeFlush=async()=>{for(let i=0;i<8;i++)await Promise.resolve()};
+async function nativeBehaviorChecks(source=nativeReaderSource){
+  const t=nativeFixture(source);t.api.sync(nativeAgent,'owner-key');assert.equal(t.requests.length,1);assert.equal(t.requests[0].url,'/native/v1/read');assert.equal(t.requests[0].opts.headers['X-Live-Room-Key'],'owner-key');assert.deepEqual(JSON.parse(t.requests[0].opts.body),{agent_id:nativeAgent,include:['model_settings','native_inputs']});
+  t.answer(t.requests[0],nativeSnapshot());await nativeFlush();assert.equal(t.api.state.snapshot.agent_id,nativeAgent);t.tick(.7);assert.equal(t.requests.length,2,'first observed still active must poll');assert.equal(t.requests[1].opts.method,'GET');
+  t.requests[1].reject(Error('network'));await nativeFlush();assert.equal(t.api.state.snapshot.inputs.stale,true,'failed poll revokes freshness');assert.equal(t.api.state.snapshot.inputs.read_active,false);t.tick(20);assert.equal(t.requests.length,2,'failure cannot restart native read');
+  const e=nativeFixture(source);e.api.sync(nativeAgent,'key');e.answer(e.requests[0],nativeSnapshot());await nativeFlush();e.tick(11);assert.equal(e.api.state.snapshot.inputs.stale,true,'local expiry independent of GET');assert.equal(e.api.state.snapshot.inputs.read_active,false);
+  const race=nativeFixture(source);race.api.sync(nativeAgent,'key');const first=race.requests[0];race.api.sync(nativeOther,'key');assert.equal(first.opts.signal.aborted,true);race.answer(first,nativeSnapshot());await nativeFlush();assert.equal(race.api.state.snapshot,null,'late old-agent response ignored');race.answer(race.requests[1],nativeSnapshot(nativeOther));await nativeFlush();assert.equal(race.api.state.snapshot.agent_id,nativeOther);race.api.sync(null,null);assert.equal(race.api.state.snapshot,null,'locking purges private snapshot');
+  const aba=nativeFixture(source);aba.api.sync(nativeAgent,'key');const old=aba.requests[0];aba.api.sync(nativeOther,'key');aba.api.sync(nativeAgent,'key');aba.answer(old,nativeSnapshot());await nativeFlush();assert.equal(aba.api.state.snapshot,null,'returning to same agent must not revive old observation epoch');
+  for(const modify of [s=>s.agent_id=nativeOther,s=>s.inputs.capability.answer=true,s=>s.model_settings.capability.selectModel=true,s=>s.inputs.expires_at=Infinity,s=>s.inputs.expires_at=null,s=>s.inputs.requests[0].presentation.questions[0].isSecret=true]){
+    const f=nativeFixture(source);f.api.sync(nativeAgent,'key');const value=nativeSnapshot();modify(value);f.answer(f.requests[0],value);await nativeFlush();assert.equal(f.api.state.snapshot,null,'invalid or secret snapshot rejected');
+  }
+  const rev=nativeFixture(source);rev.api.sync(nativeAgent,'key');let value=nativeSnapshot();value.revision=2;rev.answer(rev.requests[0],value);await nativeFlush();rev.tick(.7);value=nativeSnapshot();rev.answer(rev.requests[1],value);await nativeFlush();assert.equal(rev.api.state.snapshot.revision,2);assert.equal(rev.api.state.snapshot.inputs.stale,true,'revision regression invalidates freshness');
+}
+function nativeRenderChecks(source=html.slice(html.indexOf('function nativePaint(s){'),html.indexOf('function nativeSync(){'))){
+  class Node{constructor(tag){this.tag=tag;this.children=[];this.textContent='';this.hidden=false;this.disabled=false}append(...nodes){this.children.push(...nodes)}replaceChildren(...nodes){this.children=nodes}set innerHTML(value){throw Error('native text must never use HTML')}}
+  const nodes=new Map(),node=id=>{if(!nodes.has(id))nodes.set(id,new Node(id));return nodes.get(id)};
+  const paint=vm.runInNewContext(source+';nativePaint',{$:node,txt:(n,v)=>n.textContent=v,document:{createElement:tag=>new Node(tag)},A:{[nativeAgent]:{runtime:'Codex'}},responseOpenReason:()=>''});
+  const snap=nativeSnapshot();paint({agent:nativeAgent,snapshot:snap,busy:false,note:''});
+  const all=n=>[n,...n.children.flatMap(all)],text=[...nodes.values()].flatMap(all).map(n=>n.textContent).join('\n');
+  assert.ok(text.includes('<img src=x onerror=alert(1)> **plain**'));assert.ok(text.includes('[link](https://example.test)'));assert.ok(text.includes('Default (unspecified)'));assert.ok(text.includes('Mode: Unknown'));assert.equal([...nodes.values()].flatMap(all).some(n=>['input','select','textarea','a'].includes(n.tag)),false);
+  const retained=node('#nativeQuestions').children[1],retainedModel=node('#nativeModel').children[0];node('#nativeQuestions').scrollTop=83;paint({agent:nativeAgent,snapshot:snap,busy:true,note:'Checking'});assert.equal(node('#nativeQuestions').children[1],retained,'unchanged poll retains selected question DOM');assert.equal(node('#nativeModel').children[0],retainedModel);assert.equal(node('#nativeQuestions').scrollTop,83);snap.inputs.requests[0].observed_at=1001;paint({agent:nativeAgent,snapshot:snap,busy:false,note:''});assert.equal(node('#nativeQuestions').children[1],retained,'observation timestamp alone does not replace text');
+  snap.inputs.requests[0].presentation=null;paint({agent:nativeAgent,snapshot:snap,busy:false,note:''});assert.ok(all(node('#nativeQuestions')).map(n=>n.textContent).join('\n').includes('only in the native app'));assert.ok(!all(node('#nativeQuestions')).some(n=>n.textContent.includes('<img')));
+}
+(async()=>{await nativeBehaviorChecks();nativeRenderChecks();for(const [name,before,after] of [
+ ['target correlation','v.agent_id!==state.agent','false'],
+ ['private read capability','i.capability.answer!==false','false'],
+ ['expiry revocation','p.expires_at<=now','false'],
+ ['active polling','parts.some(p=>p.read_active)','false'],
+ ['focus epoch','if(epoch!==state.epoch)return;','if(false)return;'],
+]){const changed=nativeReaderSource.replaceAll(before,after);assert.notEqual(changed,nativeReaderSource);let caught=false;try{await nativeBehaviorChecks(changed)}catch(e){caught=true}assert.ok(caught,name+' mutation must fail')}
+const renderSource=html.slice(html.indexOf('function nativePaint(s){'),html.indexOf('function nativeSync(){'));let cacheCaught=false;try{nativeRenderChecks(renderSource.replace('questions._nativeSignature!==questionSignature','true'))}catch(e){cacheCaught=true}assert.ok(cacheCaught,'question DOM cache removal must fail');
+console.log('ok native observation reader: exact target/epoch, active polling, expiry, failure, readonly text, secret refusal; five guard mutations detected')})().catch(e=>{console.error(e);process.exitCode=1});
+
+function nativeVisitChecks(wrapper=html.slice(html.indexOf('function nativeSync(){'),html.indexOf("$('#nativeRefresh').onclick"))){
+  const f=nativeFixture(),context={NATIVE:f.api,NATIVE_VISIT:{agent:null,key:null,read:false},focus:nativeAgent,A:{[nativeAgent]:{},[nativeOther]:{}},KEY:'key',DEMO:false,claiming:false,locked:false,connected:true,document:{hidden:false},STEADY:false};
+  const sync=vm.runInNewContext(wrapper+';nativeSync',context);
+  sync();assert.equal(f.requests.length,1,'first selected desk read');const first=f.requests[0];
+  context.connected=false;sync();assert.equal(first.opts.signal.aborted,true);assert.equal(f.api.state.snapshot,null);assert.equal(f.api.state.agent,null);
+  context.connected=true;sync();assert.equal(f.requests.length,1,'same-visit SSE reconnect cannot auto-read');assert.equal(f.api.state.agent,nativeAgent);
+  f.api.refresh();assert.equal(f.requests.length,2,'explicit Refresh remains available after reconnect');
+  context.document.hidden=true;sync();context.document.hidden=false;sync();assert.equal(f.requests.length,2,'returning visible same visit cannot auto-read');
+  context.locked=true;sync();context.locked=false;sync();assert.equal(f.requests.length,2,'lock visibility alone is not a new visit');
+  context.focus=nativeOther;sync();assert.equal(f.requests.length,3,'explicit different desk starts one new read');
+  context.KEY='rotated-key';sync();assert.equal(f.requests.length,4,'new owner credential starts a fresh authorization context');assert.equal(f.requests[3].opts.headers['X-Live-Room-Key'],'rotated-key');
+  context.focus=null;sync();context.focus=nativeOther;sync();assert.equal(f.requests.length,5,'leaving and reopening desk is new visit');
+}
+nativeVisitChecks();
+{
+  const source=html.slice(html.indexOf('function nativeSync(){'),html.indexOf("$('#nativeRefresh').onclick"));
+  let caught=false;try{nativeVisitChecks(source.replace('const auto=!NATIVE_VISIT.read','const auto=true'))}catch(e){caught=true}assert.ok(caught,'same-visit autoread guard mutation must fail');
+}
+console.log('ok native desk visits: SSE/visibility/lock purge without automatic retry; explicit refresh/focus/key transitions; autoread mutation detected');
