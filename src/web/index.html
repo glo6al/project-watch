@@ -564,6 +564,7 @@ html[data-theme=neutral] #compactDesk #deskAgentList button[aria-current=true]{b
 :is(#compactDesk,#officer,#hud) button:disabled{cursor:default}
 @media(forced-colors:active){
   #compactDesk #deskAgentList button[aria-current=true],#deskActions #deskWorkToggle[aria-expanded=true],#crumb .pill.me,#hud #projs button.on{outline:2px solid Highlight;outline-offset:-2px}
+  #compactDesk #deskAgentList button[aria-current=true]:focus-visible,#deskActions #deskWorkToggle[aria-expanded=true]:focus-visible,#crumb .pill.me:focus-visible,#hud #projs button.on:focus-visible{outline-style:dashed;outline-offset:2px}
 }
 
 #back .mobile-label{display:none}
