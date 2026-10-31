@@ -1,5 +1,7 @@
 # Optional Claude Code channel
 
+New owner and shared-peer delivery to named Claude chats is disabled in WATCH. A channel identifies a running process; that process can change its current conversation without changing the channel identity. This adapter remains for development and recovery of existing requests, and does not establish exact-chat delivery. Existing requests are polled without resending.
+
 This package provides WATCH's local MCP channel for **sessions started with the channel enabled**. It does not attach to arbitrary existing Claude sessions. The repository launcher supplies the session UUID, instance UUID and private state directory; installing this package does not change Claude settings or permissions.
 
 Install optional dependencies with Node.js 20 or later:
