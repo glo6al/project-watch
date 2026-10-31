@@ -158,8 +158,8 @@ async function controlChecks(code=messageCode){
   c.ofMessageMerge([{...request,delivery_warning:'Older <img> messages may still run; they are not cancelled.'}]);assert.match(c.OFM.records.get(request.request_id).el.innerHTML,/Older &lt;img&gt;/);assert.doesNotMatch(c.OFM.records.get(request.request_id).el.innerHTML,/<img/);assert.match(c.storage.get('liveRoomMessages'),/delivery_warning/);
   const cachedPrivate=new Map([['liveRoomControls',JSON.stringify([malicious])]]),privateReload=messaging(code,cachedPrivate);privateReload.ctx.connected=false;privateReload.ofMessageLoad();assert.equal(privateReload.OFM.controls.size,1);assert.doesNotMatch(cachedPrivate.get('liveRoomControls'),/private_path|expected_turn_id|transcript/);
   const warningReload=messaging(code,c.storage);warningReload.ctx.connected=false;warningReload.ofMessageLoad();assert.match(warningReload.OFM.records.get(request.request_id).el.innerHTML,/Older &lt;img&gt;/);
-  const showCode=html.slice(html.indexOf('function ofShow(r){'),html.indexOf('function ofDemoAnswer(q)'));
-  const shown=messaging(code);shown.ctx.ofAdd=()=>({querySelectorAll:()=>[]});shown.ctx.ofCite=()=>'';shown.ctx.ofAct=()=>[false,''];shown.ctx.OF={};vm.runInContext(showCode+';ofShow({text:"recorded",controls:['+JSON.stringify(control)+']})',shown.ctx);assert.equal(shown.OFM.controls.size,1,'Officer response merges control even without polling');
+  const showCode=html.slice(html.indexOf('function ofShow('),html.indexOf('function ofDemoAnswer('));
+  const shown=messaging(code);Object.assign(shown.ctx,{OFUI:{epoch:1,tab:'officer'},focus:null,ofEl:{classList:{contains:()=>false}},ofMayAct:()=>true,ofAttributed:(c,h)=>h});shown.ctx.ofAdd=()=>({querySelectorAll:()=>[]});shown.ctx.ofCite=()=>'';shown.ctx.ofAct=()=>[false,''];shown.ctx.OF={};vm.runInContext(showCode+';ofShow({text:"recorded",controls:['+JSON.stringify(control)+']})',shown.ctx);assert.equal(shown.OFM.controls.size,1,'Officer response merges control even without polling');
 }
 (async()=>{
   await controlChecks();console.log('ok controls: lost response recovery, outcomes, reload uncertainty, stale races, retention and privacy');
@@ -186,12 +186,12 @@ async function controlChecks(code=messageCode){
 
 /* The Officer submission owns one idempotency ID per user question, not per proposed message. */
 async function officerSubmitChecks(mutate=false){
-  let sendCode=html.slice(html.indexOf('async function ofSend(){'),html.indexOf('function ofShow(r)'));
+  let sendCode=html.slice(html.indexOf('async function ofSend(){'),html.indexOf('/* response actions preserve'));
   if(mutate) sendCode=sendCode.replace('...(request_id?{request_id}:{})','...{}');
   const bodies=[],shown=[],button={disabled:false},status={textContent:''};let ids=0;
   const ctx={OF:{turns:[],busy:false},ofIn:{value:'Ask Aster for progress',focus(){}},ofSt:status,DEMO:false,
     crypto:{randomUUID:()=>`uuid-${++ids}`},ofDay(){},ofAdd:(c,t)=>shown.push(t),ofStatus:t=>status.textContent=t,
-    $:()=>button,ofSave(){},ofShow(){},esc:String,
+    $:()=>button,ofSave(){},ofShow(){},esc:String,ofCurrent:()=>({context:{scope:'room'},history:{scope:'room'},epoch:0}),ofAttributed:(c,h)=>h,ofOwnsFocus:()=>false,
     post:async(route,body)=>{bodies.push({route,body});return {ok:true,json:async()=>({text:'Question queued',messages:[]})}}};
   vm.createContext(ctx);const send=vm.runInContext(sendCode+';ofSend',ctx);
   await send();assert.equal(bodies.length,1);assert.equal(bodies[0].route,'/ask');assert.equal(bodies[0].body.request_id,'uuid-1');assert.equal(ids,1);
@@ -202,3 +202,91 @@ async function officerSubmitChecks(mutate=false){
   console.log('ok Officer submission: one UUID per question, /ask only, no-crypto log queries, uncertainty warning');
 }
 (async()=>{await officerSubmitChecks();let failed=false;try{await officerSubmitChecks(true)}catch(err){failed=true}assert.ok(failed,'missing request ID mutation must fail');console.log('ok mutation detected: missing Officer request ID')})().catch(err=>{console.error(err);process.exitCode=1});
+
+/* Actual context/history helpers: metadata is optional, bounded data, not a changed prompt. */
+const contextStart=html.indexOf('/* officer context helpers:'),contextEnd=html.indexOf('/* end officer context helpers */');
+const contextCode=html.slice(html.indexOf('*/',contextStart)+2,contextEnd);
+function contextChecks(code=contextCode){
+  const h=vm.runInNewContext(code+';({ofContextValid,ofHistory,ofSnapshot,ofMayAct})');
+  const aid='x:12345678-abcd',agents={[aid]:{name:'Birch'}};
+  const r=h.ofSnapshot('station',aid,agents,7);agents[aid].name='Renamed';
+  assert.equal(r.history.name,'Birch');assert.equal(r.context.name,undefined);assert.ok(Object.isFrozen(r.context));assert.ok(Object.isFrozen(r.history));
+  assert.equal(h.ofSnapshot('room',aid,agents,8).context.agent,undefined);
+  for(const invalid of [null,[],{scope:'room',agent:aid},{scope:'station',agent:'Birch'},{scope:'station',agent:aid+'\n'},{scope:'station',agent:aid,name:'x'.repeat(121)},{scope:'station',agent:aid,name:''}])assert.equal(h.ofContextValid(invalid),null);
+  const rows=h.ofHistory([{role:'user',content:'legacy'},{role:'assistant',content:'old',context:{scope:'station',agent:aid,name:'Historical'}},{role:'user',content:'bad metadata',context:{scope:'station',agent:'bad'}}]);
+  assert.equal(rows[0].context,undefined);assert.equal(rows[1].context.name,'Historical');assert.equal(rows[2].context,undefined);
+  assert.equal(h.ofHistory(Array.from({length:60},()=>({role:'user',content:'x'.repeat(4100)}))).length,40);assert.equal(h.ofHistory([{role:'user',content:'x'.repeat(4100)}])[0].content.length,4000);
+  assert.equal(h.ofMayAct(r,7,true),true);assert.equal(h.ofMayAct(r,8,true),false);assert.equal(h.ofMayAct(r,7,false),false);
+}
+contextChecks();console.log('ok officer context: frozen snapshots, legacy and malformed history, bounds, navigation gate');
+for(const [label,from,to] of [['late navigation gate','request.epoch===epoch','true'],['history bound','.slice(-40)','.slice(-60)'],['name bound','>120','>200']]){let failed=false;try{contextChecks(contextCode.replace(from,to))}catch(e){failed=true}assert.ok(failed,label+' mutation caught');console.log('ok mutation detected: '+label)}
+
+/* An in-flight question never borrows the selected station on return or steals focus. */
+async function officerLateChecks(){
+  const code=html.slice(html.indexOf('async function ofSend(){'),html.indexOf('/* response actions preserve'));
+  let release,epoch=1,selected='Birch',focuses=0,posted;const shown=[],responses=[];
+  const ctx={OF:{turns:[],busy:false},ofIn:{value:'Why did it stop?',focus(){focuses++}},ofSt:{textContent:''},DEMO:false,
+    ofCurrent:()=>({context:{scope:'station',agent:'x:12345678'},history:{scope:'station',agent:'x:12345678',name:selected},epoch}),
+    ofDay(){},ofAdd:(c,t)=>shown.push(t),ofAttributed:(c,h)=>c.name+' '+h,esc:String,ofStatus(t){ctx.ofSt.textContent=t},$:()=>({disabled:false}),ofSave(){},ofShow:(r,q)=>responses.push(q),ofOwnsFocus:q=>q.epoch===epoch,
+    post:async(p,b)=>{posted=b;await new Promise(r=>release=r);return {ok:true,json:async()=>({text:'Stopped'})}}};
+  vm.createContext(ctx);const send=vm.runInContext(code+';ofSend',ctx);const pending=send();selected='Aster';epoch++;release();await pending;
+  assert.equal(posted.context.agent,'x:12345678');assert.equal(responses[0].history.name,'Birch');assert.equal(ctx.OF.turns[1].context.name,'Birch');assert.equal(focuses,0);
+  ctx.ofIn.value='Explain';ctx.post=async()=>{selected='Other';epoch++;throw Error('offline')};await send();assert.match(shown.at(-1),/^Aster /);assert.equal(focuses,0);
+  console.log('ok delayed response: immutable attribution on success/error, no focus theft');
+}
+officerLateChecks().catch(e=>{console.error(e);process.exitCode=1});
+
+/* Explicit suggestion clicks run the real action boundary once, never on arrival. */
+{
+  const code=html.slice(html.indexOf('function ofSuggestion('),html.indexOf('function ofShow('));let calls=0;const buttons=[],lines=[];
+  const ctx={A:{},focus:'x:12345678',ofAdd:(c,h)=>{lines.push(h);const b={};buttons.push(b);return {querySelector:()=>b}},esc:String,ofAct:()=>{calls++;return [true,'applied']},ofToggle(){throw Error('unexpected fold')},$:()=>({focus(){}})};
+  const suggest=vm.runInNewContext(code+';ofSuggestion',ctx);suggest({do:'watch_draft',words:'test'});assert.equal(calls,0);buttons[0].onclick();buttons[0].onclick();assert.equal(calls,1);assert.equal(buttons[0].disabled,true);assert.match(lines.at(-1),/^Done/);console.log('ok deferred suggestion: explicit single use, truthful outcome');
+}
+
+/* Real tab/citation helpers reveal the existing Comms node before navigation. */
+{
+  const nodes={};for(const key of ['#officerTab','#commsTab','#officerSlot','#commsPanel'])nodes[key]={setAttribute(k,v){this[k]=v}};
+  const ctx={OFUI:{tab:'officer',epoch:0},$:k=>nodes[k],stickC:true,commsEl:{scrollTop:0,scrollHeight:90}};
+  const code=html.slice(html.indexOf('function ofTab('),html.indexOf('function ofInit('));
+  const tab=vm.runInNewContext(code+';ofTab',ctx);tab('comms');assert.equal(ctx.OFUI.epoch,1);assert.equal(nodes['#officerSlot'].hidden,true);assert.equal(nodes['#commsPanel'].hidden,false);assert.equal(nodes['#commsTab'].tabIndex,0);assert.equal(ctx.commsEl.scrollTop,90);tab('comms',false);assert.equal(ctx.OFUI.epoch,1);
+  const jumpCode=html.slice(html.indexOf('function ofJump('),html.indexOf('/* agent message helpers:'));
+  let visible=false,scrolled=false;const entry={t:'you',seq:7,key:'message'},el={dataset:{k:'message'},getClientRects:()=>visible?[{}]:[],scrollIntoView(){scrolled=true},classList:{add(){},remove(){}}};
+  const env={A:{id:{name:'Birch',story:[entry],open:new Set()}},focus:'id',setFocus(){},ofTab(t){visible=t==='comms'},capAdd:(s,k)=>s.add(k),STATION:{compact:true},render(){},performance:{now:()=>0},STEPPING:false,commsEl:{dataset:{a:'id'},querySelectorAll:()=>[el]},storyEl:{},setTimeout(){},ofAdd(){throw Error('citation failed')},esc:String};
+  vm.runInNewContext(jumpCode+';ofJump("id",7)',env);assert.equal(scrolled,true);console.log('ok tabs and citations: existing Comms revealed, roving tab state, epoch and sticky bottom');
+}
+
+/* Visibility is an all-rectangle safety check, including compact-host clipping. */
+function visibilityChecks(mutate=false){
+  let code=html.slice(html.indexOf('function onScreen('),html.indexOf('const covered='));if(mutate)code=code.replace('r.top<h.top','false');
+  const r={width:210,height:100,top:90,bottom:190,left:0,right:210},host={getBoundingClientRect:()=>({top:100,bottom:500,left:0,right:500})};
+  const el={getBoundingClientRect:()=>r,closest:()=>host,contains:()=>true};
+  const visible=vm.runInNewContext(code+';onScreen',{innerHeight:600,innerWidth:500,$:()=>({offsetHeight:40}),document:{elementFromPoint:()=>el}});
+  assert.equal(visible(el),false);r.top=110;r.bottom=210;assert.equal(visible(el),true);r.height=70;assert.equal(visible(el),false);
+}
+visibilityChecks();let clippingFailed=false;try{visibilityChecks(true)}catch(e){clippingFailed=true}assert.ok(clippingFailed);console.log('ok compact approval clipping guard and mutation detection');
+
+/* A still-visible dock is not ownership: another focused control defers navigation actions. */
+function responseFocusChecks(mutate=false){
+  let code=html.slice(html.indexOf('function ofShow('),html.indexOf('function ofDemoAnswer('));if(mutate)code=code.replace('&&(!request||ofOwnsFocus(request))','');
+  let acts=0,suggestions=0;const ctx={OFUI:{epoch:1,tab:'officer'},focus:'station',ofEl:{classList:{contains:()=>false}},ofOwnsFocus:()=>false,ofMayAct:(q,e,a)=>q.epoch===e&&a,ofAttributed:(c,h)=>h,ofParas:String,ofAdd:()=>({querySelectorAll:()=>[]}),ofSuggestion:()=>suggestions++,ofAct:()=>{acts++;return [false,'']},esc:String};
+  const show=vm.runInNewContext(code+';ofShow',ctx);show({text:'Draft',actions:[{do:'watch_draft'}]},{epoch:1});assert.equal(acts,0);assert.equal(suggestions,1);
+  ctx.ofOwnsFocus=()=>true;show({text:'Draft',actions:[{do:'watch_draft'}]},{epoch:1});assert.equal(acts,1);
+}
+responseFocusChecks();let focusFailed=false;try{responseFocusChecks(true)}catch(e){focusFailed=true}assert.ok(focusFailed);console.log('ok response action focus ownership and mutation detection');
+{
+  const match=html.match(/\$\('#compactDesk'\)\.addEventListener\('pointerdown',\(\)=>\{([^}]+)\}\)/);assert.ok(match);const ctx={moved:true,drop(){}};vm.runInNewContext(match[1],ctx);assert.equal(ctx.moved,false);console.log('ok compact pointerdown clears stale room-drag click suppression');
+}
+
+/* Compact approval placement moves the original action banner next to the code and restores order. */
+{
+  const parent={children:[]};
+  function node(name){const n={name,parentNode:parent,remove(){const i=parent.children.indexOf(this);if(i>=0)parent.children.splice(i,1)},before(el){el.remove();parent.children.splice(parent.children.indexOf(this),0,el)},after(el){el.remove();parent.children.splice(parent.children.indexOf(this)+1,0,el)}};Object.defineProperty(n,'nextElementSibling',{get(){return parent.children.slice(parent.children.indexOf(n)+1).find(x=>x.name!=='anchor')}});return n}
+  const banner=node('banner'),header=node('header'),mon=node('mon');parent.children=[banner,header,mon];
+  const code=html.slice(html.indexOf('function stationBefore('),html.indexOf('function stationLayout('));const ctx={STATION:{anchors:new Map()},document:{createComment:()=>node('anchor')}};
+  const api=vm.runInNewContext(code+';({stationBefore,stationRestore})',ctx);api.stationBefore(banner,mon);assert.equal(parent.children.at(-2),banner);api.stationBefore(banner,mon);assert.equal(ctx.STATION.anchors.size,1);api.stationRestore(banner);assert.deepEqual(parent.children,[banner,header,mon]);assert.equal(ctx.STATION.anchors.size,0);console.log('ok compact approval original-banner placement and exact restoration');
+}
+
+/* Leave scrolling room around the approval banner and code, not only an exact fit. */
+{
+  const code=html.slice(html.indexOf('function compactMonitorHeight('),html.indexOf('function stationLayout('));const height=vm.runInNewContext(code+';compactMonitorHeight');assert.equal(height(390,97),169);assert.equal(height(200,100),120);assert.ok(64+169+12<=293-40);console.log('ok compact approval geometry reserves scroll breathing space and minimum monitor height');
+}
