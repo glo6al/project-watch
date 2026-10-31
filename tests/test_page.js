@@ -574,7 +574,7 @@ const needSource=html.slice(html.indexOf('function need('),html.indexOf('/* Cont
 function responseFixture(source=responseSource,dispatch=dispatchSource){
   const nodes=new Map(),listeners={},posts=[],pending=[],reveals=[];let now=1000,focusCalls=0;
   const rect=(top=100,bottom=600)=>({top,bottom,left:0,right:600,width:600,height:bottom-top});
-  function node(id){if(!nodes.has(id)){const el={id,hidden:false,disabled:false,textContent:'',value:'my unchanged draft',children:[],rect:rect(),setAttribute(k,v){this[k]=v},getBoundingClientRect(){return this.rect},addEventListener(k,f){this[k]=f},focus(){focusCalls++}};Object.defineProperty(el,'innerHTML',{set(){throw Error('Request text must not become HTML')}});nodes.set(id,el)}return nodes.get(id)}
+  function node(id){if(!nodes.has(id)){const el={id,hidden:false,disabled:false,textContent:'',scrollTop:0,clientHeight:500,value:'my unchanged draft',children:[],rect:rect(),setAttribute(k,v){this[k]=v},getBoundingClientRect(){return this.rect},addEventListener(k,f){this[k]=f},focus(){focusCalls++}};Object.defineProperty(el,'innerHTML',{set(){throw Error('Request text must not become HTML')}});nodes.set(id,el)}return nodes.get(id)}
   function button(kind){return {kind,disabled:true,classList:{contains:c=>c==='response-'+kind},closest(){return this},cloneNode(){return button(kind)},replaceWith(b){const holder=this.parentNode,i=holder.children.indexOf(this);holder.children[i]=b;b.parentNode=holder;this.parentNode=null}}}
   const holder=node('#responseDecisions');holder.children=['allow','deny'].map(button);for(const b of holder.children)b.parentNode=holder;
   node('#responseCard').rect=rect(200,500);node('#responseEvidence').rect=rect(240,400);node('#responseActions').rect=rect(410,445);
@@ -643,7 +643,7 @@ function responseReviewChecks(source=responseSource,needCode=needSource){
   t.listeners.resize();assert.equal(t.api.responseCanDecide(t.allow()),false);t.api.responseGate();t.tick(450);t.api.responseGate();t.listeners.observedResize();assert.equal(t.api.responseCanDecide(t.allow()),false,'ancestor resize also resets exposure');
   t.ctx.visible=false;t.paint();assert.equal(t.node('#responseOpenApp').hidden,false);assert.match(t.node('#responseNote').textContent,/Scroll the full request/);assert.equal(t.allow().disabled,true,'fallback never weakens geometry guard');
   const need=vm.runInNewContext(needCode+';need',{saidKind:()=>null}),a={perms:{p1:{pid:'p1',tool:'Bash',text:'First',sent:true,uncertain:true},p2:{pid:'p2',tool:'Bash',text:'Second'}},calls:{},asks:{}};
-  assert.equal(need(a).perm,a.perms.p2,'coexisting unsent permission takes priority');assert.equal(need(a).more,1);delete a.perms.p2;assert.equal(need(a).perm,a.perms.p1,'frozen first request remains after later request ends');
+  assert.equal(need(a).perm,a.perms.p2,'coexisting unsent permission takes priority');assert.equal(need(a).more,0);assert.equal(need(a).unresolved,1);delete a.perms.p2;assert.equal(need(a).perm,a.perms.p1,'frozen first request remains after later request ends');
   t.ctx.visible=true;t.a.perms=a.perms;t.paint();assert.equal(t.node('#responseDecisions').children[0].disabled,true);t.a.perms.p2={pid:'p2',tool:'Bash',text:'Second'};t.ready();assert.equal(t.api.RESPONSE.exposure.pid,'p2');assert.equal(t.a.perms.p1.uncertain,true);
   const log=t.node('#ofLog');log.clientHeight=400;log.scrollTop=600;let hidden=false;Object.defineProperty(t.node('#responseCard'),'hidden',{get:()=>hidden,set:v=>{hidden=v;log.clientHeight=v?400:200},configurable:true});
   t.paint();assert.ok(log.scrollHeight-log.scrollTop-log.clientHeight<40,'new card preserves existing follow-to-bottom');log.clientHeight=400;log.scrollTop=100;t.paint();assert.equal(log.scrollTop,100,'reading earlier conversation never jumps to bottom');
@@ -657,3 +657,52 @@ for(const [name,source,needCode] of [
  ['follow bottom',responseSource.replace('if(follow)ofLog.scrollTop=ofLog.scrollHeight',''),needSource]
 ]){let caught=false;try{responseReviewChecks(source,needCode)}catch(e){caught=true}assert.ok(caught,name+' review mutation must fail')}
 console.log('ok review repairs: safe notice dismissal, continuous exposure, short-screen fallback, coexisting permissions, server reason and follow-bottom; four additional mutations detected');
+
+/* The short-height override must not match an absent or collapsed request. Browser QA measures final pixels. */
+function responseShortScopeChecks(css=html){
+  const at=css.indexOf('@media(max-height:700px)'),block=css.slice(at,css.indexOf('\n',at));
+  const rules=[...block.slice(block.indexOf('{')+1,-1).matchAll(/([^{}]+)\{([^{}]*)\}/g)];
+  const scoped=rules.filter(([_,selector])=>selector.includes('#compactDesk'));
+  assert.ok(scoped.length>=7);
+  for(const [,selectors] of scoped)for(const selector of selectors.split(','))assert.ok(selector.includes(':has(#responseCard:not([hidden]) #responseBody:not([hidden]))'),'short-height layout applies only with a visible expanded card: '+selector);
+  const log=scoped.find(([,selector])=>selector.endsWith('#ofLog'));assert.ok(log);assert.match(log[2],/max-height:160px/,'cap remains available for expanded short-screen requests');
+}
+responseShortScopeChecks();let scopeCaught=false;try{responseShortScopeChecks(html.replaceAll(':has(#responseCard:not([hidden]) #responseBody:not([hidden]))',''))}catch(e){scopeCaught=true}assert.ok(scopeCaught,'unscoped short-height layout mutation must fail');
+function responseFinalChecks(source=responseSource,needCode=needSource){
+  const t=responseFixture(source);t.perm();t.ctx.visible=false;t.node('#deskConversation').clientHeight=100;t.paint();assert.match(t.node('#responseNote').textContent,/window is too short/);assert.doesNotMatch(t.node('#responseNote').textContent,/Scroll/);
+  t.api.RESPONSE.current.entry.note='Server says terminal sessions have no app link.';t.paint();assert.match(t.node('#responseNote').textContent,/terminal sessions/,'geometry explanation preserves app result');assert.match(t.node('#responseNote').textContent,/too short/);assert.equal(t.node('#responseOpenApp').hidden,false);assert.equal(t.allow().disabled,true);
+  t.node('#deskConversation').clientHeight=500;t.paint();assert.match(t.node('#responseNote').textContent,/Scroll the full request/);t.api.RESPONSE.current.entry.note='';t.ctx.visible=true;
+  const card=t.node('#responseCard'),parent=t.node('#deskConversation');card.rect={top:650,bottom:950,left:0,right:600,width:600,height:300};t.node('#responseEvidence').rect={top:690,bottom:850,left:0,right:600,width:600,height:160};t.node('#responseActions').rect={top:860,bottom:895,left:0,right:600,width:600,height:35};t.node('#ofBody').rect.bottom=2000;
+  let scroll=0;Object.defineProperty(parent,'scrollTop',{get:()=>scroll,set:v=>{const delta=v-scroll;scroll=v;for(const id of ['#responseCard','#responseEvidence','#responseActions']){t.node(id).rect.top-=delta;t.node(id).rect.bottom-=delta}}});
+  t.paint();assert.equal(scroll,0,'request arrival never scrolls outer conversation');t.api.responseReveal();assert.equal(scroll,350,'explicit Respond brings the card inside visible outer bounds');assert.equal(t.allow().disabled,true,'revealing restarts dwell');t.tick(450);t.api.responseGate();assert.equal(t.allow().disabled,false);
+  const need=vm.runInNewContext(needCode+';need',{saidKind:()=>null});t.a.perms={p1:{pid:'p1',tool:'Bash',text:'First',sent:true,uncertain:true},p2:{pid:'p2',tool:'Bash',text:'Second'},p3:{pid:'p3',tool:'Bash',text:'Third'},p4:{pid:'p4',tool:'Bash',text:'Fourth',sent:true}};
+  const n=need(t.a);assert.equal(n.more,1,'only other actionable requests count as pending');assert.equal(n.unresolved,1);t.api.responsePaint(t.a,n);assert.match(t.node('#responseAgent').textContent,/\+1 pending/);assert.match(t.node('#responseAgent').textContent,/1 earlier outcome unknown/);assert.match(t.node('#responseNote').textContent,/earlier approval has an unknown outcome/);
+}
+responseFinalChecks();
+for(const [name,source,needCode] of [
+ ['preserve fallback status',responseSource.replace('[entry.note||unavailable,reason,earlier]','[reason,earlier]'),needSource],
+ ['impossible geometry',responseSource.replace("card.getBoundingClientRect().height>$('#deskConversation').clientHeight","false"),needSource],
+ ['Respond scroll',responseSource.replace('responseScrollIntoView();',''),needSource],
+ ['pending count',responseSource,needSource.replace('perms.filter(p=>p!==perm&&!p.sent&&!p.uncertain).length','perms.length-1')],
+ ['unknown status',responseSource.replace('earlier=n.unresolved?', 'earlier=false?'),needSource]
+]){let caught=false;try{responseFinalChecks(source,needCode)}catch(e){caught=true}assert.ok(caught,name+' mutation must fail')}
+{
+  const line=html.split('\n').find(x=>x.includes('Allow and Deny are in the bar above'));
+  const expression=line.slice(line.indexOf('${STATION.compact')+2,line.indexOf('}</span>'));
+  const copy=(compact,answer)=>vm.runInNewContext(expression,{STATION:{compact},APPROVE:answer});
+  assert.match(copy(true,false),/Answer here is off/);assert.doesNotMatch(copy(true,false),/to answer in the conversation/);assert.match(copy(true,true),/Choose Respond to answer/);assert.match(copy(false,true),/bar above/);
+}
+(async()=>{const t=responseFixture();t.perm();t.ctx.visible=false;t.paint();const opening=t.node('#responseOpenApp').onclick();assert.match(t.node('#responseNote').textContent,/Opening Claude/);const reason='This session was not started in Claude Desktop. <b>terminal</b>';t.pending.shift().resolve({ok:false,status:404,text:async()=>reason});await opening;assert.ok(t.node('#responseNote').textContent.includes(reason),'hidden held permission preserves exact safe server reason');assert.match(t.node('#responseNote').textContent,/Scroll the full request/);assert.equal(t.posts.length,1);assert.equal(t.posts[0].route,'/open');console.log('ok final review: request-scoped short layout, retained app errors, truthful geometry and approval copy, explicit reveal scrolling, actionable and unknown counts; six additional mutations detected')})().catch(e=>{console.error(e);process.exitCode=1});
+
+function responseFallbackHeightChecks(source=responseSource){
+  const t=responseFixture(source);t.perm();t.a.perms.earlier={pid:'earlier',tool:'Bash',text:'Earlier',sent:true,uncertain:true};t.ctx.visible=false;t.node('#deskConversation').clientHeight=168;
+  t.node('#responseCard').getBoundingClientRect=()=>{const note=t.node('#responseNote').textContent,height=150+(/Scroll the full request|window is too short/.test(note)?20:0)+(/earlier approval/.test(note)?15:0);return {top:100,bottom:100+height,left:0,right:600,width:600,height}};
+  t.paint();assert.match(t.node('#responseNote').textContent,/window is too short/,'fallback must measure the height its own text adds');assert.match(t.node('#responseNote').textContent,/earlier approval has an unknown outcome/);
+  t.api.RESPONSE.current.entry.note='Could not open terminal session.';t.paint();assert.match(t.node('#responseNote').textContent,/Could not open terminal session/);assert.match(t.node('#responseNote').textContent,/window is too short/);assert.equal(t.allow().disabled,true);const settled=t.node('#responseNote').textContent;t.paint();assert.equal(t.node('#responseNote').textContent,settled,'provisional render resolves to the same instruction on each draw');
+}
+responseFallbackHeightChecks();
+{
+  const before="fallback('Scroll the full request into view to answer here.');\n    if(card.getBoundingClientRect().height>$('#deskConversation').clientHeight)",after="const tooTall=card.getBoundingClientRect().height>$('#deskConversation').clientHeight;fallback('Scroll the full request into view to answer here.');\n    if(tooTall)";
+  const changed=responseSource.replace(before,after);assert.notEqual(changed,responseSource);let caught=false;try{responseFallbackHeightChecks(changed)}catch(e){caught=true}assert.ok(caught,'measuring before fallback text mutation must fail');
+}
+console.log('ok fallback height: measures geometry and uncertainty text after rendering, retains app result, stable instruction; premature-measurement mutation detected');
