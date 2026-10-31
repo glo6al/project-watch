@@ -450,16 +450,59 @@ function composerKeyChecks(code=deskHelpers){
 composerKeyChecks();for(const guard of ['&&!e.shiftKey','&&!e.isComposing','&&e.keyCode!==229']){let caught=false;try{composerKeyChecks(deskHelpers.replace(guard,''))}catch(e){caught=true}assert.ok(caught,'removed composer guard '+guard+' must fail')}
 console.log('ok desk widths: finite clamps/transients/readable split; composer: actual Enter handler, modifiers and IME; mutations detected');
 
+/* A small cross-parent DOM for the rail; moving a focused subtree models browser blur. */
+function railDOM(){
+  const nodes=new Map(),doc={activeElement:null},events={moves:0,focus:[]};
+  function element(tag='div'){
+    const el={tag,hidden:false,textContent:'',children:[],dataset:{},parentElement:null,
+      setAttribute(k,v){this[k]=v},
+      append(...items){for(const item of items)this.insertBefore(item,null)},
+      insertBefore(item,before){
+        if(before&&before.parentElement!==this)throw Error('stale insertion cursor');
+        if(item===before)return;
+        for(let p=this;p;p=p.parentElement)if(p===item)throw Error('cyclic DOM move');
+        if(item.parentElement){if(item.contains(doc.activeElement))doc.activeElement=null;item.remove()}
+        const i=before?this.children.indexOf(before):this.children.length;this.children.splice(i,0,item);item.parentElement=this;events.moves++;
+      },
+      remove(){if(this.parentElement){const p=this.parentElement;p.children.splice(p.children.indexOf(this),1);this.parentElement=null}},
+      contains(other){for(let n=other;n;n=n.parentElement)if(n===this)return true;return false},
+      querySelector(selector){const stack=[...this.children];while(stack.length){const n=stack.shift();if(selector==='[aria-current=true]'?n['aria-current']==='true':selector[0]==='.'?n.className===selector.slice(1):n.tag===selector)return n;stack.unshift(...n.children)}return null},
+      focus(options){doc.activeElement=this;events.focus.push({el:this,options})}
+    };
+    Object.defineProperties(el,{firstElementChild:{get:()=>el.children[0]||null},nextElementSibling:{get:()=>el.parentElement?.children[el.parentElement.children.indexOf(el)+1]||null},isConnected:{get:()=>{let n=el;while(n.parentElement)n=n.parentElement;return !!n.root}},innerHTML:{set(value){if(tag!=='button'||!value.startsWith('<i aria-hidden="true">'))throw Error('Untrusted text must not become HTML');const icon=element('i'),body=element('span'),name=element('strong'),meta=element('span'),provider=element('span'),status=element('span'),relation=element('small');provider.className='agent-provider';status.className='agent-status';relation.className='agent-relation';meta.append(provider,status);body.append(name,meta,relation);el.append(icon,body)}}});
+    return el;
+  }
+  const node=id=>{if(!nodes.has(id)){const n=element();n.root=true;nodes.set(id,n)}return nodes.get(id)};
+  doc.createElement=element;return {node,doc,events};
+}
+function deskForestChecks(code=deskHelpers){
+  const forest=vm.runInNewContext(code+';deskAgentForest'),a={child:{parent:'parent',runtime:' Codex '},parent:{runtime:'Claude'},launch:{parent:'parent',soft:true},related:{parent:'parent',soft:true,via:'related, not launched by it: files'},maybe:{maybe:{parent:'parent'}},missing:{parent:'gone'},gone:{name:'Hidden parent'},self:{parent:'self'},x:{parent:'y'},y:{parent:'x'},unknown:{model:'claude-5',runtime:' '},cloud:{runtime:'Codex cloud'},future:{runtime:'Future tool'}};
+  const ids=['child','launch','related','maybe','parent','missing','self','x','y','unknown','cloud','future'];
+  const rows=forest(ids,a),by=new Map(rows.map(n=>[n.id,n]));
+  assert.deepEqual(Array.from(rows,n=>n.id),['related','maybe','parent','child','launch','missing','self','x','y','unknown','cloud','future']);
+  assert.equal(by.get('child').parent,'parent');assert.equal(by.get('child').relation,'recorded');assert.equal(by.get('launch').caption,'Parent inferred');
+  assert.equal(by.get('related').parent,null);assert.match(by.get('related').caption,/not a parent/);assert.equal(by.get('maybe').parent,null);assert.match(by.get('maybe').caption,/unconfirmed/);
+  assert.equal(by.get('missing').parent,null);assert.equal(by.get('missing').caption,'Parent not shown · Hidden parent','dismissed parent remains outside visible forest');
+  for(const id of ['self','x','y']){assert.equal(by.get(id).parent,null);assert.match(by.get(id).caption,/uncertain/)}
+  assert.equal(by.get('child').provider,'Codex');assert.equal(by.get('unknown').provider,'Unknown');assert.equal(by.get('cloud').provider,'Codex cloud');assert.equal(by.get('future').provider,'Future tool');
+  assert.equal(forest(['child','child','absent'],a).length,1,'exactly once, only available agents');
+  a.child.parent='related';assert.equal(forest(ids,a).find(n=>n.id==='child').parent,'related','recorded child of unrelated root still nested');delete a.child.parent;assert.equal(forest(ids,a).find(n=>n.id==='child').parent,null);
+  const deep={},order=[];for(let i=0;i<12000;i++){const id=String(i);order.unshift(id);deep[id]={parent:i?String(i-1):''}}
+  const chain=forest(order,deep);assert.equal(chain.length,12000);assert.equal(chain.at(-1).depth,11999,'iterative traversal handles deep input');
+}
+deskForestChecks();for(const mutation of [c=>c.replace("/^related/.test(a.via||'')","false"),c=>c.replace("if(a.soft)n.caption='Parent inferred'","if(false)n.caption='Parent inferred'")]){let caught=false;try{deskForestChecks(mutation(deskHelpers))}catch(e){caught=true}assert.ok(caught,'relationship truth mutation must fail')}
+console.log('ok agent forest: relationship truth, cycles, missing/dismissed parents, input ordering, unique rows, provider source, 12000-level iterative chain; mutations detected');
+
 /* Agent rail signals preserve their existing alternate views without duplicate lists. */
 function deskSignalsChecks(mutate=false){
   const nodes=new Map(),node=id=>{if(!nodes.has(id))nodes.set(id,{hidden:false,textContent:'',firstElementChild:null,children:[],setAttribute(k,v){this[k]=v}});return nodes.get(id)};
   const requests=[];
-  const ctx={focus:'A',A:{A:{name:'Ada',runtime:'Codex'}},DESK:{open:false,agents:new Map()},bayPg:0,PINS:{},STEADY:false,order:[],document:{activeElement:null},$:node,txt:(el,text)=>el.textContent=text,one:String,stateOf:a=>({label:'Waiting',need:a.request}),responsePaint:(a,n)=>requests.push(n),deskSetViewUI(){},deskFocus(){},render(){}};
+  const ctx={focus:'A',A:{A:{name:'Ada',runtime:'Codex'}},DESK:{open:false,agents:new Map(),agentRows:new Map()},bayPg:0,PINS:{},STEADY:false,order:[],document:{activeElement:null},$:node,txt:(el,text)=>el.textContent=text,one:String,stateOf:a=>({label:'Waiting',need:a.request}),responsePaint:(a,n)=>requests.push(n),deskSetViewUI(){},deskFocus(){},render(){}};
   let code=html.slice(html.indexOf('function deskPaint('),html.indexOf('function deskTheme('));
   if(mutate)code=code.replace("$('#bay').hidden=bayPg===0;","$('#bay').hidden=false;");
   const signals=[1,2].map(page=>({dataset:{bay:String(page)},setAttribute(k,v){this[k]=v}}));node('#deskSignals').children=signals;
   code+='\n'+html.split('\n').find(x=>x.startsWith("$('#deskSignals').onclick="));
-  vm.createContext(ctx);const paint=vm.runInContext(code+';deskPaint',ctx);ctx.desk=paint;
+  vm.createContext(ctx);const paint=vm.runInContext(deskHelpers+'\n'+code+';deskPaint',ctx);ctx.desk=paint;
   paint();assert.equal(node('#bay').hidden,true);assert.equal(node('#deskAgentList').hidden,false);assert.equal(node('#deskRespond').hidden,true);
   for(const signal of signals){node('#deskSignals').onclick({target:{closest:()=>signal}});assert.equal(ctx.bayPg,Number(signal.dataset.bay));assert.equal(node('#bay').hidden,false);assert.equal(signal['aria-pressed'],'true');node('#deskSignals').onclick({target:{closest:()=>signal}});assert.equal(ctx.bayPg,0);assert.equal(node('#bay').hidden,true);assert.equal(signal['aria-pressed'],'false')}
   ctx.A.A.request={kind:'Approve',perm:{pid:'p1'}};paint();assert.equal(requests.at(-1),ctx.A.A.request);assert.equal(node('#deskRespond').hidden,false);assert.equal(ctx.DESK.open,false);
@@ -471,12 +514,8 @@ function deskAlertChecks(mutation=''){
   const headStart=html.indexOf('<header id="deskHead"'),headEnd=html.indexOf('</header>',headStart),alertAt=html.indexOf('id="deskAlert"');
   assert.ok(headStart>=0&&alertAt>headStart&&alertAt<headEnd,'alert belongs to the persistent desk header');
   assert.ok(headEnd<html.indexOf('id="deskWork"',headEnd),'alert is outside the closable Work area');
-  const nodes=new Map(),node=id=>{if(!nodes.has(id)){const el={hidden:false,textContent:'',children:[],dataset:{},setAttribute(k,v){this[k]=v}};nodes.set(id,el)}return nodes.get(id)};
-  const list=node('#deskAgentList');Object.defineProperty(list,'firstElementChild',{get:()=>list.children[0]||null});
-  list.insertBefore=(el,at)=>{const old=list.children.indexOf(el);if(old>=0)list.children.splice(old,1);const pos=list.children.indexOf(at);list.children.splice(pos<0?list.children.length:pos,0,el)};
-  const agents=new Map();for(const id of ['A','B']){const row=node('row '+id);row.dataset.agent=id;row.querySelector=selector=>node(id+' '+selector);Object.defineProperty(row,'nextElementSibling',{get:()=>list.children[list.children.indexOf(row)+1]||null});agents.set(id,row);list.children.push(row)}
-  for(const el of [node('#deskAlert'),node('A small'),node('B small')])Object.defineProperty(el,'innerHTML',{set(){throw Error('Alert data must remain text, never HTML')}});
-  const ctx={focus:'A',A:{A:{name:'Ada',runtime:'Codex'},B:{name:'Bram',runtime:'Claude'}},DESK:{open:false,agents},bayPg:0,PINS:{},STEADY:false,order:['A','B'],document:{activeElement:null},Date:{now:()=>1000*1000},$:node,one:t=>String(t||'').replace(/\s+/g,' '),stateOf:a=>({label:'between actions',need:a.request,busy:!!a.busy}),responsePaint:(a,n)=>ctx.cardRequest=n,deskSetViewUI(){},deskFocus(){},post(){throw Error('Painting alerts must not submit')},cuSend(){throw Error('Painting alerts must not send')}};
+  const {node,doc,events}=railDOM(),list=node('#deskAgentList'),agents=new Map();
+  const ctx={focus:'A',A:{A:{name:'Ada',runtime:'Codex'},B:{name:'Bram',runtime:'Claude'}},DESK:{open:false,agents,agentRows:new Map()},bayPg:0,PINS:{},STEADY:false,order:['A','B'],document:doc,Date:{now:()=>1000*1000},$:node,one:t=>String(t||'').replace(/\s+/g,' '),stateOf:a=>({label:'between actions',need:a.request,busy:!!a.busy}),responsePaint:(a,n)=>ctx.cardRequest=n,deskSetViewUI(){},deskFocus:el=>el.focus({preventScroll:true}),post(){throw Error('Painting alerts must not submit')},cuSend(){throw Error('Painting alerts must not send')}};
   let code=html.slice(html.indexOf('function deskPaint('),html.indexOf('function deskTheme('));
   const mutations={
     hide:c=>c.replace("$('#deskAlert').hidden=!alert;","$('#deskAlert').hidden=true;"),
@@ -487,22 +526,35 @@ function deskAlertChecks(mutation=''){
     steady:c=>c.replace("STEADY?'(text hidden in steady mode)':one(alert.text).slice(0,300)",'one(alert.text).slice(0,300)')
   };
   if(mutation){const altered=mutations[mutation](code);assert.notEqual(altered,code,'mutation must change extracted behavior');code=altered}
-  const realTxt=html.split('\n').find(line=>line.startsWith('const txt='));const paint=vm.runInNewContext(realTxt+'\n'+code+';deskPaint',ctx);
+  const realTxt=html.split('\n').find(line=>line.startsWith('const txt='));const paint=vm.runInNewContext(realTxt+'\n'+deskHelpers+'\n'+code+';deskPaint',ctx);
   paint();assert.equal(node('#deskAlert').hidden,true);assert.equal(node('#deskAlert').textContent,'');assert.equal(agents.get('A').dataset.state,'idle');
   const command='git push origin main <img src=x onerror=bad()>',alert={ts:990,label:'a push',text:command};ctx.A.A.alert=alert;paint();
-  assert.equal(ctx.DESK.open,false);assert.equal(node('#deskAlert').hidden,false);assert.equal(node('#deskAlert').textContent,'Looks like a push · '+command);assert.equal(agents.get('A').dataset.state,'alarm');assert.equal(node('A small').textContent,'Looks like a push','rail alarm remains compact');assert.equal(agents.get('A').title,undefined,'rail has no raw-command tooltip');
-  assert.equal(ctx.DESK.agents.get('A'),list.children[0],'keyed agent identity survives the alert repaint');
+  assert.equal(ctx.DESK.open,false);assert.equal(node('#deskAlert').hidden,false);assert.equal(node('#deskAlert').textContent,'Looks like a push · '+command);assert.equal(agents.get('A').dataset.state,'alarm');assert.equal(agents.get('A').querySelector('.agent-status').textContent,'Looks like a push','rail alarm remains compact');assert.equal(agents.get('A').title,undefined,'rail has no raw-command tooltip');
+  assert.equal(ctx.DESK.agents.get('A'),list.children[0].children[0],'keyed agent identity survives the alert repaint');
   ctx.A.A.request={kind:'Approve',text:'Inspect a different command',sure:true,perm:{pid:'p1',sent:false}};paint();
-  assert.equal(node('#deskAlert').hidden,false);assert.equal(ctx.cardRequest,ctx.A.A.request,'independent response card receives the concurrent request');assert.equal(node('#deskRespond').hidden,false);assert.equal(agents.get('A').dataset.state,'need');assert.equal(node('A small').textContent,'Approve','pending request keeps rail priority');
-  ctx.A.A.request.sure=false;paint();assert.equal(node('A small').textContent,'Approve · possible');assert.equal(node('#deskAlert').hidden,false);
+  assert.equal(node('#deskAlert').hidden,false);assert.equal(ctx.cardRequest,ctx.A.A.request,'independent response card receives the concurrent request');assert.equal(node('#deskRespond').hidden,false);assert.equal(agents.get('A').dataset.state,'need');assert.equal(agents.get('A').querySelector('.agent-status').textContent,'Approve','pending request keeps rail priority');
+  ctx.A.A.request.sure=false;paint();assert.equal(agents.get('A').querySelector('.agent-status').textContent,'Approve · possible');assert.equal(node('#deskAlert').hidden,false);
   delete ctx.A.A.request;ctx.focus='B';paint();assert.equal(node('#deskAlert').hidden,true);assert.equal(node('#deskAlert').textContent,'','station switch clears previous alert');assert.equal(agents.get('A').dataset.state,'alarm','other agent still carries its live rail alarm');
   ctx.A.B.alert={ts:995,label:'a delete',text:'remove generated files'};paint();assert.equal(node('#deskAlert').textContent,'Looks like a delete · remove generated files');delete ctx.A.B.alert;paint();assert.equal(node('#deskAlert').hidden,true);assert.equal(node('#deskAlert').textContent,'');
   ctx.focus='A';ctx.A.A.alert.ts=821;paint();assert.equal(node('#deskAlert').hidden,false,'179 seconds is still live');assert.equal(agents.get('A').dataset.state,'alarm');
-  ctx.A.A.alert.ts=820;paint();assert.equal(node('#deskAlert').hidden,true,'180 seconds expires');assert.equal(node('#deskAlert').textContent,'');assert.equal(agents.get('A').dataset.state,'idle','rail uses the same expiry');assert.equal(node('A small').textContent,'between actions');
+  ctx.A.A.alert.ts=820;paint();assert.equal(node('#deskAlert').hidden,true,'180 seconds expires');assert.equal(node('#deskAlert').textContent,'');assert.equal(agents.get('A').dataset.state,'idle','rail uses the same expiry');assert.equal(agents.get('A').querySelector('.agent-status').textContent,'between actions');
   ctx.A.A.alert.ts=819;paint();assert.equal(node('#deskAlert').hidden,true);
-  ctx.A.A.alert.ts=990;ctx.STEADY=true;paint();assert.equal(node('#deskAlert').textContent,'Looks like a push · (text hidden in steady mode)');assert.equal(node('A small').textContent,'Looks like a push');assert.equal(agents.get('A').title,undefined,'steady rail has no raw-command tooltip');assert.equal(node('#deskAlert').textContent.includes(command),false);
+  ctx.A.A.alert.ts=990;ctx.STEADY=true;paint();assert.equal(node('#deskAlert').textContent,'Looks like a push · (text hidden in steady mode)');assert.equal(agents.get('A').querySelector('.agent-status').textContent,'Looks like a push');assert.equal(agents.get('A').title,undefined,'steady rail has no raw-command tooltip');assert.equal(node('#deskAlert').textContent.includes(command),false);
   ctx.STEADY=false;ctx.A.A.alert.text='x'.repeat(350);paint();assert.equal(node('#deskAlert').textContent,'Looks like a push · '+'x'.repeat(300));
   delete ctx.A.A.alert;paint();assert.equal(node('#deskAlert').hidden,true);assert.equal(node('#deskAlert').textContent,'');assert.equal(agents.get('A').dataset.state,'idle');assert.equal(ctx.DESK.open,false);
+  const oldA=agents.get('A'),oldB=agents.get('B'),rowA=ctx.DESK.agentRows.get('A'),rowB=ctx.DESK.agentRows.get('B');
+  doc.activeElement=oldB;const moves=events.moves;paint();assert.equal(events.moves,moves,'ordinary paint does not move nodes');assert.equal(events.focus.length,0,'ordinary paint does not steal focus');
+  ctx.A.B.parent='A';paint();assert.equal(agents.get('B'),oldB);assert.equal(ctx.DESK.agentRows.get('B'),rowB);assert.equal(rowB.li.parentElement,rowA.group);assert.equal(doc.activeElement,oldB);assert.equal(events.focus.at(-1).options.preventScroll,true);
+  assert.equal(oldB.querySelector('.agent-provider').textContent,'Claude');assert.equal(rowB.li.dataset.depth,'1');
+  assert.equal(rowA.group['aria-label'],'Children of Ada');
+  delete ctx.A.B.parent;ctx.A.C={name:'Cleo',runtime:'Cursor'};ctx.order.push('C');paint();
+  const oldC=agents.get('C'),rowC=ctx.DESK.agentRows.get('C');ctx.A.B.parent='A';paint();
+  assert.equal(rowB.li.parentElement,rowA.group);assert.equal(rowC.li.parentElement,list,'later root survives earlier sibling moving beneath parent');assert.equal(list.children[1],rowC.li);
+  delete ctx.A.B.parent;paint();assert.equal(rowB.li.parentElement,list);assert.equal(list.children[1],rowB.li);assert.equal(agents.get('C'),oldC,'child-to-root preserves other rows');
+  delete ctx.A.B.parent;ctx.A.A.parent='B';paint();assert.equal(rowA.li.parentElement,rowB.group,'reversing ancestry never makes a transient DOM cycle');assert.equal(doc.activeElement,oldB);
+  ctx.A.A.soft=true;paint();assert.equal(oldA.querySelector('.agent-relation').textContent,'Parent inferred');
+  ctx.A.A.via='related, not launched by it: files';paint();assert.equal(rowA.li.parentElement,list);assert.match(oldA.querySelector('.agent-relation').textContent,/not a parent/);
+  doc.activeElement=oldB;ctx.order=['A'];paint();assert.equal(agents.has('B'),false);assert.equal(doc.activeElement,oldA,'removed focused row falls back to selected agent');assert.equal(agents.get('A'),oldA);
 }
 deskAlertChecks();for(const mutation of ['hide','expiry','railExpiry','rail','priority','steady']){let caught=false;try{deskAlertChecks(mutation)}catch(e){caught=true}assert.ok(caught,'live-alert mutation '+mutation+' must fail')}
 console.log('ok live desk alerts: closed Work, expiry boundaries, station changes, concurrent requests, keyed rail priority, safe text and steady masking; six mutations detected');
