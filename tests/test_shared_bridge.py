@@ -118,6 +118,59 @@ class SharedTests(unittest.TestCase):
         self.assertEqual(self.store.snapshot()['requests'], [])
         self.assertEqual(self.bridge.list_requests()['requests'][0]['reply'], '')
 
+    def test_stopped_owner_barrier_reports_unknown_without_waiting_for_ttl(self):
+        result = self.send()
+        rid = result['request_id']
+        self.tick()
+        self.answer(self.row(rid))
+        owner = self.store.submit(self.b['agent_id'], 'Owner question', uid(),
+                                  {self.b['agent_id']: {'runtime': 'Codex'}})
+        owner_row = next(r for r in self.store._rows() if r['request_id'] == owner['request_id'])
+        owner_row.update(state='unknown', launched=True, cursor=0, bound_turn='', tracking_stopped=True)
+        self.store._save(owner_row)
+        self.assertEqual(self.tick().call_count, 0)
+        reply = self.bridge.result(rid)
+        self.assertEqual(reply['state'], 'unknown')
+        self.assertEqual(reply['reply'], '')
+        self.assertEqual(reply['error'], 'Reply received but withheld because earlier owner-message tracking stopped before this turn could be isolated.')
+        row = self.row(rid)
+        self.assertEqual(row['candidate_reply'], '')
+        self.assertTrue(row['settled'])
+        self.assertTrue(row['tracking_stopped'])
+        self.assertLess(time.time() - row['quarantined_at'], p.TTL)
+        self.assertEqual(self.bridge.list_requests()['requests'][0]['state'], 'unknown')
+        self.assertEqual(self.tick().call_count, 0)
+        self.assertEqual(self.bridge.result(rid), reply)
+
+    def test_owner_barrier_preserves_catchup_and_existing_isolation_rules(self):
+        cases = (
+            ('caught-up stopped', 'unknown', True, True, False, False, 'answered'),
+            ('answered owner', 'answered', True, False, False, False, 'answered'),
+            ('failed owner', 'failed', True, False, False, False, 'answered'),
+            ('other chat', 'unknown', True, False, True, False, 'answered'),
+            ('active behind', 'unknown', False, False, False, False, 'quarantined'),
+            ('mixed input', 'unknown', True, False, False, True, 'unknown'),
+        )
+        for label, state, stopped, caught_up, other_chat, mixed, expected in cases:
+            with self.subTest(label=label):
+                peer = dict(origin='peer', runtime='codex', agent=self.b['agent_id'],
+                            state='quarantined', bound_turn='peer-turn', complete_offset=100,
+                            candidate_reply='Answer.', created=time.time(), quarantined_at=time.time(),
+                            peer_mixed_input=mixed)
+                owner = dict(agent=self.a['agent_id'] if other_chat else self.b['agent_id'],
+                             state=state, tracking_stopped=stopped, cursor=100 if caught_up else 0,
+                             bound_turn='')
+                self.store.peers.reconcile([peer, owner])
+                self.assertEqual(peer['state'], expected)
+                self.assertEqual(peer.get('reply', ''), 'Answer.' if expected == 'answered' else '')
+                if mixed:
+                    self.assertIn('included other input', peer['error'])
+                if label == 'active behind':
+                    owner['cursor'] = 100
+                    self.store.peers.reconcile([peer, owner])
+                    self.assertEqual(peer['state'], 'answered')
+                    self.assertEqual(peer['reply'], 'Answer.')
+
     def test_retry_survives_rotation_rename_and_expiry(self):
         result = self.send(); rid = result['request_id']
         original = copy.deepcopy(self.b)

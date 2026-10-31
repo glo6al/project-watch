@@ -425,6 +425,10 @@ class PeerBridge:
                     or any(o.get('bound_turn') and o.get('bound_turn') == row.get('bound_turn') for o in owners)):
                 row.update(state='unknown', reply='', candidate_reply='', tracking_stopped=True, settled=True,
                            error='Peer reply withheld because its turn included other input or could not be isolated.')
+            elif any(o.get('tracking_stopped') and o.get('state') not in ('answered', 'failed')
+                     and o.get('cursor', 0) < row.get('complete_offset', float('inf')) for o in owners):
+                row.update(state='unknown', reply='', candidate_reply='', tracking_stopped=True, settled=True,
+                           error='Reply received but withheld because earlier owner-message tracking stopped before this turn could be isolated.')
             elif all(o.get('state') in ('answered', 'failed') or o.get('cursor', 0) >= row.get('complete_offset', float('inf')) for o in owners):
                 row.update(state='answered', reply=row.pop('candidate_reply', ''), error='', settled=True)
             elif time.time() - row.get('quarantined_at', row['created']) > TTL:
