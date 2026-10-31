@@ -57,6 +57,12 @@ console.log('all ok');
     (() => { const [h, ms] = timed(('**a** *b* ~~c~~ `d` ' + '*'.repeat(40) + ' ~'.repeat(40) + '\n- x\n').repeat(40).slice(0, 4000)); return balanced(h) && ms < 500; })());
 }
 console.log('answer markup ok');
+const answerStart=html.indexOf('/* answer markup'),answerEnd=html.indexOf('/* end answer markup */');
+const answerCode=html.slice(html.indexOf('*/',answerStart)+2,answerEnd);
+const escapeCode=html.split('\n').filter(line=>line.startsWith('const str=')||line.startsWith('const esc=')).join('\n');
+const safeEsc=vm.runInNewContext(escapeCode+';esc');
+const responseMarkup=vm.runInNewContext(answerCode+';ofParas',{esc:safeEsc,URL});
+
 
 
 /* Execute real message helpers; all network responses and DOM nodes are local test doubles. */
@@ -447,7 +453,7 @@ function sourceChecks(mutate=false){
   let code=html.slice(html.indexOf('function cuSources('),html.indexOf('function cuNotice('));
   if(mutate)code=code.replace("if(!r){const el=", "if(true){const el=");
   class Node{constructor(){this.dataset={};this.paints=0}set innerHTML(v){this.html=v;this.paints++;this.detail=v.includes('<details')?{open:v.includes('<details open')}:null}get innerHTML(){return this.html}querySelector(){return this.detail}remove(){this.removed=true}}
-  const helpers=vm.runInNewContext(unifiedCode+';({cuSourceRows,cuEventKey,cuEnvelopeMatch})');const pending={state:'queued'},ctx={...helpers,CU:{nodes:new Map()},OFM:{records:new Map([['pending',pending]])},document:{createElement:()=>new Node()},plain:String,one:String,esc:String,clock:String,STEADY:false,need:a=>a.need};
+  const helpers=vm.runInNewContext(unifiedCode+';({cuSourceRows,cuEventKey,cuEnvelopeMatch})');const pending={state:'queued'},ctx={...helpers,CU:{nodes:new Map()},OFM:{records:new Map([['pending',pending]])},document:{createElement:()=>new Node()},plain:String,one:String,esc:safeEsc,ofParas:responseMarkup,clock:String,STEADY:false,need:a=>a.need};
   const sources=vm.runInNewContext(code+';cuSources',ctx),a={id:'A',name:'Ada',story:[{t:'say',n:1,seq:1,ts:1,text:'First'}],msgs:[],q:[{seq:2,ts:2,text:'Queued task'}],need:{sure:false,kind:'Decide',text:'Choose one'}};
   sources(a);const row=ctx.CU.nodes.get('source:A:seq:1'),card=row.el;card.detail.open=false;const paints=card.paints;sources(a);assert.equal(ctx.CU.nodes.get('source:A:seq:1').el,card);assert.equal(card.paints,paints);assert.equal(card.detail.open,false,'expanded state survives refresh');assert.match(ctx.CU.nodes.get('queue:A:seq:2').el.innerHTML,/Queue observation does not confirm delivery/);assert.equal(ctx.CU.nodes.has('source:A:request'),false,'response card owns current requests without duplicate pseudo-messages');
   a.name='Renamed';a.need.sure=true;a.q=[];sources(a);assert.equal(row.context.name,'Ada');assert.equal(ctx.CU.nodes.has('source:A:request'),false);assert.equal(ctx.CU.nodes.has('queue:A:seq:2'),false);assert.equal(pending.state,'queued','queue removal never changes independent delivery');
@@ -525,7 +531,7 @@ function railDOM(){
       querySelector(selector){const stack=[...this.children];while(stack.length){const n=stack.shift();if(selector==='[aria-current=true]'?n['aria-current']==='true':selector[0]==='.'?n.className===selector.slice(1):n.tag===selector)return n;stack.unshift(...n.children)}return null},
       focus(options){doc.activeElement=this;events.focus.push({el:this,options})}
     };
-    Object.defineProperties(el,{firstElementChild:{get:()=>el.children[0]||null},nextElementSibling:{get:()=>el.parentElement?.children[el.parentElement.children.indexOf(el)+1]||null},isConnected:{get:()=>{let n=el;while(n.parentElement)n=n.parentElement;return !!n.root}},innerHTML:{set(value){if(tag!=='button'||!value.startsWith('<i aria-hidden="true">'))throw Error('Untrusted text must not become HTML');const icon=element('i'),body=element('span'),name=element('strong'),meta=element('span'),provider=element('span'),status=element('span'),relation=element('small');provider.className='agent-provider';status.className='agent-status';relation.className='agent-relation';meta.append(provider,status);body.append(name,meta,relation);el.append(icon,body)}}});
+    Object.defineProperties(el,{firstElementChild:{get:()=>el.children[0]||null},nextElementSibling:{get:()=>el.parentElement?.children[el.parentElement.children.indexOf(el)+1]||null},isConnected:{get:()=>{let n=el;while(n.parentElement)n=n.parentElement;return !!n.root}},innerHTML:{set(value){if(tag!=='button'||!value.startsWith('<i aria-hidden="true">'))throw Error('Untrusted text must not become HTML');const icon=element('i'),body=element('span'),name=element('strong'),meta=element('span'),provider=element('span'),status=element('span'),relation=element('small');provider.className='agent-provider';status.className='agent-status';relation.className='agent-relation';if(value.includes('<span class="agent-provider"></span><span class="agent-meta">')){meta.append(status);body.append(name,provider,meta,relation)}else{meta.append(provider,status);body.append(name,meta,relation)};el.append(icon,body)}}});
     return el;
   }
   const node=id=>{if(!nodes.has(id)){const n=element();n.root=true;nodes.set(id,n)}return nodes.get(id)};
@@ -601,7 +607,7 @@ function deskAlertChecks(mutation=''){
   const oldA=agents.get('A'),oldB=agents.get('B'),rowA=ctx.DESK.agentRows.get('A'),rowB=ctx.DESK.agentRows.get('B');
   doc.activeElement=oldB;const moves=events.moves;paint();assert.equal(events.moves,moves,'ordinary paint does not move nodes');assert.equal(events.focus.length,0,'ordinary paint does not steal focus');
   ctx.A.B.parent='A';paint();assert.equal(agents.get('B'),oldB);assert.equal(ctx.DESK.agentRows.get('B'),rowB);assert.equal(rowB.li.parentElement,rowA.group);assert.equal(doc.activeElement,oldB);assert.equal(events.focus.at(-1).options.preventScroll,true);
-  assert.equal(oldB.querySelector('.agent-provider').textContent,'Claude');assert.equal(rowB.li.dataset.depth,'1');
+  assert.equal(oldB.querySelector('.agent-provider').textContent,'Claude');assert.equal(oldB.querySelector('.agent-provider').parentElement,oldB.children[1],'provider lives beside the name, outside status line');assert.equal(rowB.li.dataset.depth,'1');
   assert.equal(rowA.group['aria-label'],'Children of Ada');
   delete ctx.A.B.parent;ctx.A.C={name:'Cleo',runtime:'Cursor'};ctx.order.push('C');paint();
   const oldC=agents.get('C'),rowC=ctx.DESK.agentRows.get('C');ctx.A.B.parent='A';paint();
@@ -674,6 +680,165 @@ workTransitionChecks();let closingCaught=false;try{workTransitionChecks(true)}ca
   assert.deepEqual(reveals,['doing']);assert.equal(ctx.A.A.pin,evidence);assert.equal(ctx.deskView,'doing');assert.equal(scrolled,1);
   console.log('ok work citation: Activity revealed, exact historical pin and entry preserved');
 }
+
+/* Agent responses opt into rich Markdown; WATCH defaults and typed user text remain distinct. */
+function richResponseChecks(parser=answerCode,source=html.slice(html.indexOf('function cuSources('),html.indexOf('function cuNotice('))){
+  const md=vm.runInNewContext(parser+';ofParas',{esc:safeEsc,URL});
+  assert.equal(md('**Ready**',true),'<p><b>Ready</b></p>');assert.equal(md('**Ready**'),'<p class="h2">Ready</p>','WATCH shorthand unchanged');
+  assert.equal(md('### Checks',true),'<h6 class="h3">Checks</h6>');assert.equal(md('### Checks'),'<p class="h3">Checks</p>');
+  for(const [syntax,tag]of [['#','h4'],['##','h5'],['###','h6']])assert.equal(md(syntax+' Summary',true),'<'+tag+' class="h'+syntax.length+'">Summary</'+tag+'>');
+  assert.match(md('[x](https://a.com/`b`)',true),/href="https:\/\/a.com\/%60b%60"/);assert.doesNotMatch(md('[x](https://a.com/`b`)',true),/%00/);
+  for(const address of ['https://u@evil.example','https://u:pw@evil.example'])assert.doesNotMatch(md('[label]('+address+')',true),/<a /);
+  assert.match(md('[Different label](https://example.com/a?x=1&y=2)',true),/title="https:\/\/example.com\/a\?x=1&amp;y=2"/);
+  assert.match(md('[guide](https://example.com)',true),/<a href="https:\/\/example.com\/" title="https:\/\/example.com\/" target="_blank" rel="noopener noreferrer">guide<\/a>/);
+  assert.equal(md('[guide](https://example.com)'),'<p>guide (https://example.com)</p>','WATCH links remain inert text');
+  for(const u of ['javascript:alert','data:text/html,test','file:///private/test','/relative/path'])assert.doesNotMatch(md('[link]('+u+')',true),/<a /);
+  assert.match(md('[x](https://example.com/"onmouseover=bad)',true),/href="https:\/\/example.com\/%22onmouseover=bad"/);
+  assert.match(md('[x](https://example.com/**path**)',true),/href="https:\/\/example.com\/\*\*path\*\*"/,'emphasis cannot modify a generated href');
+  assert.match(md('[see `code`](https://example.com)',true),/>see <code>code<\/code><\/a>/);assert.doesNotMatch(md('[see `code`](https://example.com)',true),/[\u0000\u0001]/);
+  assert.equal(md('`[literal](https://example.com)`',true),'<p><code>[literal](https://example.com)</code></p>');
+  assert.doesNotMatch(md('```\n[link](https://example.com) <img src=x>\n```',true),/<a |<img/);
+  assert.doesNotMatch(md('<script>bad()</script> ![image](https://example.com/image.png)',true),/<script>|<img/);
+  assert.match(md('| Case | Result |\n|---|---|\n| One | **pass** |',true),/<table><thead>.*<b>pass<\/b>/);
+  const plain=vm.runInNewContext(html.split('\n').find(l=>l.startsWith('const plain='))+';plain',{str:String});
+  class Row{constructor(){this.dataset={};this.writes=0}set innerHTML(v){this.html=v;this.writes++;this.details=v.includes('<details')?{open:v.includes('<details open')}:null}querySelector(){return this.details}remove(){}}
+  const helpers=vm.runInNewContext(unifiedCode+';({cuSourceRows,cuEventKey,cuEnvelopeMatch})');
+  const ctx={...helpers,CU:{nodes:new Map()},OFM:{records:new Map()},document:{createElement:()=>new Row()},plain,one:String,esc:safeEsc,ofParas:md,clock:String,STEADY:false};
+  const paint=vm.runInNewContext(source+';cuSources',ctx),text='### Ready\n\n**Done** in `season.ts`. <img src=x>';
+  const a={id:'A',name:'Ada',story:[{t:'you',seq:1,ts:1,text},{t:'say',seq:2,ts:2,text}],msgs:[],q:[]};paint(a);
+  const user=ctx.CU.nodes.get('source:A:seq:1').el,agent=ctx.CU.nodes.get('source:A:seq:2').el;
+  assert.match(user.html,/### Ready/);assert.match(user.html,/\*\*Done\*\* in `season.ts`/);assert.doesNotMatch(user.html,/<h[4-6]|<code>|<img/);
+  assert.match(agent.html,/<div class="rich-source"><h6 class="h3">Ready<\/h6>/);assert.match(agent.html,/<b>Done<\/b> in <code>season.ts<\/code>/);assert.doesNotMatch(agent.html,/<img/);
+  assert.match(agent.html,/<b>Ada<\/b><small>Recorded log · 2<\/small>/);assert.doesNotMatch(agent.html,/<span class="closed-update">###/,'collapsed summary uses plain preview');
+  agent.details.open=false;const writes=agent.writes;paint(a);assert.equal(agent.writes,writes);assert.equal(agent.details.open,false);
+  ctx.STEADY=true;paint(a);assert.doesNotMatch(agent.html,/season.ts|<h[4-6]/);assert.match(agent.html,/narration hidden/);
+}
+richResponseChecks();for(const [label,parser,source]of [
+ ['unsafe protocol',answerCode.replace("if(!['http:','https:'].includes(u.protocol)||u.username||u.password)throw Error();",''),undefined],
+ ['bold shorthand',answerCode.replace('if(!agent&&(m=x.match','if((m=x.match'),undefined],
+ ['lost rich mode',answerCode,html.slice(html.indexOf('function cuSources('),html.indexOf('function cuNotice(')).replace('ofParas(content,true)','ofParas(content)')]
+]){let failed=false;try{richResponseChecks(parser,source)}catch(e){failed=true}assert.ok(failed,label+' mutation detected')}
+console.log('ok response Markdown: raw say/plain user, preserved WATCH defaults, safe HTTP/S links, semantic headings, code/HTML/image safety, stable disclosure and masking; mutations detected');
+
+/* A supported-size malformed response must not trigger quadratic link scans. */
+function malformedResponseChecks(code=answerCode){
+  for(const input of ['['.repeat(60000),'[x]('.repeat(15000),')'+'[x]('.repeat(14999)]){
+    const out=vm.runInNewContext(code+';ofParas(input,true)',{esc:safeEsc,URL,input},{timeout:150});
+    assert.equal(out,'<p>'+input+'</p>','malformed response stays literal within the VM budget');
+  }
+  const md=vm.runInNewContext(code+';ofParas',{esc:safeEsc,URL});
+  assert.match(md('[Guide](https://example.com)',true),/<a href="https:\/\/example.com\/"/);
+  assert.equal(md('![Diagram](https://example.com/a.png)',true),'<p>Diagram (image not shown: https://example.com/a.png)</p>');
+  assert.equal(md('[a [b](https://example.com)'),'<p>a [b (https://example.com)</p>','WATCH default matcher is unchanged');
+  assert.match(md('[<b>label](https://example.com)',true),/>&lt;b&gt;label<\/a>/);
+}
+malformedResponseChecks();for(const old of ["x.replace(/!?\\[([^\\]\\n]*)\\]\\(([^)\\n]*)\\)/g,renderLink)","x.replace(/!?\\[([^\\[\\]\\n]*)\\]\\(([^)\\n]*)\\)/g,renderLink)"]){
+  assert.ok(answerCode.includes('ofResponseLinks(x,renderLink)'));
+  let timedOut=false;try{malformedResponseChecks(answerCode.replace('ofResponseLinks(x,renderLink)',old))}catch(e){timedOut=e.code==='ERR_SCRIPT_EXECUTION_TIMEOUT'}
+  assert.ok(timedOut,'old quadratic label/URL matcher must exceed bounded VM test');
+}
+console.log('ok response link scan: 60000-char bracket and URL-tail cases, safe links/images, WATCH defaults; both quadratic mutations time out');
+
+/* Live repainting must not reparse unchanged agent responses. Exercise the real parser. */
+function sourceFormattingChecks(source=html.slice(html.indexOf('function cuSources('),html.indexOf('function cuNotice('))){
+  const helpers=vm.runInNewContext(unifiedCode+';({cuSourceRows,cuEventKey,cuEnvelopeMatch})');let calls=0;
+  class Row{constructor(){this.dataset={}}set innerHTML(v){this.html=v;this.details=v.includes('<details')?{open:v.includes('<details open')}:null}querySelector(){return this.details}remove(){}}
+  const ctx={...helpers,CU:{nodes:new Map()},OFM:{records:new Map()},document:{createElement:()=>new Row()},plain:String,one:String,esc:safeEsc,clock:String,STEADY:false,ofParas:(...args)=>{calls++;return responseMarkup(...args)}};
+  const paint=vm.runInNewContext(source+';cuSources',ctx),a={id:'A',name:'Ada',story:[{t:'you',seq:1,ts:1,text:'Review the results'},...Array.from({length:3},(_,i)=>({t:'say',seq:i+2,ts:i+2,text:'### Results '+i+'\n\n**Checked** `season.ts`\n\n'+('The pricing checks pass. '.repeat(80))}))],msgs:[],q:[]};
+  paint(a);assert.equal(calls,3,'initial paint formats every agent response once');
+  const older=ctx.CU.nodes.get('source:A:seq:2').el,latest=ctx.CU.nodes.get('source:A:seq:4').el;assert.equal(older.details.open,false);assert.equal(latest.details.open,true);older.details.open=true;
+  calls=0;paint(a);paint(a);assert.equal(calls,0,'unchanged live repaints never invoke Markdown parser');assert.equal(older.details.open,true,'disclosure choice survives cached painting');
+  a.story[2].text+='\n\nOne revised result.';paint(a);assert.equal(calls,1,'editing one response reparses only that response');assert.equal(older.details.open,true);
+  calls=0;ctx.STEADY=true;paint(a);assert.equal(calls,3,'mask change invalidates every narration');calls=0;paint(a);assert.equal(calls,0,'unchanged masked responses also reuse formatting');
+}
+sourceFormattingChecks();{
+  let source=html.slice(html.indexOf('function cuSources('),html.indexOf('function cuNotice('));
+  const format=source.split('\n').find(line=>line.trim().startsWith("const html='<b>'+esc(by)"));assert.ok(format);
+  source=source.replace(format+'\n','').replace('    if(r.content!==content||r.by!==by){',format+'\n    if(r.content!==content||r.by!==by){');
+  let failed=false;try{sourceFormattingChecks(source)}catch(e){failed=true}assert.ok(failed,'hoisting formatting outside invalidation must fail');
+}
+console.log('ok source formatting cache: initial parse, zero unchanged parses, one edited response, disclosure and mask transitions; hoisted-parser mutation detected');
+
+/* Actual header resize, drawer and theme handlers share native desktop/mobile controls. */
+const headerBehavior=html.slice(html.indexOf('function deskVisible('),html.indexOf('function deskSetViewUI('));
+const drawerBehavior=html.slice(html.indexOf('function deskCloseDrawer('),html.indexOf('function deskEndDrag('));
+function headerChecks(code=headerBehavior){
+  const nodes=new Map(),controls=[],focused=[],listeners={};let ctx;
+  const visible=el=>{if(!el)return false;if(el.dataset?.theme)return el.host==='deskChainTools'?ctx.innerWidth>1000:ctx.innerWidth<=1000;if(el.dataset?.drawer)return el.host==='deskChainTools'?ctx.innerWidth>1000&&ctx.innerWidth<=1380:ctx.innerWidth<=1000;return true};
+  const node=id=>{if(!nodes.has(id))nodes.set(id,{id,dataset:{},style:{setProperty(){}},classList:{toggle(){}},clientWidth:1100,isConnected:true,getClientRects(){return visible(this)?[{}]:[]},setAttribute(k,v){this[k]=v},contains:el=>el?.owner===id,querySelector:()=>node(id+' close'),getBoundingClientRect:()=>({left:10,right:40}),focus(options){ctx.document.activeElement=this;focused.push({el:this,options});listeners.focusin?.({target:this})},closest(){return null}});return nodes.get(id)};
+  for(const host of ['deskToolbar','deskChainTools'])for(const [kind,value]of [['drawer','facts'],['drawer','agents'],['theme','original'],['theme','neutral']]){if(host==='deskChainTools'&&value==='agents')continue;const b=node('#'+host+' [data-'+kind+'='+value+']');b.host=host;b.dataset[kind]=value;b.closest=selector=>selector==='[inert]'?(node(host==='deskChainTools'?'#deskT':'#deskToolbar').inert?node('#'+host):null):selector.includes('#'+host)?node('#'+host):null;controls.push(b)}
+  ctx={innerWidth:1000,focus:'A',A:{A:{}},DESK:{preference:.46,compact:false,open:false,expanded:false,drawer:null},document:{activeElement:null,body:{},addEventListener:(type,fn)=>listeners[type]=fn,documentElement:{dataset:{}},querySelectorAll:selector=>controls.filter(b=>b.dataset[selector.includes('data-theme')?'theme':'drawer'])},$:node,deskEndDrag(){},responseInvalidate(){},watchOpen(){},render(){},store:{setItem(){}},getComputedStyle:el=>({visibility:el.visibility||'visible'}),performance:{now:()=>0},requestAnimationFrame:f=>f()};
+  const tracking=html.slice(html.indexOf("document.addEventListener('focusin',e=>"),html.indexOf('/* end header focus tracking */'));
+  const theme=html.slice(html.indexOf('function deskTheme('),html.indexOf("let initialDeskTheme="));
+  const click=html.split('\n').find(line=>line.startsWith("$('#deskToolbar').onclick="));
+  vm.createContext(ctx);const api=vm.runInContext(deskHelpers+'\n'+tracking+'\n'+code+'\n'+drawerBehavior+'\n'+theme+'\n'+click+';({deskSize,deskCloseDrawer,deskToggleDrawer,deskTheme})',ctx);
+  const mobileTheme=node('#deskToolbar [data-theme=neutral]'),desktopTheme=node('#deskChainTools [data-theme=neutral]'),mobileFacts=node('#deskToolbar [data-drawer=facts]'),desktopFacts=node('#deskChainTools [data-drawer=facts]');
+  ctx.document.activeElement=mobileTheme;ctx.innerWidth=1001;api.deskSize();assert.equal(ctx.document.activeElement,desktopTheme);assert.equal(focused.at(-1).options.preventScroll,true);
+  ctx.innerWidth=1000;api.deskSize();assert.equal(ctx.document.activeElement,mobileTheme);
+  mobileTheme.focus({preventScroll:true});ctx.innerWidth=1001;ctx.document.activeElement=ctx.document.body;api.deskSize();assert.equal(ctx.document.activeElement,desktopTheme,'native CSS blur before resize still restores equivalent control');
+  ctx.innerWidth=1000;ctx.document.activeElement=ctx.document.body;api.deskSize();assert.equal(ctx.document.activeElement,mobileTheme,'reverse native blur sequence restores mobile control');
+  listeners.pointerdown({target:{closest:()=>null}});ctx.innerWidth=1001;ctx.document.activeElement=ctx.document.body;api.deskSize();assert.equal(ctx.document.activeElement,ctx.document.body,'intentional click elsewhere must not resurrect header focus');
+  ctx.innerWidth=1200;api.deskToggleDrawer('facts',desktopFacts);assert.equal(node('#deskT').inert,true);assert.equal(node('#deskToolbar').inert,true);assert.equal(desktopFacts['aria-expanded'],'true');assert.equal(mobileFacts['aria-expanded'],'true');
+  api.deskCloseDrawer();assert.equal(ctx.document.activeElement,desktopFacts);assert.equal(desktopFacts['aria-expanded'],'false');assert.equal(mobileFacts['aria-expanded'],'false');assert.equal(node('#deskT').inert,false);
+  api.deskToggleDrawer('facts',desktopFacts);ctx.innerWidth=1000;api.deskSize();api.deskCloseDrawer();assert.equal(ctx.document.activeElement,mobileFacts,'drawer return follows newly visible counterpart');
+  api.deskToggleDrawer('facts',mobileFacts);ctx.innerWidth=1381;api.deskSize();assert.equal(ctx.DESK.drawer,null);assert.equal(ctx.document.activeElement,node('#deskWorkToggle'),'Details becomes a permanent rail above 1380');
+  ctx.document.activeElement={owner:'#deskFacts'};ctx.innerWidth=1380;api.deskSize();assert.equal(ctx.document.activeElement,desktopFacts,'hiding facts rail moves focus to visible Details trigger');
+  node('#deskChainTools').onclick({target:{closest:()=>desktopTheme}});assert.equal(ctx.document.documentElement.dataset.theme,'neutral');for(const b of controls.filter(b=>b.dataset.theme))assert.equal(b['aria-pressed'],String(b.dataset.theme==='neutral'));
+}
+headerChecks();let headerFailed=false;try{headerChecks(headerBehavior.replace('el=deskHeaderPeer(el);',''))}catch(e){headerFailed=true}assert.ok(headerFailed,'removing responsive focus counterpart must fail');
+function headerWheelChecks(mutate=false){let listener;const steps=[],ctx={focus:'A',gT:0,gx:0,gz:0,gFired:false,gZone:null,gPinch:null,performance:{now:()=>500},addEventListener:(event,fn)=>listener=fn,canScrollX:()=>false,step:n=>steps.push(n),setView(){throw Error('unexpected view')},desk(){throw Error('unexpected bay')}};
+  const start=html.lastIndexOf("addEventListener('wheel',e=>{");let code=html.slice(start,html.indexOf('/* ---------- stepped up:',start));
+  if(mutate)code=code.replace('#officer,#compactDesk,#deskChainTools','#officer,#compactDesk');vm.runInNewContext(code,ctx);
+  const event=tools=>({target:{closest:selector=>selector.includes('#deskChainTools')&&tools?{}:selector==='#deskT'?{}:null},deltaX:120,deltaY:0,preventDefault(){}});
+  listener(event(true));assert.equal(steps.length,0,'gestures on theme/Details do not navigate agents');listener(event(false));assert.deepEqual(steps,[1],'chain navigation elsewhere remains active');
+}
+headerWheelChecks();let wheelFailed=false;try{headerWheelChecks(true)}catch(e){wheelFailed=true}assert.ok(wheelFailed,'missing control gesture exclusion must fail');
+console.log('ok native header controls: 1000/1001 focus, 1380/1381 Details transitions, shared themes/aria/inert, gesture isolation; mutations detected');
+
+/* Exercise the real visibility predicate independently of layout stubs. */
+const visibleSource=html.split('\n').find(line=>line.startsWith('function deskVisible('));
+function headerVisibilityChecks(code=visibleSource){
+  const check=vm.runInNewContext(code+';deskVisible',{getComputedStyle:el=>({visibility:el.visibility})});
+  const node={isConnected:true,visibility:'visible',inert:false,rects:[{}],closest(){return this.inert?{}:null},getClientRects(){return this.rects}};
+  assert.equal(check(node),true);assert.equal(check(null),false);
+  for(const [field,value]of [['isConnected',false],['visibility','hidden'],['inert',true],['rects',[]]]){const previous=node[field];node[field]=value;assert.equal(check(node),false,field+' excludes hidden/inert controls');node[field]=previous}
+}
+headerVisibilityChecks();for(const guard of ['el.isConnected&&',"!el.closest('[inert]')&&",'!!el.getClientRects().length&&',"&&getComputedStyle(el).visibility!=='hidden'"]){let failed=false;try{headerVisibilityChecks(visibleSource.replace(guard,''))}catch(e){failed=true}assert.ok(failed,'visibility guard mutation detected: '+guard)}
+
+/* Small rule reader verifies width-conditioned declarations, without pretending to be a browser cascade. */
+const deskCSS=html.slice(html.indexOf('<style>')+7,html.indexOf('</style>'));
+function cssRules(text,conditions=[],out=[]){
+  text=text.replace(/\/\*[\s\S]*?\*\//g,'');let at=0;
+  while(at<text.length){const open=text.indexOf('{',at);if(open<0)break;let close=open+1,depth=1;while(close<text.length&&depth){if(text[close]==='{')depth++;else if(text[close]==='}')depth--;close++}
+    const selector=text.slice(at,open).trim(),body=text.slice(open+1,close-1);at=close;
+    if(selector.startsWith('@media'))cssRules(body,[...conditions,selector.slice(6).trim()],out);
+    else if(!selector.startsWith('@'))out.push({selectors:selector.split(',').map(x=>x.trim()),conditions,body});
+  }return out;
+}
+function layoutStyleChecks(css=deskCSS){
+  const rules=cssRules(css),value=(selector,property,width)=>{let result;for(const r of rules){if(!r.selectors.includes(selector)||!r.conditions.every(c=>!/(forced-colors|pointer|hover|prefers-)/.test(c)&&[...c.matchAll(/\((min|max)-width:\s*(\d+)px\)/g)].every(m=>m[1]==='min'?width>=+m[2]:width<=+m[2])))continue;for(const declaration of r.body.split(';')){const i=declaration.indexOf(':');if(declaration.slice(0,i).trim()===property)result=declaration.slice(i+1).trim()}}return result};
+  for(const w of [390,1000,1001,1380,1381]){
+    assert.equal(value('#deskToolbar','display',w),w<=1000?'flex':'none','mobile toolbar at '+w);
+    assert.equal(value('#deskChainTools','display',w),w<=1000?'none':'flex','desktop controls at '+w);
+    assert.equal(value('#deskChainTools [data-drawer=facts]','display',w),w>1000&&w<=1380?'block':'none','desktop Details at '+w);
+  }
+  assert.equal(value('#deskAgentList li[data-relation=inferred]:after','border-top-style',1600),'dashed');
+  assert.equal(value('#crumb','padding',1600),'4px','focus outline fits inside scroll clipping');
+  const checklist='#compactDesk #ofLog .source .rich-source li:has(>.box)';
+  assert.notEqual(value(checklist,'display',1600),'flex','checklist inline content and nested lists use normal flow');
+  assert.equal(value(checklist,'position',1600),'relative');
+  assert.equal(value('#compactDesk #ofLog .source .rich-source .h1','font-size',1600),'16px','agent heading gets scoped response typography');
+  for(const hashes of ['#','##','###'])assert.doesNotMatch(responseMarkup(hashes+' Heading',true),/<h3\b/,'agent headings cannot match .hud h3 chrome');
+}
+layoutStyleChecks();for(const [before,after]of [
+  ['#deskToolbar{display:none}','#deskToolbar{}'],
+  ['#deskChainTools [data-drawer=facts]{display:block}','#deskChainTools [data-drawer=facts]{}'],
+  ['#deskChainTools{display:none}','#deskChainTools{}'],
+  ['#deskAgentList li[data-relation=inferred]:after{border-top-style:dashed}','#deskAgentList li[data-relation=inferred]:after{}'],
+  ['overflow:auto;padding:4px;scrollbar-width:thin','overflow:auto;scrollbar-width:thin']
+]){assert.ok(deskCSS.includes(before));let failed=false;try{layoutStyleChecks(deskCSS.replace(before,after))}catch(e){failed=true}assert.ok(failed,'critical CSS deletion mutation detected: '+before)}
+console.log('ok real visibility and critical responsive/header/connector CSS; guard and stylesheet deletion mutations detected');
+
 
 /* Run the real response-card lifecycle and shared dispatch against synthetic requests only. */
 const responseSource=html.slice(html.indexOf('/* Desk response card:'),html.indexOf('/* end desk response card */'));
