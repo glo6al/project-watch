@@ -475,6 +475,47 @@ function deskReviewChecks(mutate=false){
 }
 deskReviewChecks();let duplicateCaught=false;try{deskReviewChecks('duplicate')}catch(e){duplicateCaught=true}assert.ok(duplicateCaught,'duplicated default agent list must fail');let reviewCaught=false;try{deskReviewChecks(true)}catch(e){reviewCaught=true}assert.ok(reviewCaught,'stale Review guard mutation must fail');console.log('ok persistent Review: closed-work arrival, stale request/station revalidation, reveals actual evidence without sending or enabling approvals; mutation detected');
 
+/* Live command alerts remain visible outside closed Work, without replacing a pending request. */
+function deskAlertChecks(mutation=''){
+  const headStart=html.indexOf('<header id="deskHead"'),headEnd=html.indexOf('</header>',headStart),alertAt=html.indexOf('id="deskAlert"');
+  assert.ok(headStart>=0&&alertAt>headStart&&alertAt<headEnd,'alert belongs to the persistent desk header');
+  assert.ok(headEnd<html.indexOf('id="deskWork"',headEnd),'alert is outside the closable Work area');
+  const nodes=new Map(),node=id=>{if(!nodes.has(id)){const el={hidden:false,textContent:'',children:[],dataset:{},setAttribute(k,v){this[k]=v}};nodes.set(id,el)}return nodes.get(id)};
+  const list=node('#deskAgentList');Object.defineProperty(list,'firstElementChild',{get:()=>list.children[0]||null});
+  list.insertBefore=(el,at)=>{const old=list.children.indexOf(el);if(old>=0)list.children.splice(old,1);const pos=list.children.indexOf(at);list.children.splice(pos<0?list.children.length:pos,0,el)};
+  const agents=new Map();for(const id of ['A','B']){const row=node('row '+id);row.dataset.agent=id;row.querySelector=selector=>node(id+' '+selector);Object.defineProperty(row,'nextElementSibling',{get:()=>list.children[list.children.indexOf(row)+1]||null});agents.set(id,row);list.children.push(row)}
+  for(const el of [node('#deskAlert'),node('A small'),node('B small')])Object.defineProperty(el,'innerHTML',{set(){throw Error('Alert data must remain text, never HTML')}});
+  const ctx={focus:'A',A:{A:{name:'Ada',runtime:'Codex'},B:{name:'Bram',runtime:'Claude'}},DESK:{open:false,agents},bayPg:0,PINS:{},STEADY:false,order:['A','B'],document:{activeElement:null},Date:{now:()=>1000*1000},$:node,one:t=>String(t||'').replace(/\s+/g,' '),stateOf:a=>({label:'between actions',need:a.request,busy:!!a.busy}),deskSetViewUI(){},deskFocus(){},post(){throw Error('Painting alerts must not submit')},cuSend(){throw Error('Painting alerts must not send')}};
+  let code=html.slice(html.indexOf('function deskPaint('),html.indexOf('function deskTheme('));
+  const mutations={
+    hide:c=>c.replace("$('#deskAlert').hidden=!alert;","$('#deskAlert').hidden=true;"),
+    expiry:c=>c.replace('now-a.alert.ts<180','now-a.alert.ts<=180'),
+    railExpiry:c=>c.replace('now-agent.alert.ts<180','now-agent.alert.ts<=180'),
+    rail:c=>c.replace("alarm?'alarm':",''),
+    priority:c=>c.replace("state.need?'need':alarm?'alarm':state.busy?'busy':'idle'","alarm?'alarm':state.need?'need':state.busy?'busy':'idle'"),
+    steady:c=>c.replace("STEADY?'(text hidden in steady mode)':one(alert.text).slice(0,300)",'one(alert.text).slice(0,300)')
+  };
+  if(mutation){const altered=mutations[mutation](code);assert.notEqual(altered,code,'mutation must change extracted behavior');code=altered}
+  const realTxt=html.split('\n').find(line=>line.startsWith('const txt='));const paint=vm.runInNewContext(realTxt+'\n'+code+';deskPaint',ctx);
+  paint();assert.equal(node('#deskAlert').hidden,true);assert.equal(node('#deskAlert').textContent,'');assert.equal(agents.get('A').dataset.state,'idle');
+  const command='git push origin main <img src=x onerror=bad()>',alert={ts:990,label:'a push',text:command};ctx.A.A.alert=alert;paint();
+  assert.equal(ctx.DESK.open,false);assert.equal(node('#deskAlert').hidden,false);assert.equal(node('#deskAlert').textContent,'Looks like a push · '+command);assert.equal(agents.get('A').dataset.state,'alarm');assert.equal(node('A small').textContent,'Looks like a push','rail alarm remains compact');assert.equal(agents.get('A').title,undefined,'rail has no raw-command tooltip');
+  assert.equal(ctx.DESK.agents.get('A'),list.children[0],'keyed agent identity survives the alert repaint');
+  ctx.A.A.request={kind:'Approve',text:'Inspect a different command',sure:true,perm:{pid:'p1',sent:false}};paint();
+  assert.equal(node('#deskAlert').hidden,false);assert.equal(node('#deskRequest').hidden,false);assert.equal(node('#deskReview').hidden,false);assert.match(node('#deskRequestText').textContent,/Request · Approve/);assert.equal(agents.get('A').dataset.state,'need');assert.equal(node('A small').textContent,'Approve','pending request keeps rail priority');
+  ctx.A.A.request.sure=false;paint();assert.equal(node('A small').textContent,'Approve · possible');assert.equal(node('#deskAlert').hidden,false);
+  delete ctx.A.A.request;ctx.focus='B';paint();assert.equal(node('#deskAlert').hidden,true);assert.equal(node('#deskAlert').textContent,'','station switch clears previous alert');assert.equal(agents.get('A').dataset.state,'alarm','other agent still carries its live rail alarm');
+  ctx.A.B.alert={ts:995,label:'a delete',text:'remove generated files'};paint();assert.equal(node('#deskAlert').textContent,'Looks like a delete · remove generated files');delete ctx.A.B.alert;paint();assert.equal(node('#deskAlert').hidden,true);assert.equal(node('#deskAlert').textContent,'');
+  ctx.focus='A';ctx.A.A.alert.ts=821;paint();assert.equal(node('#deskAlert').hidden,false,'179 seconds is still live');assert.equal(agents.get('A').dataset.state,'alarm');
+  ctx.A.A.alert.ts=820;paint();assert.equal(node('#deskAlert').hidden,true,'180 seconds expires');assert.equal(node('#deskAlert').textContent,'');assert.equal(agents.get('A').dataset.state,'idle','rail uses the same expiry');assert.equal(node('A small').textContent,'between actions');
+  ctx.A.A.alert.ts=819;paint();assert.equal(node('#deskAlert').hidden,true);
+  ctx.A.A.alert.ts=990;ctx.STEADY=true;paint();assert.equal(node('#deskAlert').textContent,'Looks like a push · (text hidden in steady mode)');assert.equal(node('A small').textContent,'Looks like a push');assert.equal(agents.get('A').title,undefined,'steady rail has no raw-command tooltip');assert.equal(node('#deskAlert').textContent.includes(command),false);
+  ctx.STEADY=false;ctx.A.A.alert.text='x'.repeat(350);paint();assert.equal(node('#deskAlert').textContent,'Looks like a push · '+'x'.repeat(300));
+  delete ctx.A.A.alert;paint();assert.equal(node('#deskAlert').hidden,true);assert.equal(node('#deskAlert').textContent,'');assert.equal(agents.get('A').dataset.state,'idle');assert.equal(ctx.DESK.open,false);
+}
+deskAlertChecks();for(const mutation of ['hide','expiry','railExpiry','rail','priority','steady']){let caught=false;try{deskAlertChecks(mutation)}catch(e){caught=true}assert.ok(caught,'live-alert mutation '+mutation+' must fail')}
+console.log('ok live desk alerts: closed Work, expiry boundaries, station changes, concurrent requests, keyed rail priority, safe text and steady masking; six mutations detected');
+
 /* Dispatch actual capture/bubble handlers in browser order, including existing Officer/Watch handlers. */
 function deskKeyboardChecks(mutate=false){
   const callbacks=[],actions=[],nodes=new Map(),node=id=>{if(!nodes.has(id))nodes.set(id,{hidden:true,focus:()=>actions.push('focus '+id)});return nodes.get(id)};

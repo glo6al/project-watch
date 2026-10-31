@@ -486,6 +486,24 @@ html[data-theme=neutral] .st .id b,html[data-theme=neutral] .st .id .ctx .pj{col
 #deskSignals{display:flex;gap:5px;margin-top:16px;padding-top:12px;border-top:1px solid var(--desk-edge)}#deskSignals button{flex:1}#deskSignals button[aria-pressed=true]{border-color:var(--hl);color:var(--hl)}#compactDesk #bayD{display:none}#compactDesk #bay{margin-top:8px}html[data-theme=neutral] #deskSignals button[aria-pressed=true]{background:#e7e7e7}
 html[data-theme=neutral] #room{background:radial-gradient(ellipse at 50% 36%,#fff 0,#f5f5f5 64%,#eee 100%)}html[data-theme=neutral] #floor{filter:grayscale(1);opacity:.16}html[data-theme=neutral] #mark{filter:grayscale(1);opacity:.7}html[data-theme=neutral] #deskToolbar .theme-choices button[aria-pressed=true]{background:#303030;color:#fff;border-color:#303030;box-shadow:none}html[data-theme=neutral] #deskToolbar .theme-choices button[aria-pressed=false]{background:#f5f5f5;color:#5c5c5c;border-color:#d2d2d2}
 #deskCenter{position:relative;z-index:0}#deskConversation{position:relative;z-index:0}#deskWork{z-index:1}#compactDesk.work-compact.work-open #deskConversation{visibility:hidden}#deskWorkInner{background:var(--desk-surface)}
+/* Keep live command alerts visible even when Work is closed. */
+#deskAlert{flex-basis:100%;min-width:0;font-size:12px;line-height:1.4;color:var(--del);overflow-wrap:anywhere}
+#deskAgentList button[data-state=alarm] i{background:var(--del)}
+/* Work chrome must not override Original permission-control semantics. */
+html:not([data-theme=neutral]) #deskWork .flag .yes{color:var(--add)}
+html:not([data-theme=neutral]) #deskWork .flag .no{color:var(--del)}
+html:not([data-theme=neutral]) #deskWork .flag .yes:hover{color:var(--add);border-color:var(--add);background:#0e2418}
+html:not([data-theme=neutral]) #deskWork .flag .no:hover{color:var(--del);border-color:var(--del);background:#2a1214}
+/* Neutral banners need dark text on their pale semantic backgrounds, in room and Work. */
+html[data-theme=neutral] .flag.w{color:#704a0d}
+html[data-theme=neutral] .flag.r{color:#8c2323}
+html[data-theme=neutral] .flag.w .tag,html[data-theme=neutral] .flag.r .tag{color:#fff}
+html[data-theme=neutral] .flag.w.soft .tag{color:#704a0d}
+html[data-theme=neutral] .flag .off,html[data-theme=neutral] .flag .rev,html[data-theme=neutral] .flag .fx{color:#704a0d;border-color:#946414}
+html[data-theme=neutral] .flag .rev:hover,html[data-theme=neutral] .flag .fx:hover,html[data-theme=neutral] #compactMonitor .flag .rev:hover,html[data-theme=neutral] #compactMonitor .flag .fx:hover{color:#704a0d;border-color:#946414;background:#f3e7d4}
+html[data-theme=neutral] .flag .yes:hover,html[data-theme=neutral] #compactMonitor .flag .yes:hover{color:#237a43;border-color:#237a43;background:#edf5ef}
+html[data-theme=neutral] .flag .no:hover,html[data-theme=neutral] #compactMonitor .flag .no:hover{color:#b63838;border-color:#b63838;background:#fff0f0}
+
 </style>
 </head>
 <body>
@@ -509,7 +527,7 @@ html[data-theme=neutral] #room{background:radial-gradient(ellipse at 50% 36%,#ff
 <div id="compactDesk" hidden>
   <div id="deskToolbar"><button type="button" data-drawer="agents" aria-controls="deskAgents" aria-expanded="false">Agents</button><button type="button" data-drawer="facts" aria-controls="deskFacts" aria-expanded="false">Details</button><span class="theme-choices" role="group" aria-label="Visual theme"><button type="button" data-theme="original" aria-pressed="true">Original</button><button type="button" data-theme="neutral" aria-pressed="false">Neutral</button></span></div>
   <div id="deskShell"><aside id="deskAgents" aria-label="Agents"><header><h2>Agents</h2><button type="button" class="desk-rail-close" data-close-drawer aria-label="Close agents">×</button></header><div id="deskAgentList"></div><div id="deskSignals" role="group" aria-label="Room signals"><button type="button" data-bay="1" aria-pressed="false">Alerts</button><button type="button" data-bay="2" aria-pressed="false">Activity</button></div><div id="deskBaySlot"></div></aside>
-    <main id="deskCenter"><header id="deskHead"><div id="deskIdentity"><h1 id="deskName"></h1><p id="deskStatus"></p><p id="deskGoal"></p></div><div id="deskActions"><button type="button" id="deskOpenApp" class="secondary">Open in app ↗</button><button type="button" id="deskPin" class="secondary">Pin</button><button type="button" id="deskDismiss" class="secondary">Dismiss</button><button type="button" id="deskWorkToggle" aria-expanded="false" aria-controls="deskWork">Work</button></div><div id="deskRequest" hidden><span id="deskRequestText"></span><button type="button" id="deskReview" hidden>Review request</button></div></header>
+    <main id="deskCenter"><header id="deskHead"><div id="deskIdentity"><h1 id="deskName"></h1><p id="deskStatus"></p><p id="deskGoal"></p></div><div id="deskActions"><button type="button" id="deskOpenApp" class="secondary">Open in app ↗</button><button type="button" id="deskPin" class="secondary">Pin</button><button type="button" id="deskDismiss" class="secondary">Dismiss</button><button type="button" id="deskWorkToggle" aria-expanded="false" aria-controls="deskWork">Work</button></div><div id="deskRequest" hidden><span id="deskRequestText"></span><button type="button" id="deskReview" hidden>Review request</button></div><div id="deskAlert" hidden></div></header>
     <div id="deskWorkspace"><section id="deskConversation" aria-label="Conversation"></section><section id="deskWork" aria-label="Work evidence" data-view="doing" hidden inert><div id="deskSizer" role="separator" tabindex="0" aria-label="Resize work panel" aria-orientation="vertical" aria-controls="deskWork" aria-valuemin="320" aria-valuemax="600" aria-valuenow="460" title="Drag to resize; arrow keys adjust; double-click resets"></div><div id="deskWorkInner"><header id="deskWorkHead"><h2>Recorded work</h2><button type="button" id="deskExpand" aria-label="Expand work view">⤢</button><button type="button" id="deskCloseWork">← Conversation</button></header><nav id="deskWorkTabs" aria-label="Work views"><button type="button" data-work="seeing" aria-pressed="false">Preview</button><button type="button" data-work="changes" aria-pressed="false">Changes</button><button type="button" data-work="doing" aria-pressed="true">Activity</button></nav><div id="deskWorkContent"><div id="compactMonitor"></div><div id="compactPanels"></div></div></div></section></div></main>
     <aside id="deskFacts" aria-label="Session details"><header><h2>Session</h2><button type="button" class="desk-rail-close" data-close-drawer aria-label="Close details">×</button></header></aside></div><div id="deskScrim" hidden></div><div id="compactReadout"></div>
 </div>
@@ -1569,12 +1587,13 @@ function deskToggleDrawer(which,trigger){
 }
 function deskEndDrag(){if(DESK.drag!==null){try{$('#deskSizer').releasePointerCapture(DESK.drag)}catch(err){}DESK.drag=null}$('#compactDesk').classList.remove('resizing')}
 function deskPaint(){
-  if(!focus||!A[focus])return;const a=A[focus],now=Date.now()/1000,S=stateOf(a,now),request=S.need;
+  if(!focus||!A[focus])return;const a=A[focus],now=Date.now()/1000,S=stateOf(a,now),request=S.need,alert=a.alert&&now-a.alert.ts<180?a.alert:null;
   txt($('#deskName'),a.name);txt($('#deskStatus'),S.label);txt($('#deskGoal'),STEADY?(a.goal?'(goal hidden in steady mode)':''):a.goal||a.task||'No first message read');$('#deskGoal').title=$('#deskGoal').textContent;
   txt($('#deskOpenApp'),a.observed?'Lives in ChatGPT':'Open in '+(a.runtime||'app')+' ↗');txt($('#deskPin'),PINS[focus]?'Unpin':'Pin');$('#deskPin').setAttribute('aria-pressed',String(!!PINS[focus]));
   $('#deskRequest').hidden=!request;txt($('#deskRequestText'),request?(request.sure?'Request · ':'Possible request · ')+request.kind+' · '+(STEADY?'(text hidden in steady mode)':one(request.text).slice(0,260)):'');$('#deskRequestText').title=request&&!STEADY?request.text:'';$('#deskReview').hidden=!(request?.perm&&!request.perm.sent);
+  $('#deskAlert').hidden=!alert;txt($('#deskAlert'),alert?'Looks like '+alert.label+' · '+(STEADY?'(text hidden in steady mode)':one(alert.text).slice(0,300)):'');
   const list=$('#deskAgentList'),keep=new Set(order),active=document.activeElement;let at=list.firstElementChild;
-  for(const id of order){const agent=A[id];if(!agent)continue;let b=DESK.agents.get(id);if(!b){b=document.createElement('button');b.type='button';b.dataset.agent=id;b.innerHTML='<i aria-hidden="true"></i><span><strong></strong><small></small></span>';DESK.agents.set(id,b)}const state=stateOf(agent,now);b.dataset.state=state.need?'need':state.busy?'busy':'idle';b.setAttribute('aria-current',String(id===focus));txt(b.querySelector('strong'),agent.name);txt(b.querySelector('small'),state.need?state.need.kind+(state.need.sure?'':' · possible'):state.label);if(b!==at)list.insertBefore(b,at);at=b.nextElementSibling}
+  for(const id of order){const agent=A[id];if(!agent)continue;let b=DESK.agents.get(id);if(!b){b=document.createElement('button');b.type='button';b.dataset.agent=id;b.innerHTML='<i aria-hidden="true"></i><span><strong></strong><small></small></span>';DESK.agents.set(id,b)}const state=stateOf(agent,now),alarm=agent.alert&&now-agent.alert.ts<180?agent.alert:null;b.dataset.state=state.need?'need':alarm?'alarm':state.busy?'busy':'idle';b.setAttribute('aria-current',String(id===focus));txt(b.querySelector('strong'),agent.name);txt(b.querySelector('small'),state.need?state.need.kind+(state.need.sure?'':' · possible'):alarm?'Looks like '+alarm.label:state.label);if(b!==at)list.insertBefore(b,at);at=b.nextElementSibling}
   for(const [id,b] of DESK.agents)if(!keep.has(id)){b.remove();DESK.agents.delete(id)}if(active?.dataset?.agent&&!active.isConnected)deskFocus(list.querySelector('[aria-current=true]'));
   $('#bay').hidden=bayPg===0;for(const b of $('#deskSignals').children)b.setAttribute('aria-pressed',String(Number(b.dataset.bay)===bayPg));
   deskSetViewUI();
