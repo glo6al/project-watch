@@ -250,10 +250,10 @@ function citationChecks(mutate=false){
   if(mutate===true){jumpCode=jumpCode.replace('x.dataset.sourceAgent===aid&&','');revealCode=revealCode.replace('x.dataset.sourceAgent===id&&','')}
   if(mutate==='collapsed'){jumpCode=jumpCode.replace('if(detail)detail.open=true','if(false)detail.open=true');revealCode=revealCode.replace('if(detail)detail.open=true','if(false)detail.open=true')}
   for(const t of ['you','say']){
-    let scrolled=0,notices=[];const entry={t,seq:7,n:17,key:'message'},detail={open:false},el={dataset:{sourceN:'17',sourceAgent:'id'},querySelector:()=>detail,getClientRects:()=>[{}],scrollIntoView(){scrolled++},classList:{add(){},remove(){}}},wrong={...el,dataset:{sourceN:'17',sourceAgent:'other'},getClientRects:()=>[],scrollIntoView(){throw Error('wrong station')}};
-    const env={A:{id:{name:'Birch',story:[entry],open:new Set()}},focus:'id',setFocus(){},ofTab(){},capAdd:(s,k)=>s.add(k),STATION:{compact:true},render(){},performance:{now:()=>0},STEPPING:false,ofLog:{dataset:{a:'id'},querySelectorAll:()=>[wrong,el]},storyEl:{},setTimeout(){},cuNotice:text=>notices.push(text),cuSources(){},cuPaint(){},esc:String};
+    let scrolled=0,notices=[],reveals=[];const entry={t,seq:7,n:17,key:'message'},detail={open:false},el={dataset:{sourceN:'17',sourceAgent:'id'},querySelector:()=>detail,getClientRects:()=>[{}],scrollIntoView(){scrolled++},classList:{add(){},remove(){}}},wrong={...el,dataset:{sourceN:'17',sourceAgent:'other'},getClientRects:()=>[],scrollIntoView(){throw Error('wrong station')}};
+    const env={A:{id:{name:'Birch',story:[entry],open:new Set()}},focus:'id',setFocus(){},deskReveal:view=>reveals.push(view),ofTab(){},capAdd:(s,k)=>s.add(k),STATION:{compact:true},render(){},performance:{now:()=>0},STEPPING:false,ofLog:{dataset:{a:'id'},querySelectorAll:()=>[wrong,el]},storyEl:{},setTimeout(){},cuNotice:text=>notices.push(text),cuSources(){},cuPaint(){},esc:String};
     vm.runInNewContext(jumpCode+';ofJump("id",7)',env);assert.equal(scrolled,1);assert.equal(detail.open,true);assert.equal(env.deskView,undefined);
-    detail.open=false;vm.runInNewContext(revealCode+';cuRevealEvent("id",17)',env);assert.equal(scrolled,2);assert.equal(detail.open,true);
+    detail.open=false;vm.runInNewContext(revealCode+';cuRevealEvent("id",17)',env);assert.equal(scrolled,2);assert.equal(detail.open,true);assert.deepEqual(reveals,['conversation','conversation'],'speech reveals the conversation, never work');
     vm.runInNewContext(jumpCode+';ofJump("id",404);ofJump("missing",7)',env);assert.equal(notices.length,2);assert.match(notices[0],/no longer/);assert.match(notices[1],/no longer/);
   }
   assert.doesNotMatch(html,/data-v="said"|deskView='said'/);
@@ -268,9 +268,9 @@ citationChecks();let collisionCaught=false;try{citationChecks(true)}catch(e){col
 function visibilityChecks(mutate=false){
   let code=html.slice(html.indexOf('function onScreen('),html.indexOf('const covered='));if(mutate)code=code.replace('r.top<h.top','false');
   const r={width:210,height:100,top:90,bottom:190,left:0,right:210},host={getBoundingClientRect:()=>({top:100,bottom:500,left:0,right:500})};
-  const el={getBoundingClientRect:()=>r,closest:()=>host,contains:()=>true};
-  const visible=vm.runInNewContext(code+';onScreen',{innerHeight:600,innerWidth:500,$:()=>({offsetHeight:40}),document:{elementFromPoint:()=>el}});
-  assert.equal(visible(el),false);r.top=110;r.bottom=210;assert.equal(visible(el),true);r.height=70;assert.equal(visible(el),false);
+  let inert=false,occluded=false;const el={getBoundingClientRect:()=>r,closest:s=>s==='[inert]'?(inert?host:null):s==='#compactDesk'?host:null,contains:hit=>hit===el};
+  const visible=vm.runInNewContext(code+';onScreen',{innerHeight:600,innerWidth:500,$:()=>({offsetHeight:40}),document:{elementFromPoint:()=>occluded?{}:el}});
+  assert.equal(visible(el),false);r.top=110;r.bottom=210;assert.equal(visible(el),true);inert=true;assert.equal(visible(el),false,'closing work or drawer background rejects approval immediately');inert=false;occluded=true;assert.equal(visible(el),false,'occluded request code cannot approve');occluded=false;r.height=70;assert.equal(visible(el),false);
 }
 visibilityChecks();let clippingFailed=false;try{visibilityChecks(true)}catch(e){clippingFailed=true}assert.ok(clippingFailed);console.log('ok compact approval clipping guard and mutation detection');
 
@@ -286,14 +286,40 @@ responseFocusChecks();let focusFailed=false;try{responseFocusChecks(true)}catch(
   const match=html.match(/\$\('#compactDesk'\)\.addEventListener\('pointerdown',\(\)=>\{([^}]+)\}\)/);assert.ok(match);const ctx={moved:true,drop(){}};vm.runInNewContext(match[1],ctx);assert.equal(ctx.moved,false);console.log('ok compact pointerdown clears stale room-drag click suppression');
 }
 
-/* Compact approval placement moves the original action banner next to the code and restores order. */
-{
-  const parent={children:[]};
-  function node(name){const n={name,parentNode:parent,remove(){const i=parent.children.indexOf(this);if(i>=0)parent.children.splice(i,1)},before(el){el.remove();parent.children.splice(parent.children.indexOf(this),0,el)},after(el){el.remove();parent.children.splice(parent.children.indexOf(this)+1,0,el)}};Object.defineProperty(n,'nextElementSibling',{get(){return parent.children.slice(parent.children.indexOf(n)+1).find(x=>x.name!=='anchor')}});return n}
-  const banner=node('banner'),header=node('header'),mon=node('mon');parent.children=[banner,header,mon];
-  const code=html.slice(html.indexOf('function stationBefore('),html.indexOf('function stationLayout('));const ctx={STATION:{anchors:new Map()},document:{createComment:()=>node('anchor')}};
-  const api=vm.runInNewContext(code+';({stationBefore,stationRestore})',ctx);api.stationBefore(banner,mon);assert.equal(parent.children.at(-2),banner);api.stationBefore(banner,mon);assert.equal(ctx.STATION.anchors.size,1);api.stationRestore(banner);assert.deepEqual(parent.children,[banner,header,mon]);assert.equal(ctx.STATION.anchors.size,0);console.log('ok compact approval original-banner placement and exact restoration');
+/* Placement preserves real nodes and listener identity across hosts and repeated room visits. */
+function placementChecks(mutate=false){
+  function node(name,comment=false){
+    const n={name,comment,children:[],parentNode:null,remove(){if(!this.parentNode)return;const p=this.parentNode;p.children.splice(p.children.indexOf(this),1);this.parentNode=null},
+      appendChild(el){el.remove();this.children.push(el);el.parentNode=this;return el},
+      before(el){const p=this.parentNode;assert.ok(p,'insertion target must have parent');el.remove();p.children.splice(p.children.indexOf(this),0,el);el.parentNode=p},
+      after(el){const p=this.parentNode;assert.ok(p,'insertion target must have parent');el.remove();p.children.splice(p.children.indexOf(this)+1,0,el);el.parentNode=p},
+      contains(el){return this===el||this.children.some(x=>x.contains(el))}};
+    Object.defineProperty(n,'nextElementSibling',{get(){return this.parentNode?.children.slice(this.parentNode.children.indexOf(this)+1).find(x=>!x.comment)||null}});return n;
+  }
+  const room=node('room'),shell=node('shell'),work=node('work'),conversation=node('conversation'),left=node('left'),right=node('right');
+  for(const el of [work,conversation,left,right])shell.appendChild(el);
+  const a=node('A'),b=node('B'),deskL=node('deskL'),deskR=node('deskR'),bottom=node('bottom'),bay=node('bay'),badge=node('badge'),officer=node('officer');
+  for(const el of [a,b,deskL,deskR,bottom])room.appendChild(el);bottom.appendChild(bay);bottom.appendChild(badge);deskR.appendChild(officer);
+  const banner=node('banner'),header=node('header'),monitor=node('monitor');for(const el of [banner,header,monitor])a.appendChild(el);
+  let clicks=0;banner.onclick=()=>clicks++;const handler=banner.onclick;
+  let code=html.slice(html.indexOf('function stationMove('),html.indexOf('function compactMonitorHeight('));
+  if(mutate)code=code.replace('a.after(el);','');
+  const ctx={STATION:{anchors:new Map()},document:{createComment:()=>node('anchor',true)}};
+  const api=vm.runInNewContext(code+';({stationMove,stationBefore,stationRestore})',ctx);
+  for(let visit=0;visit<2;visit++){
+    api.stationBefore(banner,monitor);api.stationBefore(banner,monitor);api.stationMove(a,work);api.stationMove(a,work);
+    for(const [el,parent] of [[deskL,work],[deskR,conversation],[bay,left],[badge,right]]){api.stationMove(el,parent);api.stationMove(el,parent)}
+    assert.equal(ctx.STATION.anchors.size,6,'repeated placement creates only one anchor per moved node');
+    assert.equal(officer.parentNode,deskR);assert.equal(banner.onclick,handler);banner.onclick();
+    api.stationRestore(banner);api.stationRestore(a);api.stationMove(b,work);
+    assert.deepEqual(a.children,[banner,header,monitor],'switching stations restores original banner order');assert.equal(a.parentNode,room);assert.equal(b.parentNode,work);
+    api.stationRestore(b);for(const el of [deskL,deskR,bay,badge])api.stationRestore(el);
+    assert.deepEqual(room.children,[a,b,deskL,deskR,bottom],'room order survives cross-parent moves');assert.deepEqual(bottom.children,[bay,badge]);assert.equal(officer.parentNode,deskR);
+    assert.equal(ctx.STATION.anchors.size,0);assert.equal(work.children.length+conversation.children.length+left.children.length+right.children.length,0);
+  }
+  assert.equal(clicks,2,'preserved listener still runs exactly once per interaction');
 }
+placementChecks();let placementCaught=false;try{placementChecks(true)}catch(e){placementCaught=true}assert.ok(placementCaught,'missing original-parent restoration must fail');console.log('ok placement: cross-parent restoration, repeated station switches, original order/listeners, no leaked anchors; mutation detected');
 
 /* Leave scrolling room around the approval banner and code, not only an exact fit. */
 {
@@ -377,4 +403,134 @@ sourceChecks();let reconciliationCaught=false;try{sourceChecks(true)}catch(e){re
 {
   const reason=vm.runInNewContext(unifiedCode+';cuDirectReason');assert.equal(reason('x:demo',{runtime:'Codex'}),'');assert.equal(reason('c:demo',{runtime:'Claude'}),'');assert.match(reason('e:cloud',{runtime:'Codex',observed:true}),/ChatGPT/);assert.match(reason('c:child',{runtime:'Claude',sub:true}),/parent/);assert.match(reason('x:gone',null),/no longer/);assert.match(reason('k:remote',{runtime:'Codex'}),/local/);
   console.log('ok direct availability: local parents supported, cloud/subagent/unavailable targets explained');
+}
+
+/* Use the real navigation boundary while a direct request resolves on a different desk. */
+async function navigationDraftChecks(mutate=false){
+  const h=directHarness(),{ctx}=h;ctx.OFUI.scope='station';ctx.OFUI.epoch=1;ctx.CU.drafts=new Map();
+  Object.assign(ctx,{cuDraftKey:vm.runInNewContext(unifiedCode+';cuDraftKey'),PROJ:null,order:['x:A','x:B'],pos:{},STATION:{compact:false},peekT:null,peek:null,clearTimeout(){},screenPose:()=>null,glideN:0,fly(){},apply(){},render(){},ofPlace(){},forget(){throw Error('unexpected forget')}});
+  for(const a of Object.values(ctx.A)){a.$={split:{style:{setProperty(){}}}};a.el={}}
+  const drafts=html.slice(html.indexOf('function cuDraftSave('),html.indexOf('function cuTurnMeta('));
+  let navigation=html.slice(html.indexOf('function setFocus('),html.indexOf("$('#back').onclick"));
+  if(mutate)navigation=navigation.replace('cuDraftSave();OFUI.epoch++','OFUI.epoch++');
+  const api=vm.runInContext(drafts+'\n'+navigation+';({cuDraftSave,cuDraftRestore,setFocus})',ctx);
+  ctx.ofIn.value='A agent draft\nsecond line';api.setFocus('x:B');assert.equal(ctx.ofIn.value,'');ctx.ofIn.value='B agent draft';api.setFocus('x:A');assert.equal(ctx.ofIn.value,'A agent draft\nsecond line');
+  api.cuDraftSave();ctx.OFUI.recipient='watch';api.cuDraftRestore();ctx.ofIn.value='A WATCH station draft';api.cuDraftSave();ctx.OFUI.scope='room';api.cuDraftRestore();ctx.ofIn.value='A WATCH room draft';api.cuDraftSave();
+  api.setFocus(null);assert.equal(ctx.ofIn.value,'');ctx.ofIn.value='Room WATCH draft';api.setFocus('x:A');assert.equal(ctx.ofIn.value,'A agent draft\nsecond line');
+  let release;ctx.post=async(p,b)=>{h.posts.push({p,b});await new Promise(done=>release=done);return {ok:true,json:async()=>({...b,state:'queued'})}};
+  const pending=h.send();assert.equal(h.posts.length,1);const submitted=h.posts[0].b;api.setFocus('x:B');assert.equal(ctx.ofIn.value,'B agent draft');ctx.ofIn.value='B new multiline\ndraft';ctx.A['x:A'].name='Changed after submission';release();await pending;
+  assert.equal(ctx.ofIn.value,'B new multiline\ndraft');assert.equal(h.posts.length,1,'navigation and completing the old send never submits or replays');
+  const record=ctx.OFM.records.get(submitted.request_id);assert.equal(record.agent,'x:A');assert.equal(record.name,'Ada');assert.equal(record.question,'A agent draft\nsecond line');
+  api.setFocus('x:A');assert.equal(ctx.ofIn.value,'','submitted draft stays cleared');api.cuDraftSave();ctx.OFUI.recipient='watch';api.cuDraftRestore();assert.equal(ctx.ofIn.value,'A WATCH station draft');ctx.OFUI.scope='room';api.cuDraftRestore();assert.equal(ctx.ofIn.value,'A WATCH room draft');
+  api.setFocus(null);assert.equal(ctx.ofIn.value,'Room WATCH draft');assert.equal(h.posts.length,1);
+  console.log('ok actual navigation: per-address multiline drafts, room roundtrip and late request identity without resend');
+}
+(async()=>{await navigationDraftChecks();let caught=false;try{await navigationDraftChecks(true)}catch(e){caught=true}assert.ok(caught,'navigation losing outgoing draft must fail');console.log('ok mutation detected: navigation loses outgoing draft')})().catch(e=>{console.error(e);process.exitCode=1});
+
+/* Boundary helpers are exercised together with their actual input handlers. */
+const deskStart=html.indexOf('/* desk interaction helpers:'),deskEnd=html.indexOf('/* end desk interaction helpers */');
+assert.ok(deskStart>=0&&deskEnd>deskStart,'desk helper extraction markers exist');
+const deskHelpers=html.slice(html.indexOf('*/',deskStart)+2,deskEnd);
+function deskBoundsChecks(code=deskHelpers){
+  const {deskWidthBounds:bounds}=vm.runInNewContext(code+';({deskWidthBounds})');
+  for(const width of [0,-4,80,390,759,760,1000,1600,NaN,Infinity])for(const preference of [-1,0,.46,.8,1,2,NaN,Infinity]){
+    const b=bounds(width,preference);assert.ok([b.min,b.max,b.value].every(Number.isFinite));assert.ok(0<=b.min&&b.min<=b.value&&b.value<=b.max);assert.ok(b.max<=(Number.isFinite(width)?Math.max(0,width):0),'work never exceeds available width');
+    if(Number.isFinite(width)&&width>=680){assert.ok(width-b.max>=360,'wide split reserves readable conversation');assert.ok(b.min>=320,'wide work remains usable')}
+  }
+  const wide=bounds(1400,.6);bounds(390,.6);assert.equal(bounds(1400,.6).value,wide.value,'transient narrowing does not mutate stored preference');
+  assert.equal(bounds(1000,0).value,bounds(1000,0).min);assert.equal(bounds(1000,1).value,bounds(1000,1).max);
+}
+deskBoundsChecks();let boundsCaught=false;try{deskBoundsChecks(deskHelpers.replace('Math.min(max,w*p)','w*p'))}catch(e){boundsCaught=true}assert.ok(boundsCaught,'removing effective upper clamp must fail');
+function composerKeyChecks(code=deskHelpers){
+  let handler,sends=0;const line=html.split('\n').find(x=>x.startsWith("ofIn.addEventListener('keydown'"));assert.ok(line);
+  const ctx={ofIn:{addEventListener:(name,fn)=>{assert.equal(name,'keydown');handler=fn}},cuSend:()=>sends++};vm.runInNewContext(code+'\n'+line,ctx);
+  for(const extra of [{shiftKey:true},{ctrlKey:true},{altKey:true},{metaKey:true},{isComposing:true},{keyCode:229},{key:'a'}]){let prevented=false;handler({key:'Enter',preventDefault(){prevented=true},...extra});assert.equal(sends,0,'modified/composing key must not send');assert.equal(prevented,false,'native typing behavior remains available')}
+  let prevented=0;handler({key:'Enter',preventDefault(){prevented++}});assert.equal(sends,1);assert.equal(prevented,1);
+}
+composerKeyChecks();for(const guard of ['&&!e.shiftKey','&&!e.isComposing','&&e.keyCode!==229']){let caught=false;try{composerKeyChecks(deskHelpers.replace(guard,''))}catch(e){caught=true}assert.ok(caught,'removed composer guard '+guard+' must fail')}
+console.log('ok desk widths: finite clamps/transients/readable split; composer: actual Enter handler, modifiers and IME; mutations detected');
+
+/* A pending permission remains discoverable with Work closed; Review only reveals evidence. */
+function deskReviewChecks(mutate=false){
+  const nodes=new Map(),node=id=>{if(!nodes.has(id))nodes.set(id,{hidden:false,textContent:'',firstElementChild:null,children:[],setAttribute(k,v){this[k]=v}});return nodes.get(id)};
+  let rendered=0,focused=0;const reveals=[];
+  const ctx={focus:'A',A:{A:{name:'Ada',runtime:'Codex',goal:'Test',pin:{old:true},$: {split:{style:{setProperty(){}}}}}},DESK:{open:false,agents:new Map()},bayPg:0,PINS:{},STEADY:false,order:[],document:{activeElement:null},$:node,txt:(el,text)=>el.textContent=text,one:String,stateOf:a=>({label:'Waiting',need:a.request}),need:a=>a.request,deskSetViewUI(){},deskReveal:view=>reveals.push(view),deskFocus:()=>focused++,render:()=>rendered++,APPROVE:false,post(){throw Error('Review must never submit')},cuSend(){throw Error('Review must never send')}};
+  let code=html.slice(html.indexOf('function deskPaint('),html.indexOf('function deskTheme('));
+  const review=html.split('\n').find(x=>x.startsWith("$('#deskReview').onclick="));assert.ok(review);code+='\n'+html.split('\n').find(x=>x.startsWith('function setView('))+'\n'+review;
+  if(mutate===true)code=code.replace('if(!request?.perm||request.perm.sent)return;','');
+  if(mutate==='duplicate')code=code.replace("$('#bay').hidden=bayPg===0;","$('#bay').hidden=false;");
+  const signals=[1,2].map(page=>({dataset:{bay:String(page)},setAttribute(k,v){this[k]=v}}));node('#deskSignals').children=signals;
+  code+='\n'+html.split('\n').find(x=>x.startsWith("$('#deskSignals').onclick="));
+  vm.createContext(ctx);const paint=vm.runInContext(code+';deskPaint',ctx);
+  ctx.desk=paint;
+  paint();assert.equal(node('#bay').hidden,true,'default agent rail hides duplicate legacy station list');assert.equal(node('#deskAgentList').hidden,false);
+  for(const signal of signals){node('#deskSignals').onclick({target:{closest:()=>signal}});assert.equal(ctx.bayPg,Number(signal.dataset.bay));assert.equal(node('#bay').hidden,false,'alerts/activity remain reachable');assert.equal(signal['aria-pressed'],'true');node('#deskSignals').onclick({target:{closest:()=>signal}});assert.equal(ctx.bayPg,0);assert.equal(node('#bay').hidden,true);assert.equal(signal['aria-pressed'],'false')}
+  assert.equal(node('#deskRequest').hidden,true);assert.equal(node('#deskReview').hidden,true);
+  ctx.A.A.request={kind:'Approve',text:'Inspect this command',sure:true,perm:{pid:'p1',sent:false}};paint();assert.equal(node('#deskRequest').hidden,false);assert.equal(node('#deskReview').hidden,false,'late permission remains reachable while Work is closed');assert.equal(ctx.DESK.open,false);
+  node('#deskReview').onclick();assert.deepEqual(reveals,['doing']);assert.equal(ctx.A.A.pin,null,'Review removes stale pinned evidence');assert.equal(ctx.APPROVE,false,'Review never enables Answer here');assert.equal(ctx.A.A.request.perm.sent,false);assert.equal(rendered,1);assert.equal(focused,1);
+  ctx.A.A.request.perm.sent=true;paint();assert.equal(node('#deskReview').hidden,true);node('#deskReview').onclick();assert.equal(reveals.length,1,'stale displayed Review cannot act after request ends');
+  ctx.A.B={name:'Bram'};ctx.focus='B';node('#deskReview').onclick();assert.equal(reveals.length,1,'station switch revalidates the current request');
+  ctx.focus=null;node('#deskReview').onclick();assert.equal(reveals.length,1);
+  assert.match(html,/<button\b[^>]*id="deskReview"[^>]*type="button"|<button\b[^>]*type="button"[^>]*id="deskReview"/,'Review is a real keyboard-accessible non-submit button');
+}
+deskReviewChecks();let duplicateCaught=false;try{deskReviewChecks('duplicate')}catch(e){duplicateCaught=true}assert.ok(duplicateCaught,'duplicated default agent list must fail');let reviewCaught=false;try{deskReviewChecks(true)}catch(e){reviewCaught=true}assert.ok(reviewCaught,'stale Review guard mutation must fail');console.log('ok persistent Review: closed-work arrival, stale request/station revalidation, reveals actual evidence without sending or enabling approvals; mutation detected');
+
+/* Dispatch actual capture/bubble handlers in browser order, including existing Officer/Watch handlers. */
+function deskKeyboardChecks(mutate=false){
+  const callbacks=[],actions=[],nodes=new Map(),node=id=>{if(!nodes.has(id))nodes.set(id,{hidden:true,focus:()=>actions.push('focus '+id)});return nodes.get(id)};
+  const target={insideOfficer:true,closest:()=>null,matches:()=>false};
+  const ctx={focus:'A',DESK:{drawer:'agents',open:true},OFUI:{docked:true,epoch:1},ofEl:{contains:t=>t.insideOfficer,classList:{contains:()=>true}},$:node,document:{activeElement:target},
+    addEventListener:(event,fn,capture)=>{if(event==='keydown')callbacks.push({fn,capture:!!capture})},
+    deskCloseDrawer:()=>{ctx.DESK.drawer=null;actions.push('drawer')},deskCloseWork:()=>{ctx.DESK.open=false;actions.push('work')},render(){},setFocus:id=>{ctx.focus=id;actions.push('room')},watchOpen:on=>{node('#watchP').hidden=!on;actions.push('watch')},ofToggle:()=>actions.push('officer'),deskVisible:()=>true};
+  const watch=html.split('\n').find(x=>x.startsWith("addEventListener('keydown',e=>{if(e.key==='Escape'&&!$('#watchP').hidden)"));
+  let desk=html.slice(html.indexOf('function deskKeydown('),html.indexOf('/* end desk keyboard handling */'));assert.ok(desk.includes("addEventListener('keydown',deskKeydown,true)"));
+  if(mutate)desk=desk.replace('e.stopImmediatePropagation();','');
+  const bubbleStart=html.indexOf("addEventListener('keydown',e=>{\n  if((e.key==='Enter'");assert.ok(bubbleStart>=0);const bubble=html.slice(bubbleStart,html.indexOf('let wasPortrait=',bubbleStart));
+  const officer=html.split('\n').find(x=>x.startsWith("addEventListener('keydown',e=>{if(e.key!=='Escape')return;"));assert.ok(watch&&officer);
+  vm.runInNewContext(deskHelpers+'\n'+watch+'\n'+desk+'\n'+bubble+'\n'+officer,ctx);
+  const dispatch=(key,extra={})=>{let immediate=false,stopped=false;const e={key,target,preventDefault(){},stopImmediatePropagation(){immediate=true;stopped=true},stopPropagation(){stopped=true},...extra};for(const capture of [true,false]){if(!capture&&stopped)break;for(const c of callbacks.filter(c=>c.capture===capture)){c.fn(e);if(immediate)break}if(immediate)break}};
+  dispatch('Escape');assert.deepEqual(actions,['drawer']);assert.equal(ctx.DESK.open,true);assert.equal(ctx.focus,'A');assert.equal(ctx.OFUI.epoch,1,'drawer Escape never also runs Officer handling');
+  actions.length=0;dispatch('Escape');assert.deepEqual(actions,['work']);assert.equal(ctx.focus,'A');assert.equal(ctx.OFUI.epoch,1,'work Escape never also runs Officer handling');
+  actions.length=0;dispatch('Escape');assert.deepEqual(actions,['focus #recipient [aria-pressed="true"]']);assert.equal(ctx.focus,'A','existing Officer focus-return remains intact');
+  actions.length=0;target.insideOfficer=false;dispatch('Escape');assert.deepEqual(actions,['room']);assert.equal(ctx.focus,null);
+  ctx.focus='A';ctx.DESK.open=true;node('#watchP').hidden=false;actions.length=0;dispatch('Escape');assert.deepEqual(actions,['watch','focus #watchB']);assert.equal(ctx.DESK.open,true,'topmost Watch panel consumes Escape alone');
+  actions.length=0;dispatch('Escape');assert.deepEqual(actions,['work']);
+  const first={focus:()=>actions.push('first'),disabled:false,tabIndex:0},last={focus:()=>actions.push('last'),disabled:false,tabIndex:0},pane=node('#deskAgents');pane.contains=el=>el===first||el===last;pane.querySelectorAll=()=>[first,last];ctx.DESK.drawer='agents';
+  actions.length=0;ctx.document.activeElement=last;dispatch('Tab');assert.deepEqual(actions,['first']);actions.length=0;ctx.document.activeElement=first;dispatch('Tab',{shiftKey:true});assert.deepEqual(actions,['last']);
+}
+deskKeyboardChecks();let escapeCaught=false;try{deskKeyboardChecks(true)}catch(e){escapeCaught=true}assert.ok(escapeCaught,'missing capture stop must fail');console.log('ok layered keyboard: actual Watch/desk/Officer/room handlers, one-layer Escape, drawer focus trap; propagation mutation detected');
+
+/* Rapid close/reopen and reduced motion keep hidden state and focus consistent. */
+function workTransitionChecks(mutate=false){
+  const nodes=new Map(),node=id=>{if(!nodes.has(id))nodes.set(id,{hidden:true,inert:false,offsetWidth:100,classList:{values:new Set(),add(x){this.values.add(x)},remove(x){this.values.delete(x)}},setAttribute(k,v){this[k]=v},contains:el=>el?.owner===id});return nodes.get(id)};
+  let serial=0,reduced=false;const timers=new Map(),focused=[];
+  const ctx={focus:'A',A:{A:{permScreen:'p1',$:{yes:{disabled:false},no:{disabled:false}}}},DESK:{open:false,timer:0,compact:false,expanded:false},document:{activeElement:{owner:'#deskWork'}},$:node,clearTimeout:id=>timers.delete(id),setTimeout:fn=>{timers.set(++serial,fn);return serial},deskCloseDrawer(){},deskSetViewUI(){},deskSize(){},deskEndDrag(){},deskInert(){},deskReduced:()=>reduced,deskFocus:el=>focused.push(el),watchOpen:on=>node('#watchP').hidden=!on};
+  let code=html.slice(html.indexOf('function deskReveal('),html.indexOf('function deskCloseDrawer('));
+  if(mutate)code=code.replace("$('#deskWork').inert=true;","$('#deskWork').inert=false;");
+  const api=vm.runInNewContext(code+';({deskReveal,deskCloseWork})',ctx);api.deskReveal('doing');assert.equal(ctx.DESK.open,true);assert.equal(node('#deskWork').hidden,false);assert.equal(node('#deskWork').inert,false);
+  api.deskCloseWork();assert.equal(ctx.DESK.open,false);assert.equal(node('#deskWork').inert,true,'closing pane becomes noninteractive before animation ends');assert.equal(ctx.A.A.permScreen,null,'closing invalidates approval eligibility immediately');assert.equal(ctx.A.A.$.yes.disabled,true,'closing disables Allow immediately');assert.equal(ctx.A.A.$.no.disabled,true,'closing disables Deny immediately');assert.equal(node('#deskWork').hidden,false,'animated close remains painted until settled');assert.equal(focused.length,1);
+  const stale=[...timers.values()][0];api.deskReveal('seeing');assert.equal(timers.size,0,'reopening cancels pending hide');stale();assert.equal(node('#deskWork').hidden,false,'stale completion cannot hide reopened work');assert.equal(node('#deskWork').inert,false);
+  api.deskCloseWork(false,true);assert.equal(node('#deskWork').hidden,true);assert.equal(timers.size,0);
+  reduced=true;api.deskReveal('doing');api.deskCloseWork();assert.equal(node('#deskWork').hidden,true,'reduced motion completes immediately');assert.equal(timers.size,0);
+}
+workTransitionChecks();let closingCaught=false;try{workTransitionChecks(true)}catch(e){closingCaught=true}assert.ok(closingCaught,'missing immediate inertness must fail');console.log('ok work lifecycle: close/reopen race, stale timer, immediate ineligibility/focus return, reduced motion; inert mutation detected');
+
+/* Keyboard resizing uses effective clamped width, including endpoints and transient zero-width hosts. */
+{
+  let keydown,width=1000;const ctx={focus:null,DESK:{preference:.99},$:id=>id==='#deskWorkspace'?{clientWidth:width}:{addEventListener:(name,fn)=>keydown=fn},deskSize(){}};
+  const line=html.split('\n').find(x=>x.startsWith("$('#deskSizer').addEventListener('keydown'"));assert.ok(line);vm.runInNewContext(deskHelpers+'\n'+line,ctx);
+  const key=k=>keydown({key:k,preventDefault(){},stopPropagation(){}});
+  key('ArrowRight');assert.equal(ctx.DESK.preference,.624,'first arrow starts from actual 640px cap rather than oversized preferred width');key('Home');assert.equal(ctx.DESK.preference,.32);key('End');assert.equal(ctx.DESK.preference,.64);
+  width=0;key('ArrowLeft');assert.ok(Number.isFinite(ctx.DESK.preference));width=1000;key('End');assert.equal(ctx.DESK.preference,.64);
+  console.log('ok actual resize keyboard: effective width, both endpoints and zero-width recovery');
+}
+
+/* Work citations reveal Activity while retaining the precise historical evidence pin. */
+{
+  const evidence={seq:42,cmd:'inspect evidence'},entry={t:'did',n:8,e:evidence},reveals=[];let scrolled=0;
+  const row={getClientRects:()=>[{}],querySelector:()=>null,scrollIntoView:()=>scrolled++,classList:{add(){},remove(){}}};
+  const ctx={focus:'A',A:{A:{name:'Ada',story:[entry],open:new Set()}},setFocus:id=>{ctx.focus=id},deskReveal:v=>reveals.push(v),capAdd:(set,key)=>set.add(key),STATION:{compact:true},render(){},performance:{now:()=>0},STEPPING:false,storyEl:{dataset:{a:'A'},querySelector:selector=>selector==='[data-s="8"]'?row:null},setTimeout(){},cuNotice(){throw Error('known work evidence should be revealed')},esc:String};
+  const code=html.slice(html.indexOf('function ofJump('),html.indexOf('/* agent message helpers:'));vm.runInNewContext(code+';ofJump("A",42)',ctx);
+  assert.deepEqual(reveals,['doing']);assert.equal(ctx.A.A.pin,evidence);assert.equal(ctx.deskView,'doing');assert.equal(scrolled,1);
+  console.log('ok work citation: Activity revealed, exact historical pin and entry preserved');
 }

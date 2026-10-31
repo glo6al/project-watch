@@ -462,6 +462,30 @@ body.stepped #officer.docked,body.stepped.portrait #officer.docked,body.stepped.
 
 /* Unified comms: compact address controls, one stable conversation and composer. */
 #conversationTitle{margin:0;font:700 11px ui-monospace,Menlo,monospace;color:var(--hl);letter-spacing:.12em;text-transform:uppercase}#recipient{display:flex;align-items:center;gap:6px;padding:8px 0 0;flex:none}#recipient>span{font:10px ui-monospace,Menlo,monospace;color:var(--mute)}#recipient button{font:700 10px ui-monospace,Menlo,monospace;text-transform:uppercase;max-width:65%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;border:1px solid #25445c;background:#0d1a2b;color:#8eafc5;padding:6px 9px;cursor:pointer;border-radius:2px}#recipient [aria-pressed="true"]{color:var(--hl);background:#132f42;border-color:#3d718b}#recipient button:focus-visible{outline:2px solid var(--hl);outline-offset:2px}#sendHint{font:10px/1.4 system-ui;color:var(--mute);padding:0 0 6px;flex:none}#ofLog .source{border-left:2px solid #294558;padding:8px 10px;background:none}#ofLog .source.you{background:#102337;border-left-color:var(--hl)}#ofLog .source p{white-space:pre-wrap;margin:6px 0 0}#ofLog .source summary{font-size:12px}#ofLog details:not([open]) .open-update,#ofLog details[open] .closed-update{display:none}#ofLog .source small,#ofLog .source b{display:block;font:10px/1.5 ui-monospace,Menlo,monospace;color:var(--mute)}#ofLog .source b{color:var(--hl)}#ofLog .source.queue{border-style:dashed;color:var(--warn)}#ofLog [hidden]{display:none!important}#ofLog{overflow-anchor:none}#officer:not(.docked) #recipient,#officer:not(.docked) #sendHint{padding-left:12px;padding-right:12px}#ofScope[hidden],#ofQuick[hidden]{display:none}#ofRow{flex-wrap:wrap}#ofIn{flex:1;min-width:120px}#ofSend{white-space:nowrap;font-size:10px;letter-spacing:.02em}#officer.docked #ofBody{min-height:0}#officer.docked #ofLog{flex:1}#officer.docked #ofQuick{display:none}@media(pointer:coarse),(max-width:580px){#recipient button{min-height:34px}#ofSend{min-height:36px}#ofIn{font-size:16px}}
+
+/* Conversation desk: the existing live nodes, arranged outside the spatial room. */
+#compactDesk{--desk-bg:#1b1f27;--desk-surface:#0d1016;--desk-edge:#343a46;--desk-muted:#98a5b5;position:fixed;left:14px;right:14px;bottom:14px;padding:0;overflow:hidden;background:transparent;scrollbar-gutter:auto;display:flex;flex-direction:column;gap:8px}
+#deskToolbar{display:flex;align-items:center;gap:6px;flex:none;min-height:30px}#deskToolbar .theme-choices{margin-left:auto}#deskToolbar button,#deskHead button,#deskWork button,#deskAgents button,#deskFacts button{font:600 11px ui-monospace,Menlo,monospace;letter-spacing:.02em;color:var(--ink);background:#0d1a2b;border:1px solid #25445c;border-radius:3px;padding:6px 9px;cursor:pointer}#compactDesk button:focus-visible,#deskSizer:focus-visible{outline:2px solid var(--hl);outline-offset:2px}#deskToolbar [aria-pressed=true],#deskWork [aria-pressed=true]{color:#04121c;background:var(--hl);border-color:var(--hl)}
+#deskShell{flex:1;display:flex;gap:14px;min-height:0;min-width:0}#deskAgents,#deskFacts{flex:none;min-height:0;min-width:0;overflow:auto;padding:12px 10px;background:linear-gradient(#0b1626,#070d17);border:1px solid #1f3a52;scrollbar-width:thin}#deskAgents{width:164px}#deskFacts{width:196px}#deskAgents>header,#deskFacts>header{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px}#deskAgents h2,#deskFacts h2{font:700 11px ui-monospace,Menlo,monospace;letter-spacing:.1em;text-transform:uppercase;color:var(--hl);margin:0}
+#deskAgentList{display:flex;flex-direction:column;gap:3px}#deskAgentList button{display:flex;align-items:flex-start;gap:8px;width:100%;min-height:45px;text-align:left;background:transparent;border-color:transparent;padding:7px 6px}#deskAgentList button i{width:6px;height:6px;border-radius:50%;background:var(--mute);flex:none;margin-top:7px}#deskAgentList button[data-state=need] i{background:var(--warn)}#deskAgentList button[data-state=busy] i{background:var(--add)}#deskAgentList button[aria-current=true]{background:#113149;border-color:#25445c;box-shadow:inset 2px 0 var(--hl)}#deskAgentList button span{min-width:0}#deskAgentList strong{display:block;font:600 13px/1.35 system-ui;overflow-wrap:anywhere}#deskAgentList small{display:block;font:11px/1.4 system-ui;color:var(--desk-muted);margin-top:2px;overflow-wrap:anywhere}
+#compactDesk #bay{height:auto!important;flex:none;width:100%;margin-top:18px;padding:12px 0 0!important;border:0;border-top:1px solid #25445c}#compactDesk #bayH{flex-wrap:wrap;gap:5px}#compactDesk #bayT{font-size:9px;letter-spacing:.04em;flex:1;white-space:normal}#compactDesk #bayD{flex:none}#compactDesk #bayN{flex-basis:100%}#compactDesk #fleet{overflow:visible;max-height:none;gap:7px}#compactDesk #fleet .row{flex-direction:column;overflow:visible;padding:0;gap:4px}#compactDesk #fleet button{max-width:100%;white-space:normal;overflow-wrap:anywhere;font-size:11px;padding:5px;text-align:left}#compactDesk #fleet .axis{white-space:normal;display:block;font-size:10px}#compactDesk #fleet .axis span{display:block;text-align:left}#compactDesk #fleet .cap2{white-space:normal;font-size:11px}#compactDesk #fleet svg{height:34px}#compactDesk #badge{display:flex;flex-direction:column;gap:0;width:100%;flex:none}#compactDesk #badge span{border:0;border-bottom:1px solid #25445c;padding:8px 0;font:12px/1.45 system-ui;display:block;overflow:visible;flex:none}#compactDesk #badge b{display:block;font:11px/1.5 system-ui;letter-spacing:0;text-transform:none;color:var(--desk-muted)}#compactDesk #badge em{display:block;white-space:normal;overflow:visible;-webkit-line-clamp:unset;overflow-wrap:anywhere;font-size:12px;line-height:1.45}
+#deskCenter{flex:1;min-width:0;min-height:0;display:flex;flex-direction:column;background:var(--desk-bg);border:1px solid var(--desk-edge);border-top:4px solid #75d9cb}#deskHead{flex:none;display:flex;align-items:center;flex-wrap:wrap;gap:6px 12px;padding:12px 18px;border-bottom:1px solid var(--desk-edge)}#deskIdentity{flex:1;min-width:140px}#deskName{font-size:19px;line-height:1.2;margin:0;color:var(--ink)}#deskStatus,#deskGoal{font-size:12px;line-height:1.4;color:var(--desk-muted);margin:3px 0 0}#deskGoal{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:580px}#deskActions{display:flex;gap:5px;align-items:center;flex-wrap:wrap}#deskHead .secondary{padding:5px 7px}#deskRequest{flex-basis:100%;font-size:12px;line-height:1.4;color:var(--warn);display:flex;gap:10px;align-items:center;min-width:0}#deskRequestText{flex:1;overflow-wrap:anywhere}#deskHead #deskReview{border-color:var(--warn);color:var(--warn);flex:none}
+#deskWorkspace{display:flex;flex:1;min-height:0;min-width:0;position:relative;overflow:hidden}#deskConversation{flex:1;min-width:0;min-height:0;display:flex}#compactDesk #deskR{position:relative!important;inset:auto!important;height:100%!important;width:100%!important;min-height:0;transform:none!important;clip-path:none;padding:0;background:none;border:0;flex:1}#compactDesk #deskR>.in{height:100%;padding:0 22px;background:transparent;clip-path:none;gap:0}#compactDesk #conversationTitle,#compactDesk #stationRequest{display:none}#compactDesk #ofContext{padding:8px 0;min-height:30px}#compactDesk #ofSubject{font-size:11px}#compactDesk #officer.docked #ofLog{padding:15px 0;gap:20px;min-height:0;flex:1;scrollbar-width:thin}#compactDesk #ofLog>.source,#compactDesk #ofLog>.of,#compactDesk #ofLog>.you{width:100%;max-width:760px;align-self:center;font-size:15px;line-height:1.55}#compactDesk #ofLog>.you,#compactDesk #ofLog>.source.you{width:auto;max-width:min(88%,760px);align-self:flex-end}#compactDesk #ofLog .source.agent{border:0;padding:0}#compactDesk #ofLog .source small{font-size:10px}#compactDesk #ofLog .source details{border:0;padding:0;margin:6px 0 0}#compactDesk #ofLog .source summary{font-size:12px}#compactDesk #ofLog .source b{font-size:12px}#compactDesk #recipient{padding-top:9px;border-top:1px solid var(--desk-edge)}#compactDesk #ofRow{padding:8px 0;align-items:flex-end;flex-wrap:nowrap}#ofIn{resize:vertical;min-height:42px;max-height:140px;line-height:1.5}#compactDesk #ofIn{min-height:68px;resize:none;font-size:15px}#compactDesk #ofSend{min-height:36px}#compactDesk #sendHint{padding-bottom:10px}
+#deskWork{position:relative;flex:none;min-width:0;width:0;overflow:hidden;transition:width 280ms cubic-bezier(.22,.7,.2,1);background:var(--desk-surface);border-left:0 solid var(--desk-edge)}#deskWork.open{width:var(--desk-work-width,46%);border-left-width:1px}#deskWorkInner{width:100%;height:100%;min-width:300px;display:flex;flex-direction:column;transform:translateX(22px);opacity:0;transition:transform 280ms,opacity 200ms;padding-left:10px}#deskWork.open #deskWorkInner{transform:none;opacity:1}#deskWorkHead{display:flex;align-items:center;gap:8px;flex:none;padding:10px 12px;border-bottom:1px solid var(--desk-edge)}#deskWorkHead h2{font:700 11px ui-monospace,Menlo,monospace;color:var(--hl);margin:0;flex:1;letter-spacing:.08em;text-transform:uppercase}#deskWorkTabs{display:flex;gap:5px;flex-wrap:wrap;flex:none;padding:8px 12px}#deskWorkContent{display:flex;flex:1;min-height:0;flex-direction:column;overflow:auto;overscroll-behavior:contain}#compactMonitor{display:flex;flex:1;min-height:140px;min-width:0}#compactDesk #compactMonitor>.st{height:100%!important;min-height:140px;width:100%!important;position:relative!important;inset:auto!important;transform:none!important;transition:none!important;margin:0!important;padding:10px;border:0;border-radius:0;box-shadow:none;background:var(--desk-surface);flex:1;gap:8px}#compactDesk #compactMonitor>.st>header,#compactDesk #compactMonitor>.st>.views,#compactDesk #compactMonitor>.st>.pband,#compactDesk #compactMonitor>.st>.lk{display:none}#compactDesk #compactMonitor>.st>.mon{max-height:none;min-height:80px;flex:1}#compactDesk #compactMonitor .flag{margin:0}#compactDesk #compactMonitor .flag.w{margin:0}#compactDesk #compactMonitor .split.full .pvw iframe{width:calc(100%/var(--zm,1));height:calc(100%/var(--zm,1));transform:scale(var(--zm,1))}#compactDesk #compactMonitor .code{font-size:13px;overflow:auto}#compactDesk #compactMonitor .tab{font-size:11px}
+#compactPanels{display:flex;flex:none;min-height:0;margin:0;width:100%}#compactDesk #deskL{position:relative!important;inset:auto!important;height:220px!important;min-height:120px;width:100%!important;transform:none!important;clip-path:none;background:none;padding:0;border-top:1px solid var(--desk-edge)}#compactDesk #deskL>.in{background:transparent;clip-path:none;padding:10px 14px}#compactDesk #deskL h3{font-size:10px}#deskWork[data-view=doing] #compactMonitor{flex:1;min-height:190px}#deskWork[data-view=doing] #compactPanels{flex:0 0 34%;min-height:120px}#deskWork[data-view=doing] #deskL{height:100%!important}#compactReadout{display:none}
+#deskSizer{position:absolute;left:0;top:0;bottom:0;width:10px;display:grid;place-items:center;z-index:4;cursor:col-resize;touch-action:none}#deskSizer:after{content:'';height:34px;width:3px;background:var(--hl);border-radius:3px}#compactDesk.resizing,#compactDesk.resizing *{cursor:col-resize!important;user-select:none!important}#compactDesk.resizing #deskWork,#compactDesk.resizing #deskWorkInner{transition:none!important}#deskWorkspace.expanded #deskConversation{display:none}#deskWorkspace.expanded #deskWork{width:100%}#deskWorkspace.expanded #deskSizer{display:none}
+#deskToolbar [data-drawer],.desk-rail-close{display:none}#deskScrim{position:absolute;inset:0;background:#0006;z-index:5}#compactDesk.work-compact #deskWork{position:absolute;inset:0;width:100%!important;z-index:3;transform:translateX(101%);transition:transform 280ms cubic-bezier(.22,.7,.2,1)}#compactDesk.work-compact #deskWork.open{transform:none}#compactDesk.work-compact #deskWorkInner{min-width:0;padding-left:0;transform:none;opacity:1}#compactDesk.work-compact #deskSizer,#compactDesk.work-compact #deskExpand{display:none}
+@media(max-width:1380px){#deskFacts{position:absolute;right:0;top:0;bottom:0;z-index:6;width:min(280px,85vw);transform:translateX(110%);visibility:hidden;transition:transform 250ms,visibility 250ms}#compactDesk[data-drawer=facts] #deskFacts{transform:none;visibility:visible}#deskFacts .desk-rail-close,#deskToolbar [data-drawer=facts]{display:block}}
+@media(max-width:1000px){#deskAgents{position:absolute;left:0;top:0;bottom:0;z-index:6;width:min(260px,85vw);transform:translateX(-110%);visibility:hidden;transition:transform 250ms,visibility 250ms}#compactDesk[data-drawer=agents] #deskAgents{transform:none;visibility:visible}#deskAgents .desk-rail-close,#deskToolbar [data-drawer=agents]{display:block}#compactDesk{left:8px;right:8px;bottom:8px}#deskShell{gap:0}}
+@media(max-width:580px){#compactDesk{left:0;right:0;bottom:0}#deskToolbar{padding:0 8px}#deskHead{padding:9px 12px;gap:6px}#deskName{font-size:17px}#deskStatus{font-size:11px}#deskGoal{max-width:240px;font-size:11px}#deskActions{gap:4px}#deskActions button{font-size:10px;padding:5px 7px}#compactDesk #deskR>.in{padding:0 14px}#compactDesk #ofIn{font-size:16px}#compactDesk #ofLog>.source,#compactDesk #ofLog>.of,#compactDesk #ofLog>.you{font-size:14px}#compactDesk #ofSend{font-size:9px;padding:5px 8px}#compactDesk #compactMonitor .flag.w .tag{font-size:9px;padding:0 6px}#compactDesk #compactMonitor .flag.w button{padding:4px 6px;font-size:9px}#deskWorkTabs button{min-height:32px}#deskToolbar button{min-height:32px}}
+@media(prefers-reduced-motion:reduce){#deskWork,#deskWorkInner,#deskAgents,#deskFacts{transition:none!important}}
+/* Neutral is opt-in. Original room/monitor styles above are the default. */
+html[data-theme=neutral]{--ink:#282828;--mute:#707070;--panel:#fff;--line:#d9d9d9;--mon:#fafafa;--monink:#303030;--mondim:#6c6c6c;--hl:#555;--hbg:#fafafa;--add:#237a43;--del:#b63838;--warn:#946414;--corr:#934a73}html[data-theme=neutral] body{background:#f5f5f5;color:var(--ink)}html[data-theme=neutral] #brand{color:#343434}html[data-theme=neutral] #compactDesk{--desk-bg:#fff;--desk-surface:#fafafa;--desk-edge:#dedede;--desk-muted:#707070}html[data-theme=neutral] #deskCenter{border:1px solid #ddd;border-radius:16px;overflow:hidden}html[data-theme=neutral] #deskAgents,html[data-theme=neutral] #deskFacts{background:#f5f5f5;border-color:transparent}html[data-theme=neutral] #deskAgents h2,html[data-theme=neutral] #deskFacts h2{font:600 12px system-ui;letter-spacing:0;text-transform:none;color:#717171}html[data-theme=neutral] #deskAgentList button[aria-current=true]{background:#e7e7e7;border-color:transparent;box-shadow:none}html[data-theme=neutral] #compactDesk button,html[data-theme=neutral] #hud button,html[data-theme=neutral] #officer button,html[data-theme=neutral] .pill{font-family:system-ui;letter-spacing:0;text-transform:none;background:#f5f5f5;border-color:#d6d6d6;color:#424242;border-radius:6px}html[data-theme=neutral] #compactDesk button[aria-pressed=true]{background:#e7e7e7;color:#222;border-color:#bdbdbd}html[data-theme=neutral] #deskAgentList button{background:transparent;border-color:transparent}html[data-theme=neutral] #deskToolbar .theme-choices button[aria-pressed=true]{background:#fff;border-color:#777}html[data-theme=neutral] #ofIn{background:#fff;border-color:#d0d0d0;border-radius:10px;color:#282828}html[data-theme=neutral] #ofLog .source.you,html[data-theme=neutral] #ofLog .you{background:#f0f0f0;color:#303030;border-color:#ddd;border-radius:12px}html[data-theme=neutral] #ofLog .source b,html[data-theme=neutral] #ofLog .of b,html[data-theme=neutral] #ofLog .of i,html[data-theme=neutral] #ofLog summary,html[data-theme=neutral] #ofSubject{color:#333}html[data-theme=neutral] #ofLog .of code,html[data-theme=neutral] #ofLog .of pre,html[data-theme=neutral] #ofLog .draft{color:#333;background:#f3f3f3;border-color:#ddd}html[data-theme=neutral] #ofLog .source,html[data-theme=neutral] #ofContext,html[data-theme=neutral] #ofQuick,html[data-theme=neutral] #officer:not(.fold) #ofB{border-color:#ddd}html[data-theme=neutral] #compactDesk #badge span,html[data-theme=neutral] #compactDesk #bay{border-color:#ddd}html[data-theme=neutral] #ofSend{background:#303030!important;color:#fff!important}html[data-theme=neutral] #deskWorkHead h2{font-family:system-ui;text-transform:none;letter-spacing:0;color:#555}html[data-theme=neutral] .hud{background:#d4d4d4}html[data-theme=neutral] .hud>.in{background:#fafafa}html[data-theme=neutral] #deskR,html[data-theme=neutral] #deskL{background:none}html[data-theme=neutral] .tab,html[data-theme=neutral] .plan{background:#f0f0f0;color:#666}html[data-theme=neutral] #hud,html[data-theme=neutral] #live,html[data-theme=neutral] #fleetS,html[data-theme=neutral] #console{background:#f5f5f5;border-color:#d8d8d8;color:#666}html[data-theme=neutral] .story p,html[data-theme=neutral] .story .sv,html[data-theme=neutral] .story .dv,html[data-theme=neutral] .story .end{color:#6d6d6d}html[data-theme=neutral] .story .sum,html[data-theme=neutral] .story .u{background:#eee;border-color:#ccc;color:#333}html[data-theme=neutral] .story .sv b{color:#444}html[data-theme=neutral] #officer{box-shadow:0 5px 20px #0002}html[data-theme=neutral] #officer.docked{box-shadow:none}html[data-theme=neutral] #ofLog .hl,html[data-theme=neutral] .story p.hl{background:#e1e8f0}html[data-theme=neutral] #deskHead #deskReview{color:#805713;border-color:#b59050}html[data-theme=neutral] #compactMonitor .flag.w .msg{color:#704a0d}html[data-theme=neutral] #compactMonitor .flag .off,html[data-theme=neutral] #compactMonitor .flag .rev{color:#704a0d;border-color:#b59050}html[data-theme=neutral] #compactMonitor .flag .yes{color:#237a43}html[data-theme=neutral] #compactMonitor .flag .no{color:#b63838}
+
+html[data-theme=neutral] .st .id b,html[data-theme=neutral] .st .id .ctx .pj{color:#414141}html[data-theme=neutral] .st .code.say p{color:#707070}html[data-theme=neutral] .st .code.say p.now,html[data-theme=neutral] .st .code p.you{color:#333}html[data-theme=neutral] .go,html[data-theme=neutral] .pinb{background:#f2f2f2;color:#444}html[data-theme=neutral] .st .tab .what{color:#333}html[data-theme=neutral] .st .tab .how{color:#6c6c6c}
+#deskSignals{display:flex;gap:5px;margin-top:16px;padding-top:12px;border-top:1px solid var(--desk-edge)}#deskSignals button{flex:1}#deskSignals button[aria-pressed=true]{border-color:var(--hl);color:var(--hl)}#compactDesk #bayD{display:none}#compactDesk #bay{margin-top:8px}html[data-theme=neutral] #deskSignals button[aria-pressed=true]{background:#e7e7e7}
+html[data-theme=neutral] #room{background:radial-gradient(ellipse at 50% 36%,#fff 0,#f5f5f5 64%,#eee 100%)}html[data-theme=neutral] #floor{filter:grayscale(1);opacity:.16}html[data-theme=neutral] #mark{filter:grayscale(1);opacity:.7}html[data-theme=neutral] #deskToolbar .theme-choices button[aria-pressed=true]{background:#303030;color:#fff;border-color:#303030;box-shadow:none}html[data-theme=neutral] #deskToolbar .theme-choices button[aria-pressed=false]{background:#f5f5f5;color:#5c5c5c;border-color:#d2d2d2}
+#deskCenter{position:relative;z-index:0}#deskConversation{position:relative;z-index:0}#deskWork{z-index:1}#compactDesk.work-compact.work-open #deskConversation{visibility:hidden}#deskWorkInner{background:var(--desk-surface)}
 </style>
 </head>
 <body>
@@ -482,12 +506,18 @@ body.stepped #officer.docked,body.stepped.portrait #officer.docked,body.stepped.
 <div id="needs"></div>
 <div id="deskL" class="desk hud" hidden><div class="in"><h3>Agent log</h3><div class="scroll story"></div></div></div>
 <div id="deskR" class="desk hud" hidden><div class="in"><h3 id="conversationTitle">Conversation</h3><div id="stationRequest" role="status"></div><div id="officerSlot"></div></div></div>
-<div id="compactDesk" hidden><div id="compactMonitor"></div><div id="compactPanels"></div><div id="compactReadout"></div></div>
+<div id="compactDesk" hidden>
+  <div id="deskToolbar"><button type="button" data-drawer="agents" aria-controls="deskAgents" aria-expanded="false">Agents</button><button type="button" data-drawer="facts" aria-controls="deskFacts" aria-expanded="false">Details</button><span class="theme-choices" role="group" aria-label="Visual theme"><button type="button" data-theme="original" aria-pressed="true">Original</button><button type="button" data-theme="neutral" aria-pressed="false">Neutral</button></span></div>
+  <div id="deskShell"><aside id="deskAgents" aria-label="Agents"><header><h2>Agents</h2><button type="button" class="desk-rail-close" data-close-drawer aria-label="Close agents">×</button></header><div id="deskAgentList"></div><div id="deskSignals" role="group" aria-label="Room signals"><button type="button" data-bay="1" aria-pressed="false">Alerts</button><button type="button" data-bay="2" aria-pressed="false">Activity</button></div><div id="deskBaySlot"></div></aside>
+    <main id="deskCenter"><header id="deskHead"><div id="deskIdentity"><h1 id="deskName"></h1><p id="deskStatus"></p><p id="deskGoal"></p></div><div id="deskActions"><button type="button" id="deskOpenApp" class="secondary">Open in app ↗</button><button type="button" id="deskPin" class="secondary">Pin</button><button type="button" id="deskDismiss" class="secondary">Dismiss</button><button type="button" id="deskWorkToggle" aria-expanded="false" aria-controls="deskWork">Work</button></div><div id="deskRequest" hidden><span id="deskRequestText"></span><button type="button" id="deskReview" hidden>Review request</button></div></header>
+    <div id="deskWorkspace"><section id="deskConversation" aria-label="Conversation"></section><section id="deskWork" aria-label="Work evidence" data-view="doing" hidden inert><div id="deskSizer" role="separator" tabindex="0" aria-label="Resize work panel" aria-orientation="vertical" aria-controls="deskWork" aria-valuemin="320" aria-valuemax="600" aria-valuenow="460" title="Drag to resize; arrow keys adjust; double-click resets"></div><div id="deskWorkInner"><header id="deskWorkHead"><h2>Recorded work</h2><button type="button" id="deskExpand" aria-label="Expand work view">⤢</button><button type="button" id="deskCloseWork">← Conversation</button></header><nav id="deskWorkTabs" aria-label="Work views"><button type="button" data-work="seeing" aria-pressed="false">Preview</button><button type="button" data-work="changes" aria-pressed="false">Changes</button><button type="button" data-work="doing" aria-pressed="true">Activity</button></nav><div id="deskWorkContent"><div id="compactMonitor"></div><div id="compactPanels"></div></div></div></section></div></main>
+    <aside id="deskFacts" aria-label="Session details"><header><h2>Session</h2><button type="button" class="desk-rail-close" data-close-drawer aria-label="Close details">×</button></header></aside></div><div id="deskScrim" hidden></div><div id="compactReadout"></div>
+</div>
 <div id="subs" hidden></div>
 <div id="deskT" hidden><span class="lbl">Chain of command</span><div id="crumb"></div></div>
 <div id="deskB" class="hud" hidden><div class="in"><div id="bay"><div id="bayH"><button data-pg="-1" aria-label="Previous panel">‹</button><span id="bayT"></span><button id="bayN" hidden></button><span id="bayD"></span><button data-pg="1" aria-label="Next panel">›</button></div><div id="fleet"></div></div><div id="badge"></div></div></div>
 <div id="empty" hidden></div>
-<span id="officerHome" hidden></span><div id="officer" class="hud fold" role="region" aria-label="Officer of the Watch"><div class="in"><button id="ofB" aria-expanded="false" aria-controls="ofBody" title="Officer of the Watch: ask about the room, in plain English"><span class="lamp"></span><b>Officer of the Watch</b><i id="ofSt">listening</i><u id="ofLine"></u><s>▴</s></button><div id="ofBody"><div id="ofContext"><div id="ofScope" role="group" aria-label="Officer question scope"><button type="button" data-scope="station" aria-pressed="false">Station</button><button type="button" data-scope="room" aria-pressed="true" aria-label="Whole room">Room</button></div><div id="ofTarget"><b id="ofSubject">Whole room</b><span id="ofProgress" role="status" hidden>Ready</span></div></div><div id="ofLog" role="log" aria-label="Conversation history"></div><div id="ofQuick"><button data-q="What did I miss?">What did I miss?</button><button data-q="Is anything stuck?">Anything stuck?</button><button data-q="Who is waiting on me?">Who is waiting on me?</button></div><div id="recipient" role="group" aria-label="Message recipient"><span>TO</span><button type="button" data-recipient="agent" aria-pressed="false">Agent</button><button type="button" data-recipient="watch" aria-pressed="true">Ask WATCH</button></div><div id="ofRow"><input id="ofIn" type="text" placeholder="Ask about the room…" autocomplete="off" maxlength="4000"><button id="ofSend">Ask WATCH</button></div><div id="sendHint"></div></div></div></div>
+<span id="officerHome" hidden></span><div id="officer" class="hud fold" role="region" aria-label="Officer of the Watch"><div class="in"><button id="ofB" aria-expanded="false" aria-controls="ofBody" title="Officer of the Watch: ask about the room, in plain English"><span class="lamp"></span><b>Officer of the Watch</b><i id="ofSt">listening</i><u id="ofLine"></u><s>▴</s></button><div id="ofBody"><div id="ofContext"><div id="ofScope" role="group" aria-label="Officer question scope"><button type="button" data-scope="station" aria-pressed="false">Station</button><button type="button" data-scope="room" aria-pressed="true" aria-label="Whole room">Room</button></div><div id="ofTarget"><b id="ofSubject">Whole room</b><span id="ofProgress" role="status" hidden>Ready</span></div></div><div id="ofLog" role="log" aria-label="Conversation history"></div><div id="ofQuick"><button data-q="What did I miss?">What did I miss?</button><button data-q="Is anything stuck?">Anything stuck?</button><button data-q="Who is waiting on me?">Who is waiting on me?</button></div><div id="recipient" role="group" aria-label="Message recipient"><span>TO</span><button type="button" data-recipient="agent" aria-pressed="false">Agent</button><button type="button" data-recipient="watch" aria-pressed="true">Ask WATCH</button></div><div id="ofRow"><textarea id="ofIn" rows="2" placeholder="Ask about the room…" autocomplete="off" maxlength="4000"></textarea><button id="ofSend">Ask WATCH</button></div><div id="sendHint"></div></div></div></div>
 <div id="lock" hidden><div><img src="/static/icon.svg?v=fleet-3" alt="" style="height:72px;margin-bottom:14px"><h1>W.A.T.C.H. is locked</h1><b style="color:var(--hl);letter-spacing:.06em">Window on Agents, Tools, Changes and Hand-offs.</b><br><br>This window has no key. Press Unlock and the server will open a new tab in your default browser with the room unlocked. The key is kept on this computer in <code>~/.live-room/key</code> and is never sent to a window that merely asks for it.<br><button id="unlock">Unlock</button><br><span id="lockMsg"></span></div></div>
 
 <script>
@@ -573,7 +603,7 @@ function agent(id){
     if(t.closest('.x')){dismiss(id);return}
     if(t.closest('.pinb')){togglePin(id);return}
     const heldReq=a.perms&&Object.values(a.perms).some(p=>p&&!p.sent);
-    if(t.closest('.rev')||(t.closest('.flag.w.held .tag')&&heldReq)){narrow=null; if(DEMO&&!APPROVE) APPROVE=true;      /* Review, or the tag of a held request, opens it on Doing; in the demo that also switches answering on, so Allow and Deny are one click away */
+    if(t.closest('.rev')||(t.closest('.flag.w.held .tag')&&heldReq)){narrow=null; /* Review opens evidence; only the Answer here switch changes answering. */
       if(focus===id)setView('doing');else{setFocus(id); setView('doing')}return}
     const yn=t.closest('.yes,.no');
     if(yn){const p=a.perms[yn.dataset.pid];        /* exactly the request these buttons were drawn for, and only while it is the one on screen */
@@ -1260,6 +1290,7 @@ function render(){
       const can=showing&&!N.perm.sent&&APPROVE;
       if(can&&a.$.yes.dataset.pid!==N.perm.pid){          /* a different request gets different buttons: a press begun on the old pair can never land on these */
         for(const k of ['yes','no']){const b=a.$[k].cloneNode(true); b.dataset.pid=N.perm.pid; b.dataset.at=Date.now(); a.$[k].replaceWith(b); a.$[k]=b}}
+      a.$.yes.disabled=!can;a.$.no.disabled=!can;
       hid(a.$.yes,!can); hid(a.$.no,!can); hid(a.$.rev,!(N.perm&&!showing));
       const offNote=showing&&!APPROVE; hid(a.$.off,!offNote); if(offNote){txt(a.$.off,'not answering here'); a.$.off.title='Answering is off in this window. Answer it in the app, or switch on “Answer here” in the bar.'}      /* two words in the banner; the sentence in the tooltip, so the request keeps its width */
     }
@@ -1445,6 +1476,7 @@ const sideW=()=>innerWidth<1000?0:Math.max(250,Math.min(440,innerWidth*.215));
 /* Is this panel really visible: of a usable size, wholly inside the window below the top bar, and the topmost thing
    at its own centre line? Measured from what is painted, not inferred from the layout maths. */
 function onScreen(el){
+  if(el.closest('[inert]'))return false;
   const r=el.getBoundingClientRect(), top=$('#hud').offsetHeight;
   if(!(r.width>=200&&r.height>=80&&r.top>=top-1&&r.bottom<=innerHeight+1&&r.left>=-1&&r.right<=innerWidth+1)) return false;
   const host=el.closest('#compactDesk'); if(host){const h=host.getBoundingClientRect();if(r.top<h.top||r.bottom>h.bottom||r.left<h.left||r.right>h.right)return false}
@@ -1460,38 +1492,132 @@ function stationBefore(el,target){if(el.nextElementSibling===target)return;if(!S
 function stationRestore(el){const a=STATION.anchors.get(el);if(a){a.after(el);a.remove();STATION.anchors.delete(el)}}
 function compactMonitorHeight(viewportHeight,top){return Math.max(120,viewportHeight-top-124)}
 function stationLayout(top){
-  const compact=!!focus&&(innerWidth<1000||portrait()||innerHeight-top-124<360),host=$('#compactDesk');
-  if(STATION.monitor&&(!compact||STATION.monitor!==A[focus]?.el)){if(STATION.banner)stationRestore(STATION.banner);STATION.banner=null;stationRestore(STATION.monitor);STATION.monitor=null}
-  if(compact){if(!STATION.compact){stepUp.n=(stepUp.n||0)+1;STEPPING=false;for(const a of Object.values(A))a.el.classList.remove('stepup')}
-    STATION.monitor=A[focus].el;STATION.banner=A[focus].$.fw;stationBefore(STATION.banner,STATION.monitor.querySelector('.mon'));stationMove(STATION.monitor,$('#compactMonitor'));stationMove($('#deskL'),$('#compactPanels'));stationMove($('#deskR'),$('#compactPanels'));stationMove($('#deskB'),$('#compactReadout'));host.style.top=top+'px';host.style.setProperty('--compact-mon-max',compactMonitorHeight(innerHeight,top)+'px');
-  }else{for(const id of ['#deskL','#deskR','#deskB'])stationRestore($(id))}
+  const compact=!!focus,host=$('#compactDesk'),next=focus&&A[focus]?.el;
+  if(STATION.monitor&&STATION.monitor!==next){
+    deskCloseDrawer(false);deskCloseWork(false,true);
+    if(STATION.banner)stationRestore(STATION.banner);
+    STATION.banner=null;stationRestore(STATION.monitor);STATION.monitor=null;
+  }
+  if(compact){
+    if(!STATION.compact){stepUp.n=(stepUp.n||0)+1;STEPPING=false;for(const a of Object.values(A))a.el.classList.remove('stepup')}
+    STATION.monitor=next;STATION.banner=A[focus].$.fw;
+    stationBefore(STATION.banner,STATION.monitor.querySelector('.mon'));
+    stationMove(STATION.monitor,$('#compactMonitor'));stationMove($('#deskR'),$('#deskConversation'));stationMove($('#deskL'),$('#compactPanels'));stationMove($('#bay'),$('#deskBaySlot'));stationMove($('#badge'),$('#deskFacts'));
+    host.style.top=top+'px';host.style.setProperty('--compact-mon-max',compactMonitorHeight(innerHeight,top)+'px');
+  }else{
+    for(const id of ['#deskL','#deskR','#bay','#badge'])stationRestore($(id));$('#bay').hidden=false;
+    deskCloseDrawer(false);deskCloseWork(false,true);
+  }
   STATION.compact=compact;host.hidden=!compact;document.body.classList.toggle('compact-station',compact);
+  if(compact)deskSize();
 }
 /* end station placement helpers */
+
+/* desk interaction helpers: pure, shared with the behavioral page tests */
+function deskWidthBounds(width,preference){const w=Number.isFinite(width)?Math.max(0,width):0,p=Number.isFinite(preference)?Math.max(0,Math.min(1,preference)):.46,min=Math.min(320,w),max=Math.max(min,w-360);return {min,max,value:Math.max(min,Math.min(max,w*p))}}
+function deskSubmitKey(e){return e.key==='Enter'&&!e.shiftKey&&!e.ctrlKey&&!e.altKey&&!e.metaKey&&!e.isComposing&&e.keyCode!==229}
+function deskEscapeLayer(drawer,work){return drawer?'drawer':work?'work':'room'}
+/* end desk interaction helpers */
+const DESK={open:false,expanded:false,drawer:null,preference:.46,timer:0,drag:null,returnTo:null,drawerReturn:null,compact:false,agents:new Map()};
+function deskReduced(){return matchMedia('(prefers-reduced-motion:reduce)').matches}
+function deskVisible(el){return !!el&&el.isConnected&&!el.closest('[inert]')&&!!el.getClientRects().length&&getComputedStyle(el).visibility!=='hidden'}
+function deskFocus(el,fallback=$('#deskWorkToggle')){(deskVisible(el)?el:deskVisible(fallback)?fallback:$('#back')).focus({preventScroll:true})}
+function deskInert(){
+  const shell=$('#compactDesk'),agentsHidden=innerWidth<=1000,factsHidden=innerWidth<=1380;
+  $('#deskCenter').inert=!!DESK.drawer;$('#deskAgents').inert=DESK.drawer?DESK.drawer!=='agents':agentsHidden;$('#deskFacts').inert=DESK.drawer?DESK.drawer!=='facts':factsHidden;
+  $('#deskConversation').inert=DESK.open&&(DESK.compact||DESK.expanded);$('#deskWork').inert=!DESK.open;
+  $('#hud').inert=!!DESK.drawer;$('#deskT').inert=!!DESK.drawer;$('#deskToolbar').inert=!!DESK.drawer;
+  shell.dataset.drawer=DESK.drawer||'';shell.classList.toggle('work-open',DESK.open);
+}
+function deskSize(){
+  if(!focus)return;const box=$('#deskWorkspace'),width=box.clientWidth,b=deskWidthBounds(width,DESK.preference),active=document.activeElement,wasCompact=DESK.compact;
+  DESK.compact=width<760;$('#compactDesk').classList.toggle('work-compact',DESK.compact);
+  box.style.setProperty('--desk-work-width',b.value+'px');const separator=$('#deskSizer');separator.setAttribute('aria-valuemin',String(Math.round(b.min)));separator.setAttribute('aria-valuemax',String(Math.round(b.max)));separator.setAttribute('aria-valuenow',String(Math.round(b.value)));separator.setAttribute('aria-valuetext',Math.round(b.value)+' pixels');
+  if(DESK.drawer&&((DESK.drawer==='agents'&&innerWidth>1000)||(DESK.drawer==='facts'&&innerWidth>1380)))deskCloseDrawer(true);
+  deskInert();
+  if(DESK.open&&DESK.compact&&(active===separator||active===$('#deskExpand')||$('#deskConversation').contains(active)))deskFocus($('#deskCloseWork'));
+  if(!DESK.drawer&&innerWidth<=1000&&$('#deskAgents').contains(active))deskFocus($('#deskToolbar [data-drawer=agents]'));
+  if(!DESK.drawer&&innerWidth<=1380&&$('#deskFacts').contains(active))deskFocus($('#deskToolbar [data-drawer=facts]'));
+  if(active?.matches?.('#deskToolbar [data-drawer]')&&!deskVisible(active))deskFocus($('#deskWorkToggle'));
+  if(wasCompact!==DESK.compact)deskEndDrag();
+}
+function deskSetViewUI(){const view=A[focus]?.pin?'doing':deskView;$('#deskWork').dataset.view=view;$('#compactPanels').hidden=view!=='doing';for(const b of $('#deskWorkTabs').children)b.setAttribute('aria-pressed',String(b.dataset.work===view))}
+function deskReveal(view){
+  if(!focus)return;deskCloseDrawer(false);watchOpen(false);
+  if(view==='conversation'){if(DESK.compact||DESK.expanded)deskCloseWork(false);deskInert();return}
+  clearTimeout(DESK.timer);DESK.timer=0;DESK.open=true;$('#deskWork').hidden=false;$('#deskWork').inert=false;$('#deskWorkToggle').setAttribute('aria-expanded','true');
+  deskSetViewUI();deskSize();void $('#deskWork').offsetWidth;$('#deskWork').classList.add('open');
+}
+function deskCloseWork(restore=true,immediate=false){
+  clearTimeout(DESK.timer);DESK.timer=0;deskEndDrag();const was=DESK.open;DESK.open=false;DESK.expanded=false;$('#deskWorkspace').classList.remove('expanded');$('#deskExpand').setAttribute('aria-label','Expand work view');$('#deskWorkToggle').setAttribute('aria-expanded','false');$('#deskConversation').inert=false;
+  if(restore&&was)deskFocus(DESK.returnTo);else if($('#deskWork').contains(document.activeElement))deskFocus($('#deskWorkToggle'));
+  $('#deskWork').inert=true;$('#deskWork').classList.remove('open');
+  const settle=()=>{if(!DESK.open)$('#deskWork').hidden=true};if(immediate||deskReduced())settle();else DESK.timer=setTimeout(settle,300);deskInert();
+  if(focus&&A[focus]){A[focus].permScreen=null;A[focus].$.yes.disabled=true;A[focus].$.no.disabled=true;A[focus].dirty=true}
+}
+function deskCloseDrawer(restore=true){
+  const old=DESK.drawer;if(!old)return;DESK.drawer=null;$('#deskScrim').hidden=true;for(const b of $('#deskToolbar').querySelectorAll('[data-drawer]'))b.setAttribute('aria-expanded','false');deskInert();
+  if(restore)deskFocus(DESK.drawerReturn);else if((old==='agents'?$('#deskAgents'):$('#deskFacts')).contains(document.activeElement))deskFocus($('#deskWorkToggle'));
+  if(focus&&A[focus])A[focus].dirty=true;
+}
+function deskToggleDrawer(which,trigger){
+  watchOpen(false);
+  if(DESK.drawer===which){deskCloseDrawer();render();return}deskCloseDrawer(false);DESK.drawer=which;DESK.drawerReturn=trigger;$('#deskScrim').hidden=false;trigger.setAttribute('aria-expanded','true');deskInert();
+  const pane=which==='agents'?$('#deskAgents'):$('#deskFacts'),button=pane.querySelector('.desk-rail-close'),origin=document.activeElement,started=performance.now();
+  const focusDrawer=()=>{if(DESK.drawer!==which)return;const active=document.activeElement;if(active!==origin&&active!==document.body)return;const rect=button.getBoundingClientRect();if(getComputedStyle(pane).visibility==='visible'&&rect.right>0&&rect.left<innerWidth){button.focus({preventScroll:true});if(document.activeElement===button)return}if(performance.now()-started<400)requestAnimationFrame(focusDrawer)};requestAnimationFrame(()=>requestAnimationFrame(focusDrawer));
+  if(focus&&A[focus]){A[focus].permScreen=null;A[focus].dirty=true}render();
+}
+function deskEndDrag(){if(DESK.drag!==null){try{$('#deskSizer').releasePointerCapture(DESK.drag)}catch(err){}DESK.drag=null}$('#compactDesk').classList.remove('resizing')}
+function deskPaint(){
+  if(!focus||!A[focus])return;const a=A[focus],now=Date.now()/1000,S=stateOf(a,now),request=S.need;
+  txt($('#deskName'),a.name);txt($('#deskStatus'),S.label);txt($('#deskGoal'),STEADY?(a.goal?'(goal hidden in steady mode)':''):a.goal||a.task||'No first message read');$('#deskGoal').title=$('#deskGoal').textContent;
+  txt($('#deskOpenApp'),a.observed?'Lives in ChatGPT':'Open in '+(a.runtime||'app')+' ↗');txt($('#deskPin'),PINS[focus]?'Unpin':'Pin');$('#deskPin').setAttribute('aria-pressed',String(!!PINS[focus]));
+  $('#deskRequest').hidden=!request;txt($('#deskRequestText'),request?(request.sure?'Request · ':'Possible request · ')+request.kind+' · '+(STEADY?'(text hidden in steady mode)':one(request.text).slice(0,260)):'');$('#deskRequestText').title=request&&!STEADY?request.text:'';$('#deskReview').hidden=!(request?.perm&&!request.perm.sent);
+  const list=$('#deskAgentList'),keep=new Set(order),active=document.activeElement;let at=list.firstElementChild;
+  for(const id of order){const agent=A[id];if(!agent)continue;let b=DESK.agents.get(id);if(!b){b=document.createElement('button');b.type='button';b.dataset.agent=id;b.innerHTML='<i aria-hidden="true"></i><span><strong></strong><small></small></span>';DESK.agents.set(id,b)}const state=stateOf(agent,now);b.dataset.state=state.need?'need':state.busy?'busy':'idle';b.setAttribute('aria-current',String(id===focus));txt(b.querySelector('strong'),agent.name);txt(b.querySelector('small'),state.need?state.need.kind+(state.need.sure?'':' · possible'):state.label);if(b!==at)list.insertBefore(b,at);at=b.nextElementSibling}
+  for(const [id,b] of DESK.agents)if(!keep.has(id)){b.remove();DESK.agents.delete(id)}if(active?.dataset?.agent&&!active.isConnected)deskFocus(list.querySelector('[aria-current=true]'));
+  $('#bay').hidden=bayPg===0;for(const b of $('#deskSignals').children)b.setAttribute('aria-pressed',String(Number(b.dataset.bay)===bayPg));
+  deskSetViewUI();
+}
+function deskTheme(theme){const next=theme==='neutral'?'neutral':'original';document.documentElement.dataset.theme=next;for(const b of document.querySelectorAll('[data-theme]'))b.setAttribute('aria-pressed',String(b.dataset.theme===next));try{store.setItem('liveRoomTheme',next)}catch(err){}if(focus){deskSize();if(A[focus])A[focus].dirty=true;render()}}
+let initialDeskTheme='original';try{initialDeskTheme=store.getItem('liveRoomTheme')||'original'}catch(err){}document.documentElement.dataset.theme=initialDeskTheme==='neutral'?'neutral':'original';for(const b of document.querySelectorAll('[data-theme]'))b.setAttribute('aria-pressed',String(b.dataset.theme===document.documentElement.dataset.theme));
+$('#deskToolbar').onclick=e=>{const b=e.target.closest('button');if(!b)return;if(b.dataset.theme)deskTheme(b.dataset.theme);else if(b.dataset.drawer)deskToggleDrawer(b.dataset.drawer,b)};
+$('#deskAgentList').onclick=e=>{const b=e.target.closest('[data-agent]');if(b)setFocus(b.dataset.agent)};
+$('#deskSignals').onclick=e=>{const b=e.target.closest('[data-bay]');if(b){bayPg=bayPg===Number(b.dataset.bay)?0:Number(b.dataset.bay);desk()}};
+for(const el of [$('#deskAgents'),$('#deskFacts')])el.addEventListener('click',e=>{if(e.target.closest('[data-close-drawer]')){deskCloseDrawer();render()}});
+$('#deskScrim').onclick=()=>{deskCloseDrawer();render()};
+$('#deskWorkToggle').onclick=()=>{if(DESK.open)deskCloseWork();else{DESK.returnTo=$('#deskWorkToggle');deskReveal(deskView);deskFocus($('#deskCloseWork'))}if(focus){A[focus].dirty=true;render()}};
+$('#deskCloseWork').onclick=()=>{deskCloseWork();render()};
+$('#deskWorkTabs').onclick=e=>{const b=e.target.closest('[data-work]');if(b)setView(b.dataset.work)};
+$('#deskReview').onclick=()=>{const a=A[focus],request=a&&need(a);if(!request?.perm||request.perm.sent)return;DESK.returnTo=$('#deskReview');setView('doing');deskFocus($('#deskCloseWork'))};
+$('#deskOpenApp').onclick=()=>{if(focus&&A[focus])A[focus].$.go.click()};$('#deskPin').onclick=()=>{if(focus&&A[focus])A[focus].$.pinb.click()};$('#deskDismiss').onclick=()=>{if(focus&&A[focus])A[focus].el.querySelector('.x').click()};
+$('#deskExpand').onclick=()=>{DESK.expanded=!DESK.expanded;$('#deskWorkspace').classList.toggle('expanded',DESK.expanded);$('#deskExpand').setAttribute('aria-label',DESK.expanded?'Restore split view':'Expand work view');deskInert();if(focus){A[focus].dirty=true;render()}};
+$('#deskSizer').addEventListener('pointerdown',e=>{if(e.button!==0||DESK.compact)return;e.preventDefault();DESK.drag=e.pointerId;e.currentTarget.setPointerCapture(e.pointerId);$('#compactDesk').classList.add('resizing');e.currentTarget.focus()});
+$('#deskSizer').addEventListener('pointermove',e=>{if(DESK.drag!==e.pointerId)return;const r=$('#deskWorkspace').getBoundingClientRect(),b=deskWidthBounds(r.width,(r.right-e.clientX)/r.width);DESK.preference=r.width?b.value/r.width:.46;deskSize();if(focus){A[focus].dirty=true;render()}});
+for(const event of ['pointerup','pointercancel','lostpointercapture'])$('#deskSizer').addEventListener(event,deskEndDrag);
+$('#deskSizer').addEventListener('dblclick',()=>{DESK.preference=.46;deskSize();if(focus){A[focus].dirty=true;render()}});
+$('#deskSizer').addEventListener('keydown',e=>{const w=$('#deskWorkspace').clientWidth,b=deskWidthBounds(w,DESK.preference),step=e.shiftKey?40:16;let v;if(e.key==='Home')v=b.min;else if(e.key==='End')v=b.max;else if(e.key==='ArrowLeft')v=b.value+step;else if(e.key==='ArrowRight')v=b.value-step;else return;e.preventDefault();e.stopPropagation();DESK.preference=w?Math.max(b.min,Math.min(b.max,v))/w:.46;deskSize();if(focus){A[focus].dirty=true;render()}});
+$('#deskWork').addEventListener('transitionend',e=>{if(e.target===$('#deskWork')&&focus){A[focus].dirty=true;render()}});
+$('#deskWorkContent').addEventListener('scroll',()=>{if(focus){A[focus].dirty=true;render()}},{passive:true});
+new ResizeObserver(()=>{if(focus){deskSize();A[focus].dirty=true;render()}}).observe($('#deskWorkspace'));
+// Preview zoom remains local to the actual evidence, without invoking room gestures.
+$('#compactDesk').addEventListener('wheel',e=>{if(!e.ctrlKey||!DESK.open||deskView!=='seeing'||!e.target.closest('#compactMonitor')||!focus)return;e.preventDefault();const a=A[focus];a.zm=Math.max(1,Math.min(5,(a.zm||1)*Math.exp(-e.deltaY*.012)));a.$.split.style.setProperty('--zm',a.zm.toFixed(3))},{passive:false});
+function deskKeydown(e){
+  if(!focus)return;
+  if(e.key==='Escape'){const layer=deskEscapeLayer(DESK.drawer,DESK.open);if(layer==='drawer'||layer==='work'){e.preventDefault();e.stopImmediatePropagation();if(layer==='drawer')deskCloseDrawer();else deskCloseWork();render();return}}
+  if(e.key==='Tab'&&DESK.drawer){const pane=DESK.drawer==='agents'?$('#deskAgents'):$('#deskFacts'),items=[...pane.querySelectorAll('button,[href],input,textarea,[tabindex]')].filter(x=>!x.disabled&&x.tabIndex>=0&&deskVisible(x));if(!items.length)return;const first=items[0],last=items.at(-1);if(e.shiftKey&&(document.activeElement===first||!pane.contains(document.activeElement))){e.preventDefault();last.focus()}else if(!e.shiftKey&&(document.activeElement===last||!pane.contains(document.activeElement))){e.preventDefault();first.focus()}}
+}
+addEventListener('keydown',deskKeydown,true);
+/* end desk keyboard handling */
+
 function apply(){
   room.classList.toggle('stepped',!!focus); document.body.classList.toggle('stepped',!!focus); document.body.classList.toggle('portrait',portrait());
-  if(focus&&pos[focus]){
-    const p=pos[focus], pt=portrait(), W=pt?0:sideW(), gap=W?W+34:14, L=$('#deskL'), Rr=$('#deskR'), Tn=$('#deskT');
-    const hudH=Math.max(40,$('#hud').offsetHeight); Tn.style.top=(hudH+4)+'px'; const top=hudH+4+Math.max(36,Tn.offsetHeight)+8;      /* the top bar may wrap: measure it */
-    stationLayout(top);
-    let w, h;
-    if(pt){                                   /* main screen across the top, log and comms side by side beneath it */
-      const short=innerHeight-top-292-34<420; document.body.classList.toggle('short',short);
-      const bar=short?198:292, avail=innerHeight-top-bar-34;            /* what is left for the screen and the two panels */
-      const panels=Math.max(90,Math.min(460,Math.round(innerHeight*.27),avail-140));
-      w=innerWidth-28; h=Math.max(100,avail-panels);
-      const pw=Math.floor((innerWidth-28-12)/2)+'px', ptop=(top+h+12)+'px';
-      for(const e of [L,Rr]){e.style.width=pw; e.style.top=ptop; e.style.height=panels+'px'; e.style.bottom='auto'}
-    }else{
-      w=Math.max(200,innerWidth-2*gap); h=Math.max(160,innerHeight-top-124);
-      const sw=(W||Math.min(420,innerWidth-28))+'px';
-      document.body.classList.remove('short');
-      for(const e of [L,Rr]){e.style.width=sw; e.style.top=(top-4)+'px'; e.style.height=e.style.bottom=''}
-    }
-    for(const k of order){const e=A[k].el; e.classList.remove('behind'); if(k===focus){e.style.width=w+'px';e.style.height=h+'px';e.style.left=-w/2+'px';e.style.top=-h/2+'px'}else{e.style.width=e.style.height=e.style.left=e.style.top=''}}
-    world.style.transform=`translateY(${(top+h/2)-innerHeight*.5}px) rotateY(${p.a}deg) translate3d(${-p.x}px,${-p.y}px,${-p.z}px)`;
-    $('#floor').style.transform=`translateY(${p.y+h/2+70}px) rotateX(90deg) translateY(${FLOOR_C}px) scale(${FLOOR_S.toFixed(3)})`;      /* the same stretched floor at the desk */
-  }else{
+  if(focus&&A[focus]){
+    const hudH=Math.max(40,$('#hud').offsetHeight),chain=$('#deskT');chain.style.top=(hudH+4)+'px';stationLayout(hudH+4+Math.max(28,chain.offsetHeight)+6);
+    for(const id of order){A[id].el.classList.toggle('focus',id===focus);if(id===focus)A[id].el.classList.remove('behind')}
+    $('#back').hidden=false;$('#helpW').hidden=true;document.body.classList.remove('short');subs(Date.now()/1000);return;
+  }
+  {
     stationLayout(0);
     const n=Math.min(FIT,Math.max(1,nRoots())), fit=arcFor(n);        /* the camera stands where it would for FIT monitors, however many there are */
     const r=(n-1)/2*fit.STEP*Math.PI/180, ex=fit.R*Math.sin(r)+340*Math.cos(r), ez=fit.R*(1-Math.cos(r))+340*Math.sin(r), Hh=STACK+80;
@@ -1527,7 +1653,7 @@ let flyT=0, applyQ=0;
 const queueApply=()=>{if(!applyQ) applyQ=requestAnimationFrame(()=>{applyQ=0; apply()})};      /* many gesture events, one camera update per painted frame */
 const fly=()=>{world.classList.add('fly'); clearTimeout(flyT); flyT=setTimeout(()=>world.classList.remove('fly'),1150)};
 const hands=()=>{world.classList.remove('fly'); clearTimeout(flyT)};       /* your hands on the view end any camera glide at once */
-function setView(v){if(!focus||!['doing','seeing','changes'].includes(v))return; deskView=v; const a=A[focus]; a.pin=null; a.sayAt=null; a.zm=1; a.$.split.style.setProperty('--zm','1'); a.dirty=true; render()}
+function setView(v){if(!focus||!['doing','seeing','changes'].includes(v))return; deskView=v; const a=A[focus]; a.pin=null; a.sayAt=null; a.zm=1; a.$.split.style.setProperty('--zm','1'); a.dirty=true; deskReveal(v); render()}
 /* Stepping up. The monitor must grow from where it is on the screen (in hand, or in its seat) into the desk, as one
    move. Its own transform and the camera's live in different spaces, so a CSS transition on each makes the monitor
    dip before it grows. Instead its on-screen pose is interpolated directly, frame by frame, with the camera's glide
@@ -1653,7 +1779,7 @@ storyEl.addEventListener('click',ev=>{
   const sv=ev.target.closest('[data-say]');
   if(sv){cuRevealEvent(a.id,+sv.dataset.say); return}
   if(c){const k=c.dataset.c; a.open.has(k)?a.open.delete(k):capAdd(a.open,k); stick=false}
-  else if(d){const it=a.story.find(x=>x.n===+d.dataset.i); a.pin=(it&&it.e&&it.e!==a.cur&&a.pin!==it.e)?it.e:null; if(a.pin)deskView='doing'}
+  else if(d){const it=a.story.find(x=>x.n===+d.dataset.i); a.pin=(it&&it.e&&it.e!==a.cur&&a.pin!==it.e)?it.e:null; if(a.pin)deskView='doing';deskReveal('doing')}
   else return;
   a.dirty=true; render();
 });
@@ -1671,7 +1797,7 @@ $('#crumb').onclick=ev=>{const u=ev.target.closest('[data-unlink]'); if(u){if(DE
 function lineage(a){const up=[], seen=new Set([a.id]); let p=a.parent; while(p&&!seen.has(p)){seen.add(p); up.unshift(p); p=A[p]&&A[p].parent} return up}
 function desk(){
   const a=focus?A[focus]:null, pt=portrait(), W=STATION.compact?1:pt?1:sideW();       /* on a tall window both panels are always shown, under the screen */
-  hid($('#deskL'),!a||!(W||narrow==='L')); hid($('#deskR'),!a||!(W||narrow==='R')); hid($('#deskT'),!a); hid($('#deskB'),!a);
+  hid($('#deskL'),!a||!(W||narrow==='L')); hid($('#deskR'),!a||!(W||narrow==='R')); hid($('#deskT'),!a); hid($('#deskB'),true);
   $('#deskL').classList.toggle('over',!W); $('#deskR').classList.toggle('over',!W);
   ofPlace();
   if(!a) return;
@@ -1727,7 +1853,7 @@ function desk(){
     return head+sum+(open?c.items.map(item).join(''):c.items.filter(x=>x[1].t==='compact'||x[1].t==='end'||(ls&&x[1]===ls)).map(item).join(''))+nowm;      /* in recorded order, never reordered */
   }).join('');
   if(storyEl._h!==h&&!getSelection().toString()){put(storyEl,h||'<p>Nothing recorded yet.</p>'); storyEl.dataset.a=a.id; if(stick) storyEl.scrollTop=storyEl.scrollHeight}
-  cuSources(a); cuPaint();
+  cuSources(a); cuPaint(); deskPaint();
   /* readouts: recorded facts, labelled as what they are */
   const par=a.parent&&A[a.parent], f=(k,v)=>`<span><b>${k}</b><em>${esc(v)}</em></span>`;
   put($('#badge'),f('Model',(a.model||'not recorded')+(a.effort?' · '+a.effort+' effort':''))+f('Approval setting',a.perm||'not recorded')
@@ -1885,7 +2011,7 @@ function cuSources(a){
   for(const [id,r] of CU.nodes){if(r.kind==='source'&&r.context.agent===a.id&&!active.has(id)){r.el.remove();CU.nodes.delete(id)}}
 }
 function cuNotice(html){const id='notice:'+ ++CU.serial,d=ofAdd('k',html,{id});CU.nodes.get(id).global=true;cuPaint();return d}
-function cuRevealEvent(id,n){if(focus!==id)setFocus(id);if(!A[id])return;cuSources(A[id]);cuPaint();if(!STATION.compact&&!sideW())narrow='R';render();const el=[...ofLog.querySelectorAll('[data-source-n]')].find(x=>x.dataset.sourceAgent===id&&+x.dataset.sourceN===n);if(el){const detail=el.querySelector('details');if(detail)detail.open=true;el.scrollIntoView({block:'center'});el.classList.add('hl');setTimeout(()=>el.classList.remove('hl'),1600)}}
+function cuRevealEvent(id,n){if(focus!==id)setFocus(id);if(!A[id])return;deskReveal('conversation');cuSources(A[id]);cuPaint();if(!STATION.compact&&!sideW())narrow='R';render();const el=[...ofLog.querySelectorAll('[data-source-n]')].find(x=>x.dataset.sourceAgent===id&&+x.dataset.sourceN===n);if(el){const detail=el.querySelector('details');if(detail)detail.open=true;el.scrollIntoView({block:'center'});el.classList.add('hl');setTimeout(()=>el.classList.remove('hl'),1600)}}
 function cuCard(r,kind){const id=kind+':'+r.request_id;let row=CU.nodes.get(id);if(!row){const el=ofAdd('of '+kind,'',{id,context:{scope:'station',agent:r.agent,name:r.name},ts:r.created||0});row=CU.nodes.get(id);row.el=el}return row.el}
 function ofCurrent(){return ofSnapshot(focus?OFUI.scope:'room',focus,A,OFUI.epoch)}
 function ofLabel(c){return !c?'Earlier context unknown':c.scope==='room'?'Whole room':(c.name||c.agent)+(A[c.agent]?'':' · unavailable')}
@@ -1894,7 +2020,7 @@ function ofContextPaint(){const c=ofCurrent().history, direct=!!focus&&OFUI.reci
 function ofTab(tab,interaction=true){if(interaction)OFUI.epoch++;OFUI.tab='officer';$('#officerSlot').hidden=false;}
 function ofInit(){if(OF.loaded)return;OF.loaded=true;ofLoad();ofMessageLoad();if(!OF.turns.length)ofAdd('k','<p>Choose the agent to send a direct message, or Ask WATCH for help with recorded activity.</p>')}
 function ofPlace(){const docked=!!focus;if(docked!==OFUI.docked){OFUI.docked=docked;if(docked){$('#officerSlot').appendChild(ofEl);ofEl.classList.add('docked');ofEl.classList.remove('fold');ofInit()}else{$('#officerHome').after(ofEl);ofEl.classList.remove('docked');ofEl.classList.add('fold');$('#ofB').setAttribute('aria-expanded','false')}}ofTab(OFUI.tab,false);ofContextPaint()}
-function ofReveal(){if(focus){cuDraftSave();OFUI.recipient='watch';OFUI.epoch++;cuDraftRestore();ofContextPaint();ofTab('officer');if(STATION.compact)$('#deskR').scrollIntoView({block:'start'})}ofToggle(true)}
+function ofReveal(){if(focus){deskReveal('conversation');cuDraftSave();OFUI.recipient='watch';OFUI.epoch++;cuDraftRestore();ofContextPaint();ofTab('officer');if(STATION.compact)$('#deskR').scrollIntoView({block:'start'})}ofToggle(true)}
 function ofOwnsFocus(request){return request.epoch===OFUI.epoch&&(!focus||OFUI.recipient==='watch')&&!ofEl.classList.contains('fold')&&(document.activeElement===ofIn||document.activeElement===$('#ofSend'))}
 $('#ofScope').onclick=e=>{const b=e.target.closest('button[data-scope]');if(!b||b.disabled||b.dataset.scope===ofCurrent().context.scope)return;cuDraftSave();OFUI.scope=b.dataset.scope;OFUI.epoch++;cuDraftRestore();ofContextPaint()};
 $('#ofScope').onkeydown=e=>e.stopPropagation();
@@ -1954,6 +2080,7 @@ function ofJump(aid,n){const a=A[aid]; if(!a){cuNotice('<span class="k">That age
   if(!it){cuNotice(`<span class="k">That entry is no longer on ${esc(a.name||'the')}'s desk: a desk keeps its last three hundred.</span>`); return}
   if(it.t==='you')ofTab('comms');
   if(it.e){a.pin=it.e; deskView='doing'}
+  deskReveal(['you','say'].includes(it.t)?'conversation':'doing');
   let key='start'; for(const x of a.story){if(x.t==='you') key=x.key||'t'+x.ts; if(x===it) break}
   capAdd(a.open,key); stick=false; if(!STATION.compact&&(covered()||(!portrait()&&!sideW()))) narrow=['you','say'].includes(it.t)?'R':'L';      /* on a narrow window, open the panel the entry is in */
   a.dirty=true; render();
@@ -2140,7 +2267,7 @@ function ofToggle(on){if(OFUI.docked){if(on){ofTab('officer');ofInit();ofIn.focu
 setInterval(()=>ofMessagePoll(),3000);
 $('#ofB').onclick=()=>ofToggle(ofEl.classList.contains('fold')); $('#ofSend').onclick=cuSend;
 $('#ofQuick').onclick=ev=>{const b=ev.target.closest('[data-q]'); if(b&&!OF.busy){if(OFUI.recipient!=='watch'){cuDraftSave();OFUI.recipient='watch';OFUI.epoch++;cuDraftRestore();ofContextPaint()}ofIn.value=b.dataset.q; ofSend()}};      /* the three questions you ask most, one tap each */
-ofIn.addEventListener('keydown',ev=>{if(ev.key==='Enter'){ev.preventDefault(); cuSend()}});
+ofIn.addEventListener('keydown',ev=>{if(deskSubmitKey(ev)){ev.preventDefault();cuSend()}});
 addEventListener('keydown',e=>{if(e.key!=='Escape')return;if(OFUI.docked){if(ofEl.contains(e.target)||e.target===$('#ofScope')){e.preventDefault();e.stopImmediatePropagation();OFUI.epoch++;$('#recipient [aria-pressed="true"]').focus()}}else if(!ofEl.classList.contains('fold')){ofToggle(false);e.stopImmediatePropagation()}},true);
 addEventListener('pointerdown',e=>{if(!OFUI.docked&&!ofEl.classList.contains('fold')&&!ofEl.contains(e.target))ofToggle(false)},true);
 
