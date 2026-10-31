@@ -1879,14 +1879,21 @@ function ofJump(aid,n){const a=A[aid]; if(!a){ofAdd('k','<span class="k">That ag
     else ofAdd('k',`<span class="k">That entry is kept for ${esc(a.name||'this agent')} but is not drawn on its desk right now.</span>`)};
   land()}
 /* agent message helpers: display backend requests; replies never become Officer instructions. */
-const OFM={records:new Map(),polling:false,available:null,reason:'',notice:null};
-function ofMessageSave(){if(DEMO) return; try{store.setItem('liveRoomMessages',JSON.stringify([...OFM.records.values()].filter(r=>r.request_id).slice(-100).map(({el,painted,...r})=>r)))}catch(err){}}
+const OFM={records:new Map(),controls:new Map(),polling:false,available:null,reason:'',notice:null};
+function ofMessageFulfillment(v){
+  if(!v||v.state!=='fulfilled'||v.intent!=='pause'||v.via!=='interrupt'||typeof v.control_request_id!=='string'||!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(v.control_request_id)) return null;
+  return {state:'fulfilled',intent:'pause',via:'interrupt',control_request_id:v.control_request_id};
+}
+function ofMessageSave(){if(DEMO) return; try{store.setItem('liveRoomMessages',JSON.stringify([...OFM.records.values()].filter(r=>r.request_id).slice(-100).map(r=>({request_id:r.request_id,agent:r.agent,name:r.name,question:r.question,state:r.state,reply:r.reply,error:r.error,delivery_warning:typeof r.delivery_warning==='string'?r.delivery_warning:'',fulfillment:ofMessageFulfillment(r.fulfillment)}))))}catch(err){}}
 function ofMessageNotice(t){if(!OFM.notice) OFM.notice=ofAdd('k',''); OFM.notice.textContent=t}
 function ofMessagePaint(r){
   if(!r.el) r.el=ofAdd('of message','');
   const labels={sending:'Sending · delivery not yet confirmed',queued:'Queued · waiting for a reply',awaiting_reply:'Awaiting reply',answered:'Answered',expired:'Expired · delivery may have occurred; no automatic resend',failed:'Failed · no automatic resend',unknown:'Delivery unknown · check status; do not resend'};
   const state=labels[r.state]||labels.unknown;
-  const markup=`<b>Message to ${esc(r.name||r.agent)}</b><div class="k message-id">${esc(r.agent)}</div><div class="draft">${esc(r.question)}</div><p class="k" role="status">${esc(state)}${r.error?' · '+esc(r.error):''}</p>${r.state==='answered'?`<b>Reply from ${esc(r.name||r.agent)}</b>${ofParas(String(r.reply||''))}`:''}${r.state==='unknown'?'<div class="cites"><button type="button" class="message-check">Check status</button></div>':''}`;
+  const fulfilled=ofMessageFulfillment(r.fulfillment);
+  const originalLabels={sending:'Original message was sending; delivery is not confirmed.',queued:'Original message was queued; delivery is not confirmed. It may still run later.',awaiting_reply:'Original message was delivered; awaiting a reply.',answered:'Original message received a reply.',expired:'Original message expired; delivery may have occurred. No automatic resend.',failed:'Original message failed; no automatic resend.',unknown:'Original message delivery is unknown; do not resend.'};
+  const delivery=fulfilled?(originalLabels[r.state]||originalLabels.unknown):state;
+  const markup=`${fulfilled?'<p class="k" role="status">Pause completed by a later interrupt</p>':''}<b>Message to ${esc(r.name||r.agent)}</b><div class="k message-id">${esc(r.agent)}</div><div class="draft">${esc(r.question)}</div><p class="k" role="status">${esc(delivery)}${r.error?' · '+esc(r.error):''}</p>${r.delivery_warning?`<p class="k">${esc(r.delivery_warning)}</p>`:''}${r.state==='answered'?`<b>Reply from ${esc(r.name||r.agent)}</b>${ofParas(String(r.reply||''))}`:''}${r.state==='unknown'?'<div class="cites"><button type="button" class="message-check">Check status</button></div>':''}`;
   if(r.painted!==markup){r.el.innerHTML=markup; r.painted=markup}
   const retry=r.el.querySelector('.message-check'); if(retry){retry.onclick=()=>ofMessagePoll()}
 }
@@ -1895,26 +1902,53 @@ function ofMessageMerge(rows){
   for(const v of rows){if(!v||typeof v.request_id!=='string'||typeof v.agent!=='string'||typeof v.question!=='string') continue;
     let r=OFM.records.get(v.request_id);
     if(!r){r={}; OFM.records.set(v.request_id,r)}
-    Object.assign(r,{request_id:v.request_id,agent:v.agent,name:String(v.name||v.agent),question:v.question,state:v.state,reply:v.reply,error:v.error}); ofMessagePaint(r);
+    Object.assign(r,{request_id:v.request_id,agent:v.agent,name:String(v.name||v.agent),question:v.question,state:v.state,reply:v.reply,error:v.error,delivery_warning:typeof v.delivery_warning==='string'?v.delivery_warning:'',fulfillment:ofMessageFulfillment(v.fulfillment)}); ofMessagePaint(r);
   }
   ofMessageSave();
 }
+function ofControlPublic(v){
+  if(!v||typeof v.request_id!=='string'||!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(v.request_id)||typeof v.agent!=='string'||!v.agent||typeof v.instruction!=='string'||typeof v.created!=='number'||!Number.isFinite(v.created)) return null;
+  const states=v.action==='interrupt'?['sending','interrupted','no_op','unknown','failed']:v.action==='steer'?['sending','acknowledged','unknown','failed']:[];
+  if(!states.includes(v.state)) return null;
+  return {request_id:v.request_id,action:v.action,agent:v.agent,name:typeof v.name==='string'?v.name:v.agent,instruction:v.instruction,state:v.state,error:typeof v.error==='string'?v.error:'',created:v.created};
+}
+function ofControlSave(){if(DEMO) return; try{store.setItem('liveRoomControls',JSON.stringify([...OFM.controls.values()].slice(-100).map(ofControlPublic).filter(Boolean)))}catch(err){}}
+function ofControlPaint(r){
+  if(!r.el) r.el=ofAdd('of control','');
+  const labels={sending:'Control pending; outcome is not yet confirmed. Do not repeat it.',interrupted:'Recorded outcome: the targeted turn was interrupted. This does not mean the agent remains paused.',acknowledged:'Recorded outcome: steer acknowledged; execution is not confirmed.',no_op:'Recorded outcome: no interruption occurred (no-op).',failed:'Recorded outcome: control failed. No automatic retry.',unknown:'Control outcome is unknown. Do not repeat it.'};
+  const status=r.unavailable?'Control outcome is uncertain; this record is no longer available from the server. Do not repeat it.':r.restoredPending?'Control outcome is uncertain after reload; waiting for server status. Do not repeat it.':labels[r.state];
+  const markup=`<b>${r.action==='interrupt'?'Interrupt':'Steer'} · ${esc(r.name||r.agent)}</b><div class="k message-id">${esc(r.agent)}</div>${r.instruction?`<div class="draft">${esc(r.instruction)}</div>`:''}<p class="k" role="status">${esc(status)}${r.error?' · '+esc(r.error):''}</p><p class="k">Historical control record; it does not guarantee the agent’s current state.</p>`;
+  if(r.painted!==markup){r.el.innerHTML=markup; r.painted=markup}
+}
+function ofControlMerge(rows,{snapshot=false,restored=false}={}){
+  if(DEMO) return;
+  const seen=new Set();
+  for(const value of rows){const v=ofControlPublic(value); if(!v) continue; seen.add(v.request_id);
+    let r=OFM.controls.get(v.request_id); if(!r){r={}; OFM.controls.set(v.request_id,r)}
+    // A delayed sending result cannot erase an already observed outcome.
+    if(r.state&&r.state!=='sending'&&v.state==='sending') continue;
+    Object.assign(r,v,{restoredPending:restored&&v.state==='sending',unavailable:false}); ofControlPaint(r);
+  }
+  if(snapshot) for(const [id,r] of OFM.controls){if(!seen.has(id)&&(r.state==='sending'||r.state==='unknown')){r.unavailable=true;ofControlPaint(r)}}
+  ofControlSave();
+}
 async function ofMessagePoll(){
   if(DEMO||!KEY||claiming||!OF.loaded||OFM.polling) return;
-  if(!connected){ofMessageNotice('Room connection is offline. Message status will refresh when it reconnects.'); return}
+  if(!connected){ofMessageNotice('Room connection is offline. Message/control status will refresh when it reconnects.'); return}
   OFM.polling=true;
   try{
     const res=await fetch('/agent-messages',{headers:{'X-Live-Room-Key':KEY},cache:'no-store',signal:AbortSignal.timeout(10000)});
     if(!res.ok) throw new Error(res.status===401||res.status===403?'Message status requires an unlocked room.':'Message status unavailable ('+res.status+').');
     const v=await res.json(); if(!Array.isArray(v.requests)) throw new Error('Message status response was not valid.');
-    OFM.available=v.available; OFM.reason=String(v.reason||''); ofMessageMerge(v.requests);
+    OFM.available=v.available; OFM.reason=String(v.reason||''); ofMessageMerge(v.requests); if(Array.isArray(v.controls)) ofControlMerge(v.controls,{snapshot:true});
     ofMessageNotice(v.available===false?'Agent messaging unavailable: '+(OFM.reason||'transport is not ready'):'');
-  }catch(err){ofMessageNotice((err.message||'Could not reach message status.')+' Pending questions are kept; nothing was resent.')}
+  }catch(err){ofMessageNotice((err.message||'Could not reach message status.')+' Message/control status is uncertain; do not repeat the request. Nothing was resent.')}
   finally{OFM.polling=false}
 }
 function ofMessageLoad(){
   if(DEMO) return;
   try{const rows=JSON.parse(store.getItem('liveRoomMessages')||'[]'); if(Array.isArray(rows)) ofMessageMerge(rows.slice(-100).map(r=>({...r,state:r.state==='sending'?'unknown':r.state})))}catch(err){}
+  try{const rows=JSON.parse(store.getItem('liveRoomControls')||'[]'); if(Array.isArray(rows)) ofControlMerge(rows.slice(-100),{restored:true})}catch(err){}
   ofMessagePoll();
 }
 /* end agent message helpers */
@@ -1945,11 +1979,12 @@ async function ofSend(){
     OF.turns.push({role:'assistant',content:String(r.text||'').slice(0,4000)});
     ofShow(r);
     ofSave();
-  }catch(err){OF.turns.pop(); ofAdd('of','<p class="k">The Officer could not be reached. If you asked it to message an agent, check the question status before asking again.</p>')}
+  }catch(err){OF.turns.pop(); ofAdd('of','<p class="k">The Officer could not be reached. If you asked it to message or control an agent, check message/control status. Do not repeat the request while its outcome is uncertain.</p>')}
   finally{OF.busy=false; $('#ofSend').disabled=false; if(ofSt.textContent==='thinking…') ofStatus('listening'); ofIn.focus()}
 }
 function ofShow(r){      /* one answer onto the log: its words, the entries it consulted as chips, and what it asked the screen to do */
   if(Array.isArray(r.messages)) ofMessageMerge(r.messages);
+  if(Array.isArray(r.controls)) ofControlMerge(r.controls);
   const seen=new Set(), cites=(r.cites||[]).filter(c=>c&&c.n!=null&&!seen.has(c.n)&&seen.add(c.n)).slice(0,12);
   const d=ofAdd('of',ofParas(r.text)+(cites.length?`<div class="cites">${cites.map(ofCite).join('')}</div><div class="k">log entries it consulted</div>`:''));
   d.querySelectorAll('.cites button[data-n]').forEach(b=>b.onclick=()=>ofJump(b.dataset.a,+b.dataset.n));

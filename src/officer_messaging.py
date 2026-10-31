@@ -5,6 +5,8 @@ by a matching completed turn can produce an answer. Uncertain sends are never re
 """
 import glob
 import json
+import math
+from datetime import datetime
 import os
 import re
 import sqlite3
@@ -74,7 +76,10 @@ def outgoing_message(row):
 
 
 def public(row):
-    return {k: row.get(k, '') for k in ('request_id', 'agent', 'name', 'question', 'state', 'reply', 'error')}
+    result = {k: row.get(k, '') for k in ('request_id', 'agent', 'name', 'question', 'state', 'reply', 'error')}
+    if isinstance(row.get('delivery_warning'), str) and row['delivery_warning']:
+        result['delivery_warning'] = row['delivery_warning']
+    return result
 
 
 class MessagingStore:
@@ -108,11 +113,20 @@ class MessagingStore:
                 os.close(fd)
             self.db = sqlite3.connect(path, check_same_thread=False)
             self.db.execute('CREATE TABLE IF NOT EXISTS requests (id TEXT PRIMARY KEY, data TEXT NOT NULL)')
+            self.db.execute('CREATE TABLE IF NOT EXISTS controls (id TEXT PRIMARY KEY, data TEXT NOT NULL)')
+            self.db.execute('CREATE TABLE IF NOT EXISTS expired_controls (id TEXT PRIMARY KEY)')
+            self.db.execute('CREATE TABLE IF NOT EXISTS request_fulfillments (request_id TEXT PRIMARY KEY, control_request_id TEXT NOT NULL, confirmed_at REAL NOT NULL)')
+            for (raw,) in self.db.execute('SELECT data FROM controls').fetchall():
+                control = json.loads(raw)
+                if control['state'] == 'sending':
+                    control.update(state='unknown', error='WATCH restarted during control dispatch. It will not retry.')
+                    self.db.execute('UPDATE controls SET data=? WHERE id=?', (json.dumps(control), control['request_id']))
             self.db.execute('CREATE TABLE IF NOT EXISTS asks (id TEXT PRIMARY KEY, user_text TEXT NOT NULL, created REAL NOT NULL, decision TEXT)')
             for row in self._rows():
                 if row['state'] == 'sending':
                     row.update(state='unknown', error='WATCH restarted during sending. Delivery is unknown; it will not resend.')
                     self._save(row)
+            self._reconcile_fulfillments()
             self.db.commit()
         except BaseException:
             if self.db is not None:
@@ -132,6 +146,7 @@ class MessagingStore:
         except UnicodeError:
             raise MessagingError(400, 'The request contains invalid text.')
         with self.lock:
+            self._reject_expired_control(request_id)
             old = self.db.execute('SELECT user_text, decision FROM asks WHERE id=?', (request_id,)).fetchone()
             if old:
                 if old[0] != user_text:
@@ -150,7 +165,7 @@ class MessagingStore:
 
     def decide_ask(self, request_id, decision):
         """Durably freeze routing before submit; no changed plan on a retry."""
-        if not valid_uuid(request_id) or not isinstance(decision, dict) or decision.get('kind') not in ('relay', 'none', 'clarify'):
+        if not valid_uuid(request_id) or not isinstance(decision, dict) or decision.get('kind') not in ('relay', 'none', 'clarify', 'control'):
             raise MessagingError(400, 'Invalid request decision.')
         try:
             encoded = json.dumps(decision, sort_keys=True)
@@ -169,6 +184,11 @@ class MessagingStore:
             with self.db:
                 self.db.execute('UPDATE asks SET decision=? WHERE id=? AND decision IS NULL', (encoded, request_id))
             return decision
+
+    def _reject_expired_control(self, request_id):
+        # IDs alone survive retention: an old HTTP retry must never target a new turn.
+        if self.db.execute('SELECT 1 FROM expired_controls WHERE id=?', (request_id,)).fetchone():
+            raise MessagingError(409, 'This control request has expired and cannot be replayed. Issue a new explicit request; nothing was sent.')
 
     def _rows(self):
         return [json.loads(x[0]) for x in self.db.execute('SELECT data FROM requests')]
@@ -242,7 +262,11 @@ class MessagingStore:
         claude_ready = claude_channel.any_configured(self.channel_root) and not self.worker_failed
         codex_ready = (self.available if self.codex_available is None else self.codex_available) and not self.worker_failed
         with self.lock:
-            return {'requests': [public(r) for r in sorted(self._rows(), key=lambda x: x['created'])],
+            now = time.time()
+            controls = [json.loads(raw) for (raw,) in self.db.execute('SELECT data FROM controls')]
+            retained = [r for r in controls if r['state'] == 'sending' or now - r['created'] <= RETENTION]
+            return {'requests': [self._public_request(r) for r in sorted(self._rows(), key=lambda x: x['created'])],
+                    'controls': [self._public_control(r) for r in sorted(retained, key=lambda x: (x['created'], x['request_id']))],
                     'available': codex_ready or claude_ready, 'reason': '' if codex_ready or claude_ready else self.reason,
                     'capabilities': {'codex': codex_ready, 'claude': claude_ready}}
 
@@ -251,24 +275,35 @@ class MessagingStore:
         if not valid_uuid(request_id):
             raise MessagingError(400, 'A valid request identifier is required.')
         with self.lock:
+            self._reject_expired_control(request_id)
             rows = self._rows()
             old = next((r for r in rows if r['request_id'] == request_id), None)
             if old:
                 if old['agent'] != agent or old['question'] != question:
                     raise MessagingError(409, 'That request identifier belongs to a different question.')
-                return public(old)
+                return self._public_request(old)
+            if self.db.execute('SELECT 1 FROM controls WHERE id=?', (request_id,)).fetchone():
+                raise MessagingError(409, 'That request identifier already belongs to a live control.')
             name = validate_target(agent, agents)
             if self.worker_failed or (agent.startswith('x:') and not (self.available if self.codex_available is None else self.codex_available)):
                 raise MessagingError(503, self.reason)
             now = time.time()
             rows = self._prune(rows, now)
             active = [r for r in rows if r['state'] in ACTIVE]
-            if any(r['agent'] == agent for r in active):
-                raise MessagingError(409, 'A question for this agent is still unresolved. WATCH will not risk sending it twice.')
-            if len(active) >= MAX_PENDING or len(rows) >= MAX_RECORDS or sum(r['created'] > now - 60 for r in rows) >= 10:
-                raise MessagingError(429, 'The messaging queue is full. Try again later.')
+            # An unresolved request is not a lock on the whole conversation.
+            # A distinct explicit instruction gets its own delivery/reply identity.
+            if any(r['agent'] == agent and r['question'] == question for r in active):
+                raise MessagingError(409, 'This same message is still unresolved for that agent and may still run. WATCH will not send it twice; no new message was sent.')
+            if len(active) >= MAX_PENDING:
+                raise MessagingError(429, 'Too many unresolved message deliveries are being tracked. Older messages may still run; no new message was sent.')
+            if len(rows) >= MAX_RECORDS:
+                raise MessagingError(429, 'Message history is at its storage limit. No new message was sent.')
+            if sum(r['created'] > now - 60 for r in rows) >= 10:
+                raise MessagingError(429, 'Too many messages were submitted in the last minute. No new message was sent.')
             row = dict(request_id=request_id, agent=agent, name=name, question=question, state='sending', reply='', error='',
                        created=now, launched=False)
+            if any(r['agent'] == agent for r in active):
+                row['delivery_warning'] = 'When this message was submitted, older messages to this agent were unresolved and could still run. This request did not cancel them.'
             if agent.startswith('c:'):
                 try:
                     descriptor = claude_channel.discover(self.channel_root, agent[2:])
@@ -287,11 +322,327 @@ class MessagingStore:
                 row.update(runtime='codex', path=path, inode=st.st_ino, device=st.st_dev, cursor=st.st_size,
                            current_turn='', bound_turn='', final='', envelope=envelope(request_id, question))
             self._save(row)  # Durable before a worker can launch the external process.
-            return public(row)
+            return self._public_request(row)
+
+    @staticmethod
+    def _public_control(row):
+        result = {k: row.get(k, '') for k in ('request_id', 'action', 'agent', 'name', 'instruction', 'state', 'error')}
+        result['created'] = row['created'] if MessagingStore._timestamp(row.get('created')) else 0
+        return result
+
+    def _control_target(self, agent, agents, action='steer'):
+        validate_target(agent, agents)
+        if not agent.startswith('x:') or agents[agent].get('sub') or agents[agent].get('parent'):
+            raise MessagingError(400, 'Live controls currently support local parent Codex desktop chats only.')
+        path, identity = self._target_log(agent[2:])
+        if action == 'steer' and time.time() - identity.st_mtime > 300:
+            raise MessagingError(409, 'The chat log is stale; I cannot establish its current active turn.')
+        with open(path, 'rb') as f:
+            current = os.fstat(f.fileno())
+            if (current.st_ino, current.st_dev) != (identity.st_ino, identity.st_dev):
+                raise MessagingError(409, 'The chat transcript changed during control preparation.')
+            meta = json.loads(f.readline(MAX_LINE + 1))['payload']
+            if not stat.S_ISREG(current.st_mode) or not isinstance(meta, dict) or meta.get('id') != agent[2:]:
+                raise MessagingError(409, 'The chat transcript identity changed during control preparation.')
+            if meta.get('parent_thread_id') or meta.get('agent_path') not in (None, '', '/root'):
+                raise MessagingError(400, 'Live controls support parent chats only.')
+            offset = max(0, current.st_size - MAX_READ)
+            f.seek(offset)
+            if offset:
+                f.readline(MAX_LINE + 1)
+            raw = f.read(MAX_READ + 1)
+        if not raw.endswith(b'\n') or len(raw) > MAX_READ:
+            raise MessagingError(409, 'The current turn is not safely readable yet.')
+        active, ended = set(), set()
+        for line in raw.splitlines():
+            if len(line) > MAX_LINE:
+                raise MessagingError(409, 'The current turn record is too large to verify.')
+            try:
+                item = json.loads(line)
+            except ValueError:
+                raise MessagingError(409, 'The current turn log is malformed.') from None
+            payload = item.get('payload') if isinstance(item, dict) else None
+            if not isinstance(payload, dict):
+                continue
+            kind, turn = payload.get('type'), payload.get('turn_id')
+            if item.get('type') == 'event_msg' and kind in ('task_complete', 'turn_aborted', 'task_aborted'):
+                if not valid_uuid(turn):
+                    raise MessagingError(409, 'A terminal turn record is ambiguous; no control was sent.')
+                else:
+                    active.discard(turn); ended.add(turn)
+            elif (item.get('type') == 'event_msg' and kind == 'task_started') or item.get('type') == 'turn_context':
+                if not valid_uuid(turn):
+                    raise MessagingError(409, 'The active turn identifier is missing or invalid.')
+                if turn not in ended:
+                    active.add(turn)
+        after = self._metadata(path, agent[2:])
+        if (after.st_ino, after.st_dev, after.st_size, after.st_mtime_ns) != (current.st_ino, current.st_dev, current.st_size, current.st_mtime_ns):
+            raise MessagingError(409, 'The chat changed during control preparation; no control was sent.')
+        if len(active) != 1:
+            raise MessagingError(409, 'I cannot establish one active turn for that chat. No control was sent.')
+        cwd = meta.get('cwd')
+        if not isinstance(cwd, str) or not os.path.isabs(cwd) or '\x00' in cwd:
+            raise MessagingError(409, 'The chat working directory is not recorded safely.')
+        return next(iter(active)), cwd, {'path': path, 'inode': after.st_ino, 'device': after.st_dev, 'size': after.st_size, 'mtime_ns': after.st_mtime_ns}
+
+    def submit_control(self, action, agent, instruction, request_id, agents, execute=None):
+        if action not in ('steer', 'interrupt') or not valid_uuid(request_id) or not isinstance(agent, str):
+            raise MessagingError(400, 'Invalid control request.')
+        if action == 'steer':
+            validate_question(instruction)
+        elif instruction != '':
+            raise MessagingError(400, 'An interrupt cannot include another instruction.')
+        with self.lock:
+            self._reject_expired_control(request_id)
+            existing = self.db.execute('SELECT data FROM controls WHERE id=?', (request_id,)).fetchone()
+            if existing:
+                old = json.loads(existing[0])
+                if (old['action'], old['agent'], old['instruction']) != (action, agent, instruction):
+                    raise MessagingError(409, 'That request identifier belongs to a different control.')
+                return self._public_control(old)
+            if self.db.execute('SELECT 1 FROM requests WHERE id=?', (request_id,)).fetchone():
+                raise MessagingError(409, 'That request identifier already belongs to a queued message.')
+            now = time.time()
+            rows = [json.loads(r[0]) for r in self.db.execute('SELECT data FROM controls')]
+            retained = [r for r in rows if now - r['created'] <= RETENTION or r['state'] == 'sending']
+            if any(r['agent'] == agent and r['state'] == 'sending' for r in retained):
+                raise MessagingError(409, 'A control for that chat is still being dispatched. Wait for its result.')
+            if len(retained) >= MAX_RECORDS or sum(r['created'] > now - 60 for r in retained) >= 10:
+                raise MessagingError(429, 'Too many live controls; try again later.')
+            with self.db:
+                for old in rows:
+                    if old not in retained:
+                        self.db.execute('INSERT OR IGNORE INTO expired_controls VALUES (?)', (old['request_id'],))
+                        self.db.execute('DELETE FROM asks WHERE id=?', (old['request_id'],))
+                        self.db.execute('DELETE FROM controls WHERE id=?', (old['request_id'],))
+            try:
+                turn, cwd, transcript = self._control_target(agent, agents, action)
+            except (MessagingError, OSError, ValueError, KeyError, TypeError) as error:
+                # Freeze preflight failure too: replay must not resolve a newer turn.
+                row = dict(request_id=request_id, action=action, agent=agent, instruction=instruction,
+                           name=str(agents.get(agent, {}).get('name') or agent)[:120], state='failed',
+                           error=str(error) if isinstance(error, MessagingError) else 'The active turn could not be verified. No control was sent.', created=now)
+                with self.db:
+                    self.db.execute('INSERT INTO controls VALUES (?,?)', (request_id, json.dumps(row)))
+                return self._public_control(row)
+            row = dict(request_id=request_id, action=action, agent=agent, instruction=instruction,
+                       name=str(agents[agent].get('name') or agent)[:120], expected_turn_id=turn, cwd=cwd, transcript=transcript,
+                       state='sending', error='', created=now)
+            with self.db:
+                self.db.execute('INSERT INTO controls VALUES (?,?)', (request_id, json.dumps(row)))
+        # The bridge may block; no room or store lock spans its I/O. Once reserved,
+        # every exception is uncertain and must never trigger another dispatch.
+        try:
+            check = self._metadata(transcript['path'], agent[2:])
+            unchanged = (check.st_ino, check.st_dev, check.st_size, check.st_mtime_ns) == (transcript['inode'], transcript['device'], transcript['size'], transcript['mtime_ns'])
+        except (OSError, MessagingError):
+            unchanged = False
+        try:
+            if not unchanged:
+                outcome = {'state': 'failed', 'error': 'The chat transcript changed before dispatch. No control was sent.'}
+            else:
+                if execute is None:
+                    from codex_desktop_control import execute
+                outcome = execute(action, agent[2:], instruction=instruction, expected_turn_id=turn, cwd=cwd)
+            state = outcome.get('state') if isinstance(outcome, dict) else None
+            allowed = ('acknowledged', 'failed', 'unknown') if action == 'steer' else ('interrupted', 'no_op', 'failed', 'unknown')
+            if state not in allowed:
+                row.update(state='unknown', error='The desktop control result could not be confirmed. It will not be retried.')
+            else:
+                row.update(state=state, error=str(outcome.get('error') or '')[:500])
+        except Exception:
+            row.update(state='unknown', error='Desktop control status is unknown. It will not be retried.')
+        with self.lock:
+            with self.db:
+                row['completed_at'] = time.time()
+                self.db.execute('UPDATE controls SET data=? WHERE id=?', (json.dumps(row), request_id))
+                if row['action'] == 'interrupt' and row['state'] == 'interrupted':
+                    self._reconcile_fulfillments()
+        return self._public_control(row)
+
+    def _public_request(self, row):
+        result = public(row)
+        evidence = self.db.execute('SELECT control_request_id FROM request_fulfillments WHERE request_id=?',
+                                   (row['request_id'],)).fetchone()
+        if evidence:
+            result['fulfillment'] = {'state': 'fulfilled', 'intent': 'pause', 'via': 'interrupt',
+                                     'control_request_id': evidence[0]}
+        return result
+
+    @staticmethod
+    def _timestamp(value):
+        return isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(value)
+
+    @staticmethod
+    def _pure_pause(text, row, owner=False):
+        """A deliberately narrow grammar, never a general intent classifier.
+
+        Both authenticated owner text and its exact frozen relay payload must
+        qualify. In particular a queued/deferred owner request cannot inherit
+        immediate intent from a shortened payload.
+        """
+        if not isinstance(text, str):
+            return False
+        text = text.strip()
+        effect = r'(?:pause(?: (?:your|its|the)(?: current)? work)?|stop (?:working|(?:your|its|the)(?: current)? work)|halt(?: (?:your|its|the)(?: current)? work)?|interrupt(?: (?:your|its|the)(?: current)? work)?)'
+        ending = r'(?: now)?[.!]?'
+        if not owner:
+            return re.fullmatch(effect + ending, text, re.IGNORECASE) is not None
+        targets = [row.get('name'), row.get('agent'), str(row.get('agent', ''))[2:]]
+        for target in targets:
+            if not isinstance(target, str) or not target.strip():
+                continue
+            target = re.escape(target)
+            patterns = [r'(?:tell|ask) ' + target + r' to ' + effect,
+                        r'(?:pause|stop|halt|interrupt) ' + target + r"(?:'s)?(?: (?:current )?work)?"]
+            if any(re.fullmatch(pattern + ending, text, re.IGNORECASE) for pattern in patterns):
+                return True
+        return False
+
+    def _legacy_control_completion(self, control):
+        """Recover only a timestamped abort of the exact pinned turn, locally.
+
+        Read at most MAX_READ bytes after the saved complete-record boundary.
+        A witness found within that budget suffices even if the log grew larger.
+        Transcript content supplies evidence only, never instructions.
+        """
+        transcript = control.get('transcript')
+        if not isinstance(transcript, dict):
+            return None
+        try:
+            path, offset = transcript['path'], transcript['size']
+            if not isinstance(offset, int) or isinstance(offset, bool) or offset < 0:
+                return None
+            st = self._metadata(path, control['agent'][2:])
+            identity = (transcript['inode'], transcript['device'])
+            if (st.st_ino, st.st_dev) != identity or st.st_size < offset:
+                return None
+            with open(path, 'rb') as f:
+                current = os.fstat(f.fileno())
+                if (current.st_ino, current.st_dev) != identity or current.st_size < offset:
+                    return None
+                if offset:
+                    f.seek(offset - 1)
+                    if f.read(1) != b'\n':
+                        return None
+                f.seek(offset)
+                raw = f.read(MAX_READ)
+            for line in raw.split(b'\n')[:-1]:
+                if len(line) > MAX_LINE:
+                    return None
+                event = json.loads(line)
+                if not isinstance(event, dict):
+                    continue
+                payload = event.get('payload')
+                if (event.get('type') != 'event_msg' or not isinstance(payload, dict)
+                        or payload.get('type') != 'turn_aborted' or payload.get('turn_id') != control['expected_turn_id']):
+                    continue
+                stamp = event.get('timestamp')
+                if not isinstance(stamp, str):
+                    return None
+                parsed = datetime.fromisoformat(stamp.replace('Z', '+00:00'))
+                if parsed.tzinfo is None or parsed.utcoffset() is None:
+                    return None
+                ended = parsed.timestamp()
+                return ended if self._timestamp(ended) and ended >= control['created'] else None
+        except (MessagingError, OSError, KeyError, TypeError, ValueError, OverflowError):
+            return None
+        return None
+
+    def _reconcile_fulfillments(self):
+        """Annotate historical pause satisfaction, without changing delivery.
+
+        Caller owns the store lock (or startup ownership) and transaction. The
+        separate table cannot be overwritten by tick's in-flight request copy.
+        Unknown routing anywhere inside the authority interval fails closed.
+        """
+        requests = self._rows()
+        controls = [json.loads(raw) for (raw,) in self.db.execute('SELECT data FROM controls')]
+        asks = {rid: (text, created, decision) for rid, text, created, decision in
+                self.db.execute('SELECT id, user_text, created, decision FROM asks')}
+        fulfilled = {rid for (rid,) in self.db.execute('SELECT request_id FROM request_fulfillments')}
+        completions = {}
+        for control in controls:
+            if (control.get('action') != 'interrupt' or control.get('state') != 'interrupted'
+                    or not valid_uuid(control.get('request_id')) or not valid_uuid(control.get('expected_turn_id'))
+                    or not self._timestamp(control.get('created'))):
+                continue
+            ended = control.get('completed_at')
+            if ended is None:
+                ended = self._legacy_control_completion(control)
+            if self._timestamp(ended) and ended >= control['created']:
+                completions[control['request_id']] = ended
+        for row in requests:
+            rid, agent = row['request_id'], row.get('agent')
+            source = asks.get(rid)
+            if (rid in fulfilled or not valid_uuid(rid) or not source or not isinstance(agent, str) or not agent.startswith('x:')
+                    or not valid_uuid(agent[2:]) or not self._timestamp(row.get('created'))
+                    or not self._timestamp(source[1]) or source[1] > row['created']):
+                continue
+            try:
+                decision = json.loads(source[2])
+            except (TypeError, ValueError):
+                continue
+            if (not isinstance(decision, dict) or decision.get('kind') != 'relay'
+                    or decision.get('agent') != agent or decision.get('question') != row.get('question')
+                    or not self._pure_pause(source[0], row, owner=True) or not self._pure_pause(row.get('question'), row)):
+                continue
+            for control in sorted(controls, key=lambda c: completions.get(c.get('request_id'), float('inf'))):
+                cid = control.get('request_id')
+                ended = completions.get(cid)
+                if (ended is None or control.get('agent') != agent or control['created'] <= row['created']
+                        or control['created'] <= source[1]
+                        or (row.get('bound_turn') and row['bound_turn'] != control['expected_turn_id'])):
+                    continue
+                transcript = control.get('transcript', {})
+                if (not isinstance(transcript, dict) or row.get('path') != transcript.get('path')
+                        or row.get('inode') != transcript.get('inode') or row.get('device') != transcript.get('device')):
+                    continue
+                blocked = False
+                for other_id, (_, created, raw_decision) in asks.items():
+                    if other_id in (rid, cid):
+                        continue
+                    if not self._timestamp(created):
+                        blocked = True; break
+                    if not source[1] <= created <= ended:
+                        continue
+                    try:
+                        other = json.loads(raw_decision)
+                    except (TypeError, ValueError):
+                        blocked = True; break
+                    if not isinstance(other, dict) or other.get('kind') not in ('relay', 'control', 'none', 'clarify'):
+                        blocked = True; break
+                    if other['kind'] in ('relay', 'control'):
+                        target = other.get('agent')
+                        if (not isinstance(target, str) or target[:2] not in ('x:', 'c:')
+                                or not valid_uuid(target[2:]) or target == agent):
+                            blocked = True; break
+                        try:
+                            if other['kind'] == 'relay':
+                                validate_question(other.get('question'))
+                            elif other.get('action') == 'steer':
+                                validate_question(other.get('instruction'))
+                            elif other.get('action') != 'interrupt' or other.get('instruction') != '':
+                                blocked = True; break
+                        except MessagingError:
+                            blocked = True; break
+                    elif other['kind'] == 'clarify' and (not isinstance(other.get('text'), str)
+                                                         or not other['text'].strip()):
+                        blocked = True; break
+                if blocked:
+                    continue
+                # Direct message/control endpoints may have no asks provenance.
+                if any(other.get('request_id') not in (rid, cid) and other.get('agent') == agent
+                       and (not self._timestamp(other.get('created')) or source[1] <= other['created'] <= ended)
+                       for other in requests + controls):
+                    continue
+                self.db.execute('INSERT OR IGNORE INTO request_fulfillments VALUES (?,?,?)', (rid, cid, ended))
+                break
 
     def _prune(self, rows, now):
         for r in rows:
             if now - r['created'] > RETENTION:
+                self.db.execute('DELETE FROM request_fulfillments WHERE request_id=?', (r['request_id'],))
                 self.db.execute('DELETE FROM requests WHERE id=?', (r['request_id'],))
         self.db.commit()
         return [r for r in rows if now - r['created'] <= RETENTION]

@@ -137,11 +137,25 @@ The board and the tail ring the terminal bell when an agent starts waiting on yo
 
 ### Asking a Codex agent
 
-Ask the Officer, for example, “Ask Aster how far along its subagents are.” That request authorizes sending; there is no second Send button. WATCH resolves the name uniquely, queues the question in that existing local Codex session and displays the attributed reply when the matching turn finishes. A busy session finishes its current work first. Reloading the page restores recorded request statuses.
+Ask the Officer, for example, “Ask Aster how far along its subagents are.” That request authorizes sending; there is no second Send button. WATCH resolves the name uniquely, queues the question in that existing local Codex session and displays the attributed reply when the matching turn finishes. A busy session finishes its current work first. A different explicit message can be queued even while an earlier request is unresolved; each keeps its own delivery and reply status. WATCH still blocks an identical unresolved message and never automatically resends the earlier request. Sending a new instruction does not cancel older queued instructions. WATCH warns when an accepted message follows unresolved messages to the same agent. Up to eight unresolved deliveries can be retained in the pending queue, including expired or fulfilled requests without replies; reaching that limit blocks new messages because the older ones may still run. Reloading the page restores recorded request statuses.
 
 The Codex adapter uses the macOS desktop app’s bundled CLI. Claude Code uses the optional channel below. Cursor, cloud sessions and other platforms are not connected for messaging yet. Missing or unsupported CLI support leaves the rest of WATCH working. Delivery uncertainty and expiration do not mean a question was never received; WATCH does not automatically resend. Codex replies must match the exact question and completed turn; Claude replies must match the original request and channel instance.
 
 The queue runs through the target agent’s existing account and may consume its normal model allowance. A model interprets your intent from the current request; it can misunderstand you. Quoted examples and hypothetical questions are not intended to authorize sending. Use a clear agent name and question. The selected agent can use its existing tools when answering. Requests and replies are kept locally under `~/.live-room/`; the reply is displayed directly, without executing any actions it contains.
+
+### Steering and interrupting Codex
+
+Tell the Officer “Steer Atlas: focus on the failing tests” or “Interrupt Atlas.” Use the exact name of one agent in the room. These requests act on an existing local Codex desktop conversation without another Send button or a new session. Ordinary questions and messages still use the queue. Wording such as “Tell Atlas to pause its work” stops the current turn; “Tell Atlas to focus on tests right now” steers it. Explicitly deferred requests, such as “After this task, tell Atlas to pause,” stay queued. Pausing does not schedule automatic resumption.
+
+Steering sends your instruction into the turn active when Codex handles it. Acknowledgment means Codex accepted the instruction, not that the agent has acted on it. Interruption is pinned to the identified active turn and reports success only when Codex confirms that same turn stopped. Codex's normal stop behavior can also stop its subagents. Queued follow-ups are not cleared and may start later work. Steering requires a transcript updated within five minutes; interruption can target a quiet turn because Codex checks its exact ID before stopping it.
+
+These controls currently require macOS and the verified Codex desktop version `26.1016.62342`, build `21477`. WATCH checks the installed bundle before using its undocumented local bridge. An app update, an unavailable owner, or an unreadable active turn disables the operation; WATCH does not substitute a queued message or start a session. Claude Code and other runtimes do not have these controls yet.
+
+When WATCH can verify that an earlier immediate pause request was fulfilled by a later confirmed interruption, that message shows **Pause completed by a later interrupt**. Its delivery status remains separate: a message that was accepted into the queue may still run later, and a written reply may still arrive. This historical completion does not mean the agent is still paused. WATCH leaves the request unmarked when the original intent or interruption evidence is ambiguous; it never silently cancels or resends the old message.
+
+Control outcomes are shown as historical records and recovered through status polling after a lost response or browser reload, without sending the control again. An interrupted result confirms the recorded turn stopped; it does not mean the agent is still paused. Steering acknowledgement does not confirm that the instruction was acted on.
+
+Control outcomes are kept locally and become eligible for cleanup after one day. After details expire, WATCH retains an ID-only replay guard so an old request identifier cannot dispatch again, including after a restart or timeout. An uncertain outcome stays uncertain; inspect the agent before making a new request. A new explicit interruption is allowed after an uncertain steering attempt. The Officer interprets only your current request, with the same model-interpretation limitation as messaging; log contents cannot invoke these controls.
 
 ### Connecting Claude Code
 
@@ -197,12 +211,16 @@ Early, and in daily use by its author. Every change that touches the key, the ho
 
     src/server.py            the server: follows the logs, serves the page, holds permission prompts
     src/watch.json           deploy, push, delete, send, checks, and "probably needs you"
+    src/codex_desktop_control.py  version-checked local Codex steering and interruption
     src/web/index.html       the room (one page, no build step)
     src/watch_tty.py         the room in a terminal: board, tail, or a one-line count
     src/iterm-profile.json   the iTerm2 profile watch_tty.py --tab installs
     tests/test_parsers.py    the shell parser, watch.json, one Cursor transcript, terminal escaping, the key and previews (run on every push)
     tests/test_officer_messaging.py  durable requests, queue failures and reply correlation
     tests/test_officer_routing.py    isolated intent interpretation and dispatch retries
+    tests/test_officer_controls.py   durable control outcomes and active-turn checks
+    tests/test_officer_fulfillment.py  verified pause fulfillment, migration and concurrency
+    tests/test_codex_desktop_control.py  bounded desktop bridge and failure handling
     tests/test_page.js       the page's path helpers, outside a browser (run on every push)
     scripts/install_hooks.py adds or removes the Claude Code hooks
     scripts/check_secrets.py refuses to publish a key: names, link text and contents, any size, in the working tree and in what git has staged (the staged copy is what a commit publishes); anything it cannot examine fails it. Run before any commit (the tests run it too)

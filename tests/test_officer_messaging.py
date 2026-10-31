@@ -271,6 +271,78 @@ class MessagingTests(unittest.TestCase):
         self.assertEqual(self.tick().call_count, 1)
         self.assertEqual(self.tick().call_count, 0)
 
+    def test_distinct_followup_after_pause_has_independent_delivery_and_reply(self):
+        self.question = 'Pause your work.'
+        self.submit(); self.tick()
+        followup = str(uuid.uuid4())
+        text = 'Continue your work where you left off.'
+        self.store.submit(self.agent, text, followup, self.agents)
+        launch = self.tick()
+        self.assertEqual(launch.call_count, 1)
+        self.assertIn(m.envelope(followup, text), launch.call_args.args[0])
+        self.assertEqual(self.tick().call_count, 0)
+        # The follow-up completes first. Its marker cannot answer the old request.
+        self.user('later', m.envelope(followup, text))
+        self.answer('later', 'WATCH_REPLY ' + followup + '\nContinuing.')
+        self.store.tick()
+        rows = {r['request_id']: r for r in self.store.snapshot()['requests']}
+        self.assertEqual(rows[followup]['state'], 'answered')
+        self.assertEqual(rows[followup]['reply'], 'Continuing.')
+        self.assertEqual(rows[self.rid]['state'], 'queued')
+        self.user('original'); self.answer('original')
+        self.store.tick()
+        rows = {r['request_id']: r for r in self.store.snapshot()['requests']}
+        self.assertEqual(rows[self.rid]['state'], 'answered')
+        self.assertEqual(rows[followup]['reply'], 'Continuing.')
+
+    def test_unknown_and_expired_allow_new_instruction_without_retry_after_restart(self):
+        for state in ('unknown', 'expired'):
+            with self.subTest(state=state):
+                original_id = str(uuid.uuid4())
+                original_text = 'Old request ' + state
+                self.store.submit(self.agent, original_text, original_id, self.agents)
+                row = next(r for r in self.store._rows() if r['request_id'] == original_id)
+                row.update(state=state, launched=True)
+                self.store._save(row)
+                new_id = str(uuid.uuid4())
+                new_text = 'New instruction ' + state
+                self.store.submit(self.agent, new_text, new_id, self.agents)
+                self.assertEqual(self.tick().call_count, 1)
+                self.store.close()
+                self.store = m.MessagingStore(self.state, self.sessions)
+                self.store.available = True
+                self.assertEqual(self.tick().call_count, 0)
+                self.assertEqual(self.store.submit(self.agent, new_text, new_id, {})['state'], 'queued')
+                rows = {r['request_id']: r for r in self.store.snapshot()['requests']}
+                self.assertEqual(rows[original_id]['state'], state)
+                with self.assertRaises(m.MessagingError):
+                    self.store.submit(self.agent, original_text, str(uuid.uuid4()), self.agents)
+
+    def test_same_turn_coalescing_requires_each_request_reply_marker(self):
+        self.submit()
+        followup = str(uuid.uuid4()); text = 'Continue the work.'
+        self.store.submit(self.agent, text, followup, self.agents)
+        self.assertEqual(self.tick().call_count, 2)
+        self.user('shared')
+        self.append('response_item', {'type': 'message', 'role': 'user',
+                    'content': [{'type': 'input_text', 'text': m.envelope(followup, text)}]})
+        self.answer('shared', 'WATCH_REPLY ' + followup + '\nSecond request only.')
+        self.store.tick()
+        rows = {r['request_id']: r for r in self.store.snapshot()['requests']}
+        self.assertEqual(rows[followup]['state'], 'answered')
+        self.assertEqual(rows[self.rid]['state'], 'awaiting_reply')
+        self.assertEqual(rows[self.rid]['reply'], '')
+
+    def test_unresolved_duplicate_text_rejected_but_distinct_requests_remain_bounded(self):
+        self.submit()
+        with self.assertRaises(m.MessagingError):
+            self.store.submit(self.agent, self.question, str(uuid.uuid4()), self.agents)
+        with patch.object(m, 'MAX_PENDING', 1):
+            with self.assertRaises(m.MessagingError) as error:
+                self.store.submit(self.agent, 'A different instruction', str(uuid.uuid4()), self.agents)
+            self.assertEqual(error.exception.status, 429)
+        self.assertEqual(self.tick().call_count, 1)
+
     def test_timeout_nonzero_unknown_never_retry(self):
         self.submit()
         proc = Mock()
@@ -322,7 +394,7 @@ class MessagingTests(unittest.TestCase):
         self.assertEqual(self.tick().call_count, 0)
         self.assertEqual(self.row()['state'], 'failed')
 
-    def test_expiry_late_reply_and_target_limit(self):
+    def test_expiry_late_reply_and_duplicate_limit(self):
         self.submit(); self.tick()
         with self.store.lock:
             row = self.store._rows()[0]
@@ -331,7 +403,7 @@ class MessagingTests(unittest.TestCase):
         self.store.tick()
         self.assertEqual(self.row()['state'], 'expired')
         with self.assertRaises(m.MessagingError):
-            self.store.submit(self.agent, 'Again?', str(uuid.uuid4()), self.agents)
+            self.store.submit(self.agent, self.question, str(uuid.uuid4()), self.agents)
         self.user(); self.answer(); self.store.tick()
         self.assertEqual(self.row()['state'], 'answered')
 
@@ -341,6 +413,63 @@ class MessagingTests(unittest.TestCase):
         for question in ('', ' ', 'a' * 2001, '\x00', None):
             with self.assertRaises(m.MessagingError): self.store.submit(self.agent, question, self.rid, self.agents)
         with self.assertRaises(m.MessagingError): self.store.submit(self.agent, self.question, 'bad', self.agents)
+
+    def test_distinct_followup_warns_about_older_unresolved_messages_and_persists(self):
+        first = self.submit()
+        self.assertNotIn('delivery_warning', first)
+        other = str(uuid.uuid4())
+        accepted = self.store.submit(self.agent, 'Continue your work.', other, self.agents)
+        self.assertEqual(accepted['delivery_warning'], 'When this message was submitted, older messages to this agent were unresolved and could still run. This request did not cancel them.')
+        with self.store.lock:
+            older = next(row for row in self.store._rows() if row['request_id'] == self.rid)
+            older.update(state='answered', reply='Finished.')
+            self.store._save(older)
+        refreshed = next(row for row in self.store.snapshot()['requests'] if row['request_id'] == other)
+        self.assertEqual(refreshed['delivery_warning'], accepted['delivery_warning'])
+        self.assertEqual(self.store.snapshot()['requests'][0]['state'], 'answered')
+        self.store.close(); self.store = m.MessagingStore(self.state, self.sessions)
+        restored = next(row for row in self.store.snapshot()['requests'] if row['request_id'] == other)
+        self.assertEqual(restored['delivery_warning'], accepted['delivery_warning'])
+        self.assertEqual(self.store.submit(self.agent, 'Continue your work.', other, {}), restored)
+
+    def test_message_limits_explain_reason_without_suggesting_automatic_resolution(self):
+        self.submit()
+        original = self.store._rows()
+        cases = [('MAX_PENDING', 1, 'unresolved message deliveries'),
+                 ('MAX_RECORDS', 1, 'storage limit')]
+        for limit, value, phrase in cases:
+            with self.subTest(limit=limit), patch.object(m, limit, value):
+                with self.assertRaises(m.MessagingError) as error:
+                    self.store.submit(self.agent, 'Distinct followup', str(uuid.uuid4()), self.agents)
+                self.assertEqual(error.exception.status, 429)
+                self.assertIn(phrase, str(error.exception))
+                self.assertIn('no new message was sent', str(error.exception).lower())
+                self.assertNotIn('Try again later', str(error.exception))
+                self.assertEqual(self.store._rows(), original)
+        with self.store.lock:
+            for _ in range(9):
+                copy = dict(original[0], request_id=str(uuid.uuid4()), state='answered')
+                self.store._save(copy)
+        with self.assertRaises(m.MessagingError) as error:
+            self.store.submit(self.agent, 'Distinct followup', str(uuid.uuid4()), self.agents)
+        self.assertIn('last minute', str(error.exception))
+        self.assertIn('No new message was sent', str(error.exception))
+        self.assertEqual(len(self.store._rows()), 10)
+
+    def test_unavailable_snapshot_includes_empty_controls_and_remains_authenticated(self):
+        handler = server.H.__new__(server.H)
+        handler.path = '/agent-messages'
+        handler.headers = {'Host': '127.0.0.1:' + str(server.PORT)}
+        handler.send = Mock()
+        with patch.object(server, 'KEY', 'test-key'), patch.object(server, 'MESSAGING', None):
+            handler.do_GET()
+            self.assertEqual(handler.send.call_args.args[0], 403)
+            handler.headers['X-Live-Room-Key'] = 'test-key'
+            handler.do_GET()
+            self.assertEqual(handler.send.call_args.args[0], 200)
+            payload = json.loads(handler.send.call_args.args[1])
+            self.assertEqual(payload['controls'], [])
+            self.assertEqual(payload['requests'], [])
 
     def test_capacity_rate_and_retention_bounds(self):
         with patch.object(m, 'MAX_PENDING', 0):

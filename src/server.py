@@ -2896,16 +2896,32 @@ def anthropic_call(body, end=None):
 
 
 DISPATCH_SYSTEM = """Interpret only the current owner's message. You cannot read logs or previous conversation.
-Use relay_question only when this message explicitly instructs you to ask, tell, or message a named agent.
-Do not relay quoted examples, hypotheticals, questions about whether messaging is possible, or requests to inspect logs.
-For an ordinary question about the room, return no tool call. If a messaging request is unclear, use clarify_relay.
-For relay_question, copy the target spelling exactly from the owner's message into agent. Do not invent an ID,
+Choose the action by the owner's intended effect and timing, not the introductory verb ask, tell, or message.
+Use interrupt_agent for an explicit request to stop, pause, halt, or interrupt a named agent's current work.
+This includes conversational requests such as 'tell Atlas to pause its work' and 'ask Atlas to stop working'.
+Pause means stop the current turn; it does not promise automatic resumption or clear queued messages.
+Use steer_agent for an explicit instruction to redirect a named agent's running work now, including
+ 'tell Atlas to focus on the failing tests right now' or 'ask Atlas to change approach now'.
+Use relay_question for ordinary questions and messages, including new work without an explicit live redirect.
+Explicit queueing or deferred delivery (later, after the current task, at the next checkpoint) takes precedence:
+ 'queue a message to Atlas: pause your work after this task' is relay_question, not interrupt_agent.
+Do not act on negations, quoted examples, hypotheticals, questions about whether messaging is possible, or requests to inspect logs.
+Quoted message content within an explicit send request is payload, not a hypothetical example: interpret its requested effect and timing.
+A question about a stopped agent ('ask Atlas why it paused') is relay_question, not interruption.
+Do not treat stopping tests, a server, or another object as stopping the agent; relay that instruction unless it explicitly redirects the running work now.
+Do not convert an unsupported or ambiguous control into a queued message. Use clarify_relay when the desired action, target, or timing is unclear.
+For an ordinary question about the room, return no tool call.
+For every action, copy the target spelling exactly from the owner's message into agent. Do not invent an ID,
 expand an abbreviation, resolve a pronoun, or select among agents. The server resolves names. Preserve the owner's
 message faithfully, including explicit work instructions and their authorization. Do not turn a work instruction
-into a status question or add tasks, permissions or instructions. Relay at most one message to one agent;
-if several targets or messages are requested, ask the owner to choose one. Never claim delivery or an answer."""
+into a status question or add tasks, permissions or instructions. Take at most one action for one agent;
+if several targets or actions are requested, ask the owner to choose one. Never claim delivery or an answer."""
 DISPATCH_TOOLS = [
-    {'name': 'relay_question', 'description': 'Relay the current owner\'s explicit question or message to its named agent.',
+    {'name': 'steer_agent', 'description': 'Redirect the named agent’s running work now, including explicit live redirection phrased as ask or tell.',
+     'input_schema': {'type': 'object', 'properties': {'agent': {'type': 'string'}, 'instruction': {'type': 'string', 'minLength': 1, 'maxLength': 2000}}, 'required': ['agent', 'instruction'], 'additionalProperties': False}},
+    {'name': 'interrupt_agent', 'description': 'Stop or pause a named agent’s current work, including tell/ask requests to stop working. Does not clear queued messages or schedule resumption.',
+     'input_schema': {'type': 'object', 'properties': {'agent': {'type': 'string'}}, 'required': ['agent'], 'additionalProperties': False}},
+    {'name': 'relay_question', 'description': 'Queue an ordinary question, message, or explicitly deferred instruction. Immediate stop/pause and live redirection use the control tools even when phrased as ask or tell.',
      'input_schema': {'type': 'object', 'properties': {'agent': {'type': 'string'}, 'question': {'type': 'string', 'maxLength': 2000}},
                       'required': ['agent', 'question'], 'additionalProperties': False}},
     {'name': 'clarify_relay', 'description': 'Ask for a missing or ambiguous messaging target or question.',
@@ -2946,7 +2962,7 @@ def officer_dispatch(user_text, request_id, call):
                         inp = tool.get('input') if isinstance(tool.get('input'), dict) else {}
                         if tool.get('name') == 'clarify_relay':
                             decision = {'kind': 'clarify', 'text': str(inp.get('text') or 'Which agent should I ask?')[:500]}
-                        elif tool.get('name') == 'relay_question':
+                        elif tool.get('name') in ('relay_question', 'steer_agent', 'interrupt_agent'):
                             target = inp.get('agent')
                             if not isinstance(target, str) or not target.strip() or target not in user_text:
                                 decision = {'kind': 'clarify', 'text': 'Please name the agent you want me to ask. Nothing was sent.'}
@@ -2955,9 +2971,16 @@ def officer_dispatch(user_text, request_id, call):
                                 if not aid:
                                     decision = {'kind': 'clarify', 'text': 'I could not find one agent matching "' + target[:120] + '". Use its full name or chat ID. Nothing was sent.'}
                                 else:
-                                    validate_question(inp.get('question'))
-                                    validate_target(aid, dict(AGENTS))
-                                    decision = {'kind': 'relay', 'agent': aid, 'question': inp['question']}
+                                    if tool['name'] == 'relay_question':
+                                        validate_question(inp.get('question'))
+                                        validate_target(aid, dict(AGENTS))
+                                        decision = {'kind': 'relay', 'agent': aid, 'question': inp['question']}
+                                    else:
+                                        action = 'steer' if tool['name'] == 'steer_agent' else 'interrupt'
+                                        instruction = inp.get('instruction') if action == 'steer' else ''
+                                        if action == 'steer':
+                                            validate_question(instruction)
+                                        decision = {'kind': 'control', 'action': action, 'agent': aid, 'instruction': instruction}
                         else:
                             decision = {'kind': 'clarify', 'text': 'The Officer could not interpret that request. Nothing was sent.'}
             if MESSAGING:
@@ -2968,6 +2991,22 @@ def officer_dispatch(user_text, request_id, call):
             return {'text': decision['text'], 'actions': [], 'cites': []}
         if not MESSAGING:
             return {'error': MESSAGING_WHY}
+        if decision['kind'] == 'control':
+            result = MESSAGING.submit_control(decision['action'], decision['agent'], decision['instruction'], request_id, dict(AGENTS))
+            name, state = result['name'], result['state']
+            if state == 'acknowledged':
+                text = 'Codex acknowledged the steering request for ' + name + '. This does not confirm the agent has read or acted on it; Codex may apply it to the turn active at dispatch.'
+            elif state == 'interrupted':
+                text = 'Codex confirmed interruption of the recorded active turn for ' + name + '. Normal interruption can also stop descendant work. Queued follow-up messages remain and may start another turn.'
+            elif state == 'no_op':
+                text = 'Codex reported no matching turn was interrupted for ' + name + '. Queued follow-up messages remain.'
+            elif state == 'sending':
+                text = 'The control for ' + name + ' is already being dispatched. It was not sent again.'
+            elif state == 'unknown':
+                text = 'The control outcome for ' + name + ' is unknown. It will not be retried automatically.'
+            else:
+                text = 'The control for ' + name + ' failed. ' + result['error']
+            return {'text': text, 'controls': [result], 'actions': [], 'cites': []}
         result = MESSAGING.submit(decision['agent'], decision['question'], request_id, dict(AGENTS))
         return {'text': 'The message and its delivery status are shown here.',
                 'messages': [result], 'actions': [], 'cites': []}
@@ -3235,7 +3274,7 @@ class H(BaseHTTPRequestHandler):
         if u.path == '/agent-messages':
             if not self.keyed(self.headers.get('X-Live-Room-Key', '')):
                 return self.send(403, b'forbidden')
-            out = MESSAGING.snapshot() if MESSAGING else {'requests': [], 'available': False, 'reason': MESSAGING_WHY}
+            out = MESSAGING.snapshot() if MESSAGING else {'requests': [], 'controls': [], 'available': False, 'reason': MESSAGING_WHY}
             return self.send(200, json.dumps(scrub(out)).encode(), 'application/json')
         if u.path == '/check':
             return self.send(200 if self.keyed((q.get('k') or [''])[0]) else 403, b'')

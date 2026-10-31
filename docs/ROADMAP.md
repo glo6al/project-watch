@@ -10,6 +10,7 @@ W.A.T.C.H. is a working study. This lists what exists, what has not been proven,
 - A desk view for one agent: a timeline of what it did and said grouped under each of your messages, your messages (click one to scroll the timeline to that point), chain of command (marked where it is inferred), four screens (Saying / Doing / Seeing / Changing), and recorded facts such as model, branch and approval setting.
 - Notices when an agent is waiting on you, alerts when a command looks like a deploy, push, delete or send, and a five-minute activity strip coloured by kind of action.
 - Optional: answering Claude Code permission prompts from the desk (off by default), and opening a session in its desktop app.
+- Officer requests to steer or interrupt an existing local Codex desktop conversation on the verified macOS build. Live bridge tests confirmed receipt of steering during a running turn and interruption of an exact disposable turn. The adapter rejects unverified builds; Claude Code controls remain unresolved.
 - Trackpad gestures in Chrome; a desk layout for tall, narrow screens.
 - The room in a terminal (`src/watch_tty.py`): a read-only board and event tail from the same stream the page reads, with a bell when an agent starts waiting and a one-line count for a status bar. In iTerm2, `--tab` opens the board in a new tab with its own profile, and the board opens one tab per agent with that agent's log (or, with `--split`, one pane per agent in the board's tab); a tab or pane turns amber while its agent waits on you. Not yet reviewed (see below).
 
@@ -48,7 +49,7 @@ Added on 2026-10-05 and reviewed since:
 
 ## Direction
 
-W.A.T.C.H. is becoming a command post: one room where a person can both watch and act. Today it watches, can answer Claude Code permission prompts from an opted-in window, and can queue an explicitly requested question to a local Codex session. Claude Code messaging uses an optional channel for new sessions started through the WATCH launcher; attaching existing sessions and live busy-session behavior remain unverified. The room reads the logs Claude Code and Codex write and shows every agent's work as it happens, labelled by how it was learned. The acting half comes next, and the room's rules carry over to it: the person stays in charge, every action is opt-in, nothing is done on an agent's say-so, and the page never claims more than the log and the tool confirm.
+W.A.T.C.H. is becoming a command post: one room where a person can both watch and act. Today it watches, can answer Claude Code permission prompts from an opted-in window, can queue an explicitly requested question to a local Codex session, and can steer or interrupt an existing Codex desktop turn on the verified macOS build. Claude Code messaging uses an optional channel for new sessions started through the WATCH launcher; attaching existing sessions and live busy-session behavior remain unverified. The room reads the logs Claude Code and Codex write and shows every agent's work as it happens, labelled by how it was learned. The acting half comes next, and the room's rules carry over to it: the person stays in charge, every action is opt-in, nothing is done on an agent's say-so, and the page never claims more than the log and the tool confirm.
 
 Three stages, in order:
 
@@ -56,7 +57,7 @@ Three stages, in order:
 2. **Act.** From the room: start an agent with a prompt and files, answer what it is waiting on, stop it, and, where a tool offers a way in, speak to one that is already running. Each tool allows a different amount of this; the room shows what is possible for each and never pretends the rest.
 3. **Coordinate.** Many agents, many providers, one interface: Claude, Codex, and whichever others expose a readable log or a way to be driven (Perplexity, Qwen and the like are the obvious next candidates). Hand work from one to another, see one's verdict land on another's monitor, and keep the whole fleet in view.
 
-Each action that reaches an agent widens the trust boundary, so each gets what Allow and Deny got before it: off by default, switched on per window, key-protected, and independently reviewed before it is relied on.
+Each action that reaches an agent widens the trust boundary. Permission decisions remain opt-in per window. Officer messages and controls require an explicit current owner request through the authenticated room; log-reading tools cannot invoke them. Changes receive independent review before publication.
 
 ## Next
 

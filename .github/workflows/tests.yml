@@ -18,6 +18,9 @@ jobs:
       - run: python tests/test_parsers.py
       - run: python tests/test_officer_messaging.py
       - run: python tests/test_officer_routing.py
+      - run: python tests/test_officer_controls.py
+      - run: python tests/test_officer_fulfillment.py
+      - run: python tests/test_codex_desktop_control.py
       - run: python tests/test_claude_channel.py
       - run: python tests/test_watch_claude.py
       - run: npm --prefix integrations/claude ci --ignore-scripts --no-audit --no-fund

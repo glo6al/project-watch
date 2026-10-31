@@ -87,6 +87,24 @@ class ClaudeChannelTests(unittest.TestCase):
         self.assertEqual(self.row()['reply'], 'One worker is testing.')
         self.assertEqual(self.row()['state'], 'answered')
 
+    def test_distinct_pending_messages_keep_separate_channel_replies(self):
+        self.submit(); self.store.tick()
+        other = str(uuid.uuid4())
+        self.store.submit(self.agent, 'Please focus on the tests next.', other, self.agents)
+        self.store.tick()
+        self.assertEqual(sum(c[0] == 'POST' for c in self.calls), 2)
+        self.records[other].update(state='answered', reply='Tests next.')
+        self.store.tick()
+        rows = {r['request_id']: r for r in self.store.snapshot()['requests']}
+        self.assertEqual(rows[other]['reply'], 'Tests next.')
+        self.assertEqual(rows[self.rid]['state'], 'queued')
+        self.records[self.rid].update(state='answered', reply='Progress report.')
+        self.store.tick()
+        rows = {r['request_id']: r for r in self.store.snapshot()['requests']}
+        self.assertEqual(rows[self.rid]['reply'], 'Progress report.')
+        self.assertEqual(rows[other]['reply'], 'Tests next.')
+        self.assertEqual(sum(c[0] == 'POST' for c in self.calls), 2)
+
     def test_full_length_unicode_message_uses_utf8(self):
         question = '😀' * 2000
         self.store.submit(self.agent, question, self.rid, self.agents)
