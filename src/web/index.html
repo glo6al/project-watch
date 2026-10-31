@@ -92,7 +92,7 @@ body.stepped #officer{bottom:118px}body.stepped.portrait #officer{bottom:296px}b
 #ofQuick{display:flex;gap:6px;flex-wrap:wrap;padding:8px 10px 0;border-top:1px solid #1f3a52}#ofQuick button{all:unset;cursor:pointer;font:600 10px ui-monospace,Menlo,monospace;letter-spacing:.06em;color:#9fc3e0;background:#0d1a2b;border:1px solid #1f3a52;border-radius:3px;padding:3px 8px}#ofQuick button:hover,#ofQuick button:focus-visible{border-color:var(--hl);outline:none}
 #ofRow{display:flex;gap:6px;padding:8px 10px}
 #ofIn{flex:1;min-width:0;font:inherit;color:var(--ink);background:#0d1a2b;border:1px solid #1f3a52;border-radius:3px;padding:7px 9px}#ofIn:focus{outline:none;border-color:var(--hl)}
-.story p.hl,#comms p.hl{background:#162136;box-shadow:inset 0 0 0 1px #8fb6ff;border-radius:3px;transition:background 1.2s,box-shadow 1.2s}
+.story p.hl,#ofLog .hl{background:#162136;box-shadow:inset 0 0 0 1px #8fb6ff;border-radius:3px;transition:background 1.2s,box-shadow 1.2s}
 #ofSend{font:600 11px ui-monospace,Menlo,monospace;letter-spacing:.1em;text-transform:uppercase;color:#7fa6c2;background:#0d1a2b;border:1px solid #1f3a52;border-radius:3px;padding:4px 12px;cursor:pointer}#ofSend:disabled{opacity:.5;cursor:default}
 
 #watchMiniK{margin-top:10px;font:600 10px ui-monospace,Menlo,monospace;letter-spacing:.14em;text-transform:uppercase;color:#4f7590}
@@ -324,10 +324,6 @@ body.stepped #officer{bottom:118px}body.stepped.portrait #officer{bottom:296px}b
 #fleet .al{font:12px ui-monospace,Menlo,monospace;color:var(--del);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;cursor:pointer;background:none;border:0;padding:1px 0;text-align:left;max-width:100%;display:block}
 #fleet .al small{color:var(--mute)}
 #fleet svg{width:100%;height:26px;display:block;flex:none}
-#comms{overflow-x:hidden}
-#comms .u{white-space:normal;overflow-wrap:anywhere}
-#comms .u.jump{cursor:pointer}#comms .u.jump:hover{border-color:var(--hl)}
-#comms .u u{text-decoration:none;font:600 10.5px ui-monospace,Menlo,monospace;letter-spacing:.1em;text-transform:uppercase;color:var(--hl);cursor:pointer;white-space:nowrap}#comms .u u:hover{text-decoration:underline}
 .story .dv.hit{color:#04121c;background:var(--hl);transition:none}
 #fleet .axis{display:flex;gap:12px;font:12px ui-monospace,Menlo,monospace;color:var(--mute);white-space:nowrap;flex:none}
 #fleet .axis b{flex:none;font-weight:600;color:#7fa6c2}#fleet .axis span{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;text-align:center}
@@ -347,9 +343,6 @@ body.stepped #officer{bottom:118px}body.stepped.portrait #officer{bottom:296px}b
 #badge b{font:600 10px ui-monospace,Menlo,monospace;letter-spacing:.16em;text-transform:uppercase;color:var(--hl);margin:0}
 #badge em{font-style:normal;white-space:normal;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;line-height:1.25;overflow-wrap:anywhere}
 @media (max-width:1300px){#badge span{font-size:12px;padding:2px 8px}.views button{padding:6px 9px;letter-spacing:.06em}}
-#chan{flex:none;margin-top:10px;border-top:1px solid #1f3a52;padding-top:10px;font:600 12px ui-monospace,Menlo,monospace;letter-spacing:.08em;text-transform:uppercase;color:#5fd38a}
-#chan.warn{color:var(--warn)}#chan.q{color:var(--corr)}
-#chan p{margin:6px 0 0;font:14px/1.4 system-ui;letter-spacing:0;text-transform:none;color:var(--ink)}
 .story .dv{font:600 10px ui-monospace,Menlo,monospace;letter-spacing:.14em;text-transform:uppercase;color:#4f7590;display:flex;align-items:center;gap:8px;margin:14px 0 8px}
 .story .dv::after{content:"";flex:1;height:1px;background:#1f3a52}
 .st.focus{border-radius:3px;border-width:2px;box-shadow:0 0 0 1px rgba(57,200,255,.15),0 0 40px -12px var(--c)}
@@ -372,7 +365,7 @@ body.stepped #officer{bottom:118px}body.stepped.portrait #officer{bottom:296px}b
 .story p{margin:0 0 7px;font-size:13px;line-height:1.4;color:var(--mute);overflow-wrap:anywhere}
 .story p small{opacity:.7;margin-left:4px;white-space:nowrap}
 .story .v{font:15px/1.4 Georgia,'Times New Roman',serif;color:var(--ink);margin-top:10px}
-/* the log as a timeline: what it said is one muted line in sequence with the steps; click it and the monitor's Said screen goes to that message */
+/* The activity log links recorded speech to its conversation entry. */
 .story .sv{cursor:pointer;padding-left:12px;border-left:2px solid #2a3a5a;color:#8a95a6;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .story .sv b{font-weight:600;color:#8fb6ff;margin-right:4px}
 .story .sv:hover{color:var(--ink);border-left-color:#8fb6ff}
@@ -437,17 +430,16 @@ body.portrait.short #deskB{height:176px}body.portrait.short #bay{height:64px;pad
 
 /* One conversation, placed beside the monitor or in the native compact station flow. */
 #deskR{transform:none}#deskR>.in{padding:12px;gap:8px}
-#officerTabs{display:flex;gap:6px;flex:none}#officerTabs button{flex:1;min-width:0;padding:5px 3px;background:#0d1a2b;border:1px solid #25445c;border-radius:2px;color:#8eafc5;cursor:pointer;font:700 11px ui-monospace,Menlo,monospace;letter-spacing:.06em;text-transform:uppercase}
-#officerTabs [aria-selected="true"]{color:#07131d;background:var(--hl);border-color:var(--hl)}#stationRequest{font:11px system-ui;color:var(--warn);overflow-wrap:anywhere}#stationRequest:empty{display:none}
-#officerSlot,#commsPanel{display:flex;flex-direction:column;min-height:0;flex:1}#officerSlot[hidden],#commsPanel[hidden]{display:none}
+#stationRequest{font:11px system-ui;color:var(--warn);overflow-wrap:anywhere}#stationRequest:empty{display:none}
+#officerSlot{display:flex;flex-direction:column;min-height:0;flex:1}#officerSlot[hidden]{display:none}
 #officer.docked{position:relative;inset:auto;width:100%;max-width:none;height:100%;min-height:0;flex:1;box-shadow:none;background:none;border:0;clip-path:none}
 body.stepped #officer.docked,body.stepped.portrait #officer.docked,body.stepped.portrait.short #officer.docked{top:auto;right:auto;bottom:auto;left:auto}
 #officer.docked::before,#officer.docked::after{display:none}#officer.docked>.in{position:static;background:none;inset:auto;height:100%}#officer.docked #ofB{display:none}
 #ofContext{padding:8px 12px;border-bottom:1px solid #1f3a52;display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:4px 8px;flex:none}#officer.docked #ofContext{padding:0 0 8px}
 #ofScope{grid-column:2;grid-row:1;display:flex;gap:2px}#ofScope button{min-height:26px;border:1px solid transparent;border-radius:2px;background:none;padding:4px 5px;color:#8eafc5;font:700 9px ui-monospace,Menlo,monospace;letter-spacing:.03em;text-transform:uppercase;cursor:pointer}#ofScope [aria-pressed="true"]{color:var(--hl);background:#102739;border-color:#25445c}#ofScope button:disabled{opacity:.35;cursor:default}
-#ofScope button:focus-visible,#officerTabs button:focus-visible{outline:2px solid var(--ink);outline-offset:2px}#ofScope button:not(:disabled):hover{color:var(--ink);background:#18374c}
+#ofScope button:focus-visible,#recipient button:focus-visible{outline:2px solid var(--ink);outline-offset:2px}#ofScope button:not(:disabled):hover{color:var(--ink);background:#18374c}
 #ofTarget{display:contents}#ofSubject{grid-column:1;grid-row:1;font:700 12px/1.4 ui-monospace,Menlo,monospace;color:var(--hl);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}#ofProgress{grid-column:1/-1;font:10px/1.4 ui-monospace,Menlo,monospace;color:var(--mute)}
-@media(pointer:coarse),(max-width:580px){#ofScope button{min-height:32px;padding:5px 7px}#officerTabs button{min-height:32px}}
+@media(pointer:coarse),(max-width:580px){#ofScope button{min-height:32px;padding:5px 7px}}
 #ofLog .turn-context{display:block;font:10px/1.4 system-ui;color:var(--mute);margin-bottom:4px;overflow-wrap:anywhere}#ofLog details{margin-top:8px;border-top:1px solid #1f3a52;padding-top:6px}#ofLog summary{cursor:pointer;color:#9fc3e0;font-size:12px}#ofLog .suggestion{padding:6px;border:1px solid #1f3a52;background:#0d1a2b;color:var(--ink);cursor:pointer}
 #officer.docked #ofLog{padding:10px 0;min-height:60px}#officer.docked #ofQuick{padding:6px 0}#officer.docked #ofRow{padding:8px 0}#ofIn{min-width:0}#ofLog>*{flex-shrink:0;overflow-wrap:anywhere}
 #compactDesk{position:fixed;left:0;right:0;bottom:0;z-index:8;overflow:auto;overscroll-behavior:contain;padding:8px 14px 18px;background:#090f18;scrollbar-gutter:stable}#compactDesk[hidden]{display:none}
@@ -467,6 +459,9 @@ body.stepped #officer.docked,body.stepped.portrait #officer.docked,body.stepped.
 #compactDesk .flag.w .msg{grid-row:2;grid-column:1/-1;padding:0 8px;font-size:12px}
 #compactDesk .flag.w .yes{grid-row:1;grid-column:3}#compactDesk .flag.w .no{grid-row:1;grid-column:4}
 #compactDesk .flag.w button{font-size:10px;padding:4px 8px;letter-spacing:.04em;margin-right:4px}#compactDesk .flag.w .rev,#compactDesk .flag.w .off{grid-row:1;grid-column:3/-1}
+
+/* Unified comms: compact address controls, one stable conversation and composer. */
+#conversationTitle{margin:0;font:700 11px ui-monospace,Menlo,monospace;color:var(--hl);letter-spacing:.12em;text-transform:uppercase}#recipient{display:flex;align-items:center;gap:6px;padding:8px 0 0;flex:none}#recipient>span{font:10px ui-monospace,Menlo,monospace;color:var(--mute)}#recipient button{font:700 10px ui-monospace,Menlo,monospace;text-transform:uppercase;max-width:65%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;border:1px solid #25445c;background:#0d1a2b;color:#8eafc5;padding:6px 9px;cursor:pointer;border-radius:2px}#recipient [aria-pressed="true"]{color:var(--hl);background:#132f42;border-color:#3d718b}#recipient button:focus-visible{outline:2px solid var(--hl);outline-offset:2px}#sendHint{font:10px/1.4 system-ui;color:var(--mute);padding:0 0 6px;flex:none}#ofLog .source{border-left:2px solid #294558;padding:8px 10px;background:none}#ofLog .source.you{background:#102337;border-left-color:var(--hl)}#ofLog .source p{white-space:pre-wrap;margin:6px 0 0}#ofLog .source summary{font-size:12px}#ofLog details:not([open]) .open-update,#ofLog details[open] .closed-update{display:none}#ofLog .source small,#ofLog .source b{display:block;font:10px/1.5 ui-monospace,Menlo,monospace;color:var(--mute)}#ofLog .source b{color:var(--hl)}#ofLog .source.queue{border-style:dashed;color:var(--warn)}#ofLog [hidden]{display:none!important}#ofLog{overflow-anchor:none}#officer:not(.docked) #recipient,#officer:not(.docked) #sendHint{padding-left:12px;padding-right:12px}#ofScope[hidden],#ofQuick[hidden]{display:none}#ofRow{flex-wrap:wrap}#ofIn{flex:1;min-width:120px}#ofSend{white-space:nowrap;font-size:10px;letter-spacing:.02em}#officer.docked #ofBody{min-height:0}#officer.docked #ofLog{flex:1}#officer.docked #ofQuick{display:none}@media(pointer:coarse),(max-width:580px){#recipient button{min-height:34px}#ofSend{min-height:36px}#ofIn{font-size:16px}}
 </style>
 </head>
 <body>
@@ -486,13 +481,13 @@ body.stepped #officer.docked,body.stepped.portrait #officer.docked,body.stepped.
 </div>
 <div id="needs"></div>
 <div id="deskL" class="desk hud" hidden><div class="in"><h3>Agent log</h3><div class="scroll story"></div></div></div>
-<div id="deskR" class="desk hud" hidden><div class="in"><div id="officerTabs" role="tablist" aria-label="Station conversation"><button id="officerTab" role="tab" aria-selected="true" aria-controls="officerSlot">Officer</button><button id="commsTab" role="tab" aria-selected="false" aria-controls="commsPanel" tabindex="-1">Agent comms</button></div><div id="stationRequest" role="status"></div><div id="officerSlot" role="tabpanel" aria-labelledby="officerTab"></div><div id="commsPanel" role="tabpanel" aria-labelledby="commsTab" hidden><h3>Comms · you to this agent</h3><div class="scroll story" id="comms"></div><div id="chan"></div></div></div></div>
+<div id="deskR" class="desk hud" hidden><div class="in"><h3 id="conversationTitle">Conversation</h3><div id="stationRequest" role="status"></div><div id="officerSlot"></div></div></div>
 <div id="compactDesk" hidden><div id="compactMonitor"></div><div id="compactPanels"></div><div id="compactReadout"></div></div>
 <div id="subs" hidden></div>
 <div id="deskT" hidden><span class="lbl">Chain of command</span><div id="crumb"></div></div>
 <div id="deskB" class="hud" hidden><div class="in"><div id="bay"><div id="bayH"><button data-pg="-1" aria-label="Previous panel">‹</button><span id="bayT"></span><button id="bayN" hidden></button><span id="bayD"></span><button data-pg="1" aria-label="Next panel">›</button></div><div id="fleet"></div></div><div id="badge"></div></div></div>
 <div id="empty" hidden></div>
-<span id="officerHome" hidden></span><div id="officer" class="hud fold" role="region" aria-label="Officer of the Watch"><div class="in"><button id="ofB" aria-expanded="false" aria-controls="ofBody" title="Officer of the Watch: ask about the room, in plain English"><span class="lamp"></span><b>Officer of the Watch</b><i id="ofSt">listening</i><u id="ofLine"></u><s>▴</s></button><div id="ofBody"><div id="ofContext"><div id="ofScope" role="group" aria-label="Officer question scope"><button type="button" data-scope="station" aria-pressed="false">Station</button><button type="button" data-scope="room" aria-pressed="true" aria-label="Whole room">Room</button></div><div id="ofTarget"><b id="ofSubject">Whole room</b><span id="ofProgress" role="status" hidden>Ready</span></div></div><div id="ofLog"></div><div id="ofQuick"><button data-q="What did I miss?">What did I miss?</button><button data-q="Is anything stuck?">Anything stuck?</button><button data-q="Who is waiting on me?">Who is waiting on me?</button></div><div id="ofRow"><input id="ofIn" type="text" placeholder="Ask about the room…" autocomplete="off" maxlength="4000"><button id="ofSend">Ask</button></div></div></div></div>
+<span id="officerHome" hidden></span><div id="officer" class="hud fold" role="region" aria-label="Officer of the Watch"><div class="in"><button id="ofB" aria-expanded="false" aria-controls="ofBody" title="Officer of the Watch: ask about the room, in plain English"><span class="lamp"></span><b>Officer of the Watch</b><i id="ofSt">listening</i><u id="ofLine"></u><s>▴</s></button><div id="ofBody"><div id="ofContext"><div id="ofScope" role="group" aria-label="Officer question scope"><button type="button" data-scope="station" aria-pressed="false">Station</button><button type="button" data-scope="room" aria-pressed="true" aria-label="Whole room">Room</button></div><div id="ofTarget"><b id="ofSubject">Whole room</b><span id="ofProgress" role="status" hidden>Ready</span></div></div><div id="ofLog" role="log" aria-label="Conversation history"></div><div id="ofQuick"><button data-q="What did I miss?">What did I miss?</button><button data-q="Is anything stuck?">Anything stuck?</button><button data-q="Who is waiting on me?">Who is waiting on me?</button></div><div id="recipient" role="group" aria-label="Message recipient"><span>TO</span><button type="button" data-recipient="agent" aria-pressed="false">Agent</button><button type="button" data-recipient="watch" aria-pressed="true">Ask WATCH</button></div><div id="ofRow"><input id="ofIn" type="text" placeholder="Ask about the room…" autocomplete="off" maxlength="4000"><button id="ofSend">Ask WATCH</button></div><div id="sendHint"></div></div></div></div>
 <div id="lock" hidden><div><img src="/static/icon.svg?v=fleet-3" alt="" style="height:72px;margin-bottom:14px"><h1>W.A.T.C.H. is locked</h1><b style="color:var(--hl);letter-spacing:.06em">Window on Agents, Tools, Changes and Hand-offs.</b><br><br>This window has no key. Press Unlock and the server will open a new tab in your default browser with the room unlocked. The key is kept on this computer in <code>~/.live-room/key</code> and is never sent to a window that merely asks for it.<br><button id="unlock">Unlock</button><br><span id="lockMsg"></span></div></div>
 
 <script>
@@ -564,7 +559,7 @@ function agent(id){
   el.innerHTML=`<div class="flag w" hidden><b class="tag"></b><div class="msg"><span></span></div><span class="off" hidden></span><button class="rev" hidden>Review</button><button class="yes" hidden>Allow</button><button class="no" hidden>Deny</button><button class="fx" hidden title="Dismiss this notice" aria-label="Dismiss this notice">×</button></div><div class="flag r" hidden><b class="tag">Alert</b><div class="msg"><span></span></div></div>
     <div class="pband"></div><header><span class="av">?</span><div class="id"><b></b><span class="doing"></span><span class="ctx"><em class="pj"></em><span class="goal"></span></span><span class="sub"></span><span class="fuel" hidden><i><u></u></i><em></em></span></div><button class="go" title="Open this session in its desktop app"></button><button class="pinb" title="Keep this agent in the room when you dismiss the quiet ones">Pin</button><button class="x" title="Dismiss from the room. It comes back if it does something new." aria-label="Dismiss this agent from the room">×</button></header>
     <div class="mon"><div class="tab"><span class="what"></span><span class="how"></span></div><div class="pin" hidden>Showing an earlier step — click to go back to live. Any rendered page beside it is the file as it is on disk now.</div><div class="plan" hidden></div><div class="split"><pre class="code"></pre><div class="pvw" hidden><iframe sandbox="allow-scripts" title="Rendered preview"></iframe><span class="pvn"></span></div></div></div>
-    <div class="views"><button data-side="L" hidden>Log</button><button data-side="R" hidden>Comms</button><span>Screen</span><button data-v="said"><i>1</i>Saying</button><button data-v="doing"><i>2</i>Doing</button><button data-v="seeing"><i>3</i>Seeing</button><button data-v="changes"><i>4</i>Changing</button></div><div class="lk" hidden></div>`;
+    <div class="views"><button data-side="L" hidden>Log</button><button data-side="R" hidden>Comms</button><span>Screen</span><button data-v="doing"><i>1</i>Doing</button><button data-v="seeing"><i>2</i>Seeing</button><button data-v="changes"><i>3</i>Changing</button></div><div class="lk" hidden></div>`;
   /* Hover is owned by the pointer's position over the SEAT, not by the element: once in hand the monitor moves to the
      centre, away from the pointer, so the element's own leave event must not end the hover (that loop is what made
      the room pulse). A hover is acquired only when the camera is still; a camera gesture never starts one. */
@@ -1161,32 +1156,15 @@ async function preview(a,path){
   }catch(err){if(tok===f._tok){a.pvErr=String(err.message||err); /* f._v is kept: this version is not fetched again until the file changes */ f.srcdoc='<p style="font:14px system-ui;padding:20px;color:#555">The rendered page could not be loaded.</p>'}}
   a.dirty=true;
 }
-/* An agent read from the process list (a Codex cloud exec server) has no words and no sights on this computer. Its
-   Saying and Seeing screens say so, and show the one thing that did reach this computer: the commands, as the list stated them. */
+/* An agent read from the process list (a Codex cloud exec server) has no words and no sights on this computer.
+   The conversation and Seeing screen say so, and show what reached this computer: the commands, as the list stated them. */
 const CLOUD_READS=/^(ls|cat|head|tail|less|more|rg|grep|egrep|fgrep|find|wc|tree|stat|file|du|git (log|show|diff|status|blame|ls-files)|sed -n|awk|jq)\b/;
 const cloudCmds=a=>a.story.filter(it=>it.t==='did'&&it.e.kind==='run').slice(-12);
-function cloudRow(a,it,now){const c=a.calls[it.e.id], done=!c, end=it.e.endTs||(it.e.done?it.e.ts:0);
-  const d=done?'ended'+(end&&end>it.ts?' after '+dur(end-it.ts):''):c.over?'observation ended':c.stale?'last seen running · process list not readable now':'running for '+dur(now-it.ts);
-  return `<span class="k">${clock(it.ts)}</span>  ${esc(one(it.e.cmd).slice(0,72))}  <span class="k">· ${d}</span>`}
-function cloudSaid(a,now){
-  const cs=cloudCmds(a), head='<span class="k">Not recorded on this computer: this agent\'s words stay in ChatGPT. Press <b>2</b> for what it is doing here.</span>';
-  if(!cs.length) return ["What it's saying",'its words stay in the cloud',head+'\n\n<span class="k">No command seen here yet.</span>','code'];
-  return ["What it's saying",'its words stay in the cloud','<span class="k">What reached this computer, oldest first:</span>\n'+cs.map(it=>cloudRow(a,it,now)).join('\n')+'\n\n'+head+'\n<span class="k">Of this agent, this computer records its commands and their folders, nothing more; the last twelve are shown. The conversation is in ChatGPT.</span>','code'];
-}
 function cloudSeeing(a){
-  const rs=cloudCmds(a).filter(it=>CLOUD_READS.test(one(it.e.cmd))), head='<span class="k">Not recorded on this computer: what this agent reads goes to the cloud with each command\'s output. Press <b>2</b> for the commands that may have read files.</span>';
+  const rs=cloudCmds(a).filter(it=>CLOUD_READS.test(one(it.e.cmd))), head='<span class="k">Not recorded on this computer: what this agent reads goes to the cloud with each command\'s output. Press <b>1</b> for the commands that may have read files.</span>';
   const foot='\n\n<span class="k">No screenshot, image or web search can be seen from here.</span>';
   if(!rs.length) return ["What it's seeing",'not recorded on this computer',head+foot,'code'];
   return ["What it's seeing",'commands that may have read files',head+'\n\n<span class="k">Commands that may read something, newest first. Whether they did, and what they saw, is not recorded here; only that a command named them.</span>\n'+rs.slice().reverse().map(it=>`<span class="k">${clock(it.ts)}</span>  ${esc(one(it.e.cmd).slice(0,72))}`).join('\n')+foot,'code'];
-}
-function said(a,now){
-  const all=a.story.filter(it=>it.t==='say'), at=a.sayAt?all.findIndex(x=>x.n===a.sayAt):-1;
-  const says=at>=0?all.slice(Math.max(0,at-2),Math.max(at+1,Math.min(all.length,at+10))):all.slice(-12);      /* the chosen message and its neighbours, else the latest twelve */
-  if(STEADY) return ["What it's saying",'hidden in steady mode','<span class="k">(narration hidden in steady mode)</span>','code'];
-  if(a.observed) return cloudSaid(a,now);
-  if(!says.length) return ["What it's saying",'nothing yet','<span class="k">Nothing said yet. What it tells you as it works appears here, as the log records it.</span>','code'];
-  const l=says[says.length-1];
-  return ["What it's saying",'spoke '+dur(now-l.ts)+' ago · '+says.length+(says.length===1?' message':' messages'),says.map((it,i)=>{const t=plain(it.text).trim(); return `<p data-n="${it.n}"${i===says.length-1?' class="now"':''}>${esc(t.length>1500?'…'+t.slice(-1500):t)}</p>`}).join(''),'code'];
 }
 function seeing(a){
   if(a.observed) return cloudSeeing(a);
@@ -1204,7 +1182,7 @@ function checkLine(k,observed){
   return `<span class="${k.err?'bad':(k.err===false||code===0)?'ok':'k'}">Last test or build command, ${clock(k.ts)}: ${esc(res)}</span>${MASKED.test(k.cmd)?' <span class="k">(its result is masked by “|| true”)</span>':''}\n<span class="k">${esc(String(k.cmd).split('\n')[0].slice(0,110))}</span>\n\n`;
 }
 function changes(a){
-  if(a.observed) return ["What it's changing",'not recorded on this computer','<span class="k">Not recorded on this computer: what this agent changes is on disk, but no record of which files, or by which command, reaches this machine. Press <b>2</b> for the commands it ran, with their folders.</span>','code'];
+  if(a.observed) return ["What it's changing",'not recorded on this computer','<span class="k">Not recorded on this computer: what this agent changes is on disk, but no record of which files, or by which command, reaches this machine. Press <b>1</b> for the commands it ran, with their folders.</span>','code'];
   const ok=a.edits.filter(e=>e.done&&!e.err), files=new Set(ok.map(e=>e.path));
   const tag=e=>!e.done?' · proposed, no result yet':e.err?' · failed, not applied':'';
   const body=a.edits.slice().reverse().map(e=>`<span class="k" style="display:block">── ${esc(tail2(e.path))} · ${clock(e.ts)}${tag(e)}</span>`+screen(e,0)[2]).join('\n');
@@ -1311,13 +1289,12 @@ function render(){
       if(!says.length){if(youLine) body=`<p class="you" title="${esc(youLine)}">${esc(youLine)}</p>`+body}
       else{const l=says[says.length-1]; say=true; mode='code'; what=youLine||"What it's saying"; how='spoke '+dur(now-l.ts)+' ago';
       body=STEADY?'<span class="k">(narration hidden in steady mode)</span>':says.map((it,i)=>{const t=plain(it.text).trim(); return `<p${i===says.length-1?' class="now"':''}>${esc(t.length>700?'…'+t.slice(-700):t)}</p>`}).join('')}}
-    if(at&&deskView==='said'&&!a.pin) say=true;
     a.$.code.classList.toggle('say',say); a.$.what.parentElement.classList.toggle('you',say&&!!youLine); a.$.what.title=say&&youLine?youLine:'';
     if(at&&!a.pin&&N&&N.perm&&deskView==='doing') [what,how,body,mode]=['Permission requested · '+N.perm.tool,'held for an answer · '+dur(now-N.perm.ts),`<span class="k">This is the request as the app sent it; scroll to read all of it. ${APPROVE?'Allow and Deny are in the bar above and apply to this request only.':'This window is not answering prompts.'}</span>\n\n`+lines(N.perm.text,'',5000),'code'];
-    else if(at&&deskView!=='doing'&&!a.pin) [what,how,body,mode]=deskView==='seeing'?seeing(a):deskView==='said'?said(a,now):changes(a);
+    else if(at&&deskView!=='doing'&&!a.pin) [what,how,body,mode]=deskView==='seeing'?seeing(a):changes(a);
     else if(at&&!a.pin&&what) what="What it's doing · "+what;
     txt(a.$.what,what); put(a.$.how,how); put(a.$.code,body);
-    if(say&&a.$.code._tail!==body){a.$.code._tail=body; a.$.code.scrollTop=a.$.code.scrollHeight}      /* in the room and on the Said screen alike */      /* short narration reads from the top; long narration shows its newest lines */
+    if(say&&a.$.code._tail!==body){a.$.code._tail=body; a.$.code.scrollTop=a.$.code.scrollHeight}      /* room glance only */      /* short narration reads from the top; long narration shows its newest lines */
     const pv=a.html;
     hid(a.$.pvw,!pv||mode==='code'); a.$.split.classList.toggle('pv',!!pv&&mode==='split'); a.$.split.classList.toggle('full',!!pv&&mode==='full');
     if(pv){txt(a.$.pvn,(a.pvErr?'not rendered — '+a.pvErr+': ':'on disk now: ')+tail2(pv.path)); if(PK&&a.$.frame._v!==pv.v+pv.path){a.$.frame._v=pv.v+pv.path; preview(a,pv.path)}}
@@ -1550,7 +1527,7 @@ let flyT=0, applyQ=0;
 const queueApply=()=>{if(!applyQ) applyQ=requestAnimationFrame(()=>{applyQ=0; apply()})};      /* many gesture events, one camera update per painted frame */
 const fly=()=>{world.classList.add('fly'); clearTimeout(flyT); flyT=setTimeout(()=>world.classList.remove('fly'),1150)};
 const hands=()=>{world.classList.remove('fly'); clearTimeout(flyT)};       /* your hands on the view end any camera glide at once */
-function setView(v){if(!focus)return; deskView=v; const a=A[focus]; a.pin=null; a.sayAt=null; a.zm=1; a.$.split.style.setProperty('--zm','1'); a.dirty=true; render()}
+function setView(v){if(!focus||!['doing','seeing','changes'].includes(v))return; deskView=v; const a=A[focus]; a.pin=null; a.sayAt=null; a.zm=1; a.$.split.style.setProperty('--zm','1'); a.dirty=true; render()}
 /* Stepping up. The monitor must grow from where it is on the screen (in hand, or in its seat) into the desk, as one
    move. Its own transform and the camera's live in different spaces, so a CSS transition on each makes the monitor
    dip before it grows. Instead its on-screen pose is interpolated directly, frame by frame, with the camera's glide
@@ -1579,12 +1556,10 @@ function setFocus(id){
   if(focus&&A[focus]){A[focus].zm=1;A[focus].$.split.style.setProperty('--zm','1')}
   clearTimeout(peekT); if(peek)setPeek(null,true);
   const P0=id&&A[id]&&!A[id].gone?screenPose(A[id].el):null;      /* where the monitor is on screen right now, before anything moves */
-  const src=id&&A[id]&&!STEADY&&id!==focus&&A[id].$.code.classList.contains('say');      /* stepping up from a narrating monitor lands on the desk's Said screen */
   if(id&&A[id].gone)revive(id);
   for(const k of order){A[k].dirty=true;A[k].pin=null}
   if(id&&A[id]) A[id].sayAt=null;
-  const held=id&&A[id]&&Object.values(A[id].perms||{}).some(p=>p&&!p.sent);      /* a held permission request is answered on Doing, so that is where you land */
-  const was=focus; if(was!==id){OFUI.epoch++;if(!was&&id)OFUI.scope='station'} stick=true; stickC=true; deskView=src&&!held?'said':'doing';      /* otherwise, land on the screen you were reading */ narrow=null; focus=id; glideN++; fly(); apply(); render();
+  const was=focus; if(was!==id){cuDraftSave();OFUI.epoch++;OFUI.recipient=id?'agent':'watch';if(id)OFUI.scope='station'} stick=true; deskView='doing';      /* Every desk starts with work; speech is in the conversation. */ narrow=null; focus=id; if(was!==id)cuDraftRestore(); glideN++; fly(); apply(); render();
   ofPlace();
   apply();                                    /* again, now that the desk's own bars exist and can be measured */
   if(P0&&pos[id]&&!STATION.compact) stepUp(id,P0);
@@ -1597,13 +1572,13 @@ try{if(!DEMO&&!localStorage.getItem('liveRoomHinted')){localStorage.setItem('liv
 $('#help').onclick=()=>$('#hint').classList.toggle('show');          /* a click shows the hint too, for keyboards and touch, not only hover */
 addEventListener('keydown',e=>{
   if((e.key==='Enter'||e.key===' ')&&e.target&&e.target.matches&&e.target.matches('.flag.w.held .tag')){e.preventDefault(); moved=false; e.target.click(); return}      /* the held request's tag, from the keyboard; never a drag's trailing click */
-  if(e.target.closest&&e.target.closest('input,textarea,select,[contenteditable],#officerTabs')) return;
+  if(e.target.closest&&e.target.closest('input,textarea,select,[contenteditable],#recipient')) return;
   if(e.target.closest&&e.target.closest('#officer')&&e.key!=='/')return;
   if(e.key==='/'&&!e.metaKey&&!e.ctrlKey&&!e.altKey){e.preventDefault(); ofReveal(); return}      /* / opens the Officer with the cursor in its input */
   if(e.key==='Escape')setFocus(null);
   if(!focus&&(e.key==='ArrowLeft'||e.key==='ArrowRight')){turn(e.key==='ArrowRight'?1:-1); e.preventDefault()}
   if(focus&&(e.key==='['||e.key===']')){bayPg+=e.key===']'?1:-1;desk()}
-  const v={1:'said',2:'doing',3:'seeing',4:'changes'}[e.key]; if(v&&focus)setView(v);
+  const v={1:'doing',2:'seeing',3:'changes'}[e.key]; if(v&&focus)setView(v);
 });
 let wasPortrait=portrait();
 addEventListener('resize',()=>{if(portrait()!==wasPortrait){wasPortrait=portrait();layout()}else{apply();render()}});
@@ -1625,7 +1600,7 @@ room.addEventListener('dblclick',e=>{if(focus||e.target.closest('.st'))return; i
    One continuous gesture (including its momentum tail) can trigger at most one step: after a step fires, nothing
    more fires until the stream of wheel events has actually paused. */
 let gT=0, gz=0, gx=0, gFired=false, gZone=null, gPinch='';
-const VIEWS=['said','doing','seeing','changes'];      /* the four screens, in the order of their buttons and keys */
+const VIEWS=['doing','seeing','changes'];      /* work screens; conversation lives beside them */
 function canScrollX(el,dx){for(;el&&el!==document.body;el=el.parentElement){
   if(el.scrollWidth>el.clientWidth+2&&/(auto|scroll)/.test(getComputedStyle(el).overflowX)){
     if(dx<0?el.scrollLeft>0:el.scrollLeft+el.clientWidth<el.scrollWidth-1) return true}} return false}
@@ -1668,16 +1643,15 @@ addEventListener('wheel',e=>{
 },{passive:false});
 
 /* ---------- stepped up: the desk around one monitor ---------- */
-const storyEl=$('#deskL .story'), commsEl=$('#comms'); let stick=true, stickC=true, deskView='doing', bayPg=0;
+const storyEl=$('#deskL .story'); let stick=true, deskView='doing', bayPg=0;
 const nearEnd=el=>el.scrollHeight-el.scrollTop-el.clientHeight<40;
 storyEl.addEventListener('scroll',()=>{stick=nearEnd(storyEl)});
-commsEl.addEventListener('scroll',()=>{stickC=nearEnd(commsEl)});
 $('#bayH').onclick=ev=>{const b=ev.target.closest('[data-pg]'); if(b){bayPg+=+b.dataset.pg; desk()} else if(ev.target.closest('#bayN')){bayPg=0; desk()}};
 const capAdd=(set,k)=>{set.add(k); while(set.size>60) set.delete(set.values().next().value)};      /* expanded groups and messages: one bound, every path */
 storyEl.addEventListener('click',ev=>{
   if(!focus||getSelection().toString()) return; const a=A[focus], c=ev.target.closest('[data-c]'), d=ev.target.closest('[data-i]');
   const sv=ev.target.closest('[data-say]');
-  if(sv){const n=+sv.dataset.say; a.pin=null; a.sayAt=n; deskView='said'; a.dirty=true; render(); const pEl=a.$.code.querySelector(`[data-n="${n}"]`); if(pEl){pEl.scrollIntoView({block:'center'}); pEl.classList.add('hl'); setTimeout(()=>pEl.classList.remove('hl'),1600)} return}
+  if(sv){cuRevealEvent(a.id,+sv.dataset.say); return}
   if(c){const k=c.dataset.c; a.open.has(k)?a.open.delete(k):capAdd(a.open,k); stick=false}
   else if(d){const it=a.story.find(x=>x.n===+d.dataset.i); a.pin=(it&&it.e&&it.e!==a.cur&&a.pin!==it.e)?it.e:null; if(a.pin)deskView='doing'}
   else return;
@@ -1692,20 +1666,6 @@ function glide(el,to){
   requestAnimationFrame(step);
 }
 storyEl.addEventListener('wheel',()=>{glideN++},{passive:true});      /* your own scrolling always wins */
-/* click one of your messages: the agent log scrolls to what it did after that message */
-commsEl.addEventListener('click',ev=>{
-  const m=ev.target.closest('[data-k]'); if(!m||!focus||getSelection().toString()) return;
-  const a=A[focus], k=m.dataset.k;
-  if(ev.target.closest('[data-more]')){a.wide=a.wide||new Set(); a.wide.has(k)?a.wide.delete(k):capAdd(a.wide,k); stickC=false; a.dirty=true; render(); return}      /* read the whole message; no jump */
-  const miss=why=>{a.miss=k; a.missWhy=why; a.hit=null; a.dirty=true; render(); setTimeout(()=>{if(a.miss===k){a.miss=null; a.dirty=true}},4000)};
-  if(!a.story.some(it=>it.t==='you'&&(it.key||'t'+it.ts)===k)) return miss('that part of its log is no longer kept here');
-  a.miss=null; capAdd(a.open,k); a.hit=k; stick=false; if(!STATION.compact&&(covered()||(!portrait()&&!sideW()))) narrow='L';
-  a.dirty=true; render();
-  const h=[...storyEl.querySelectorAll('[data-k]')].find(x=>x.dataset.k===k);
-  if(!h) return miss('nothing was recorded between this message and your next one');
-  glide(storyEl,storyEl.scrollTop+h.getBoundingClientRect().top-storyEl.getBoundingClientRect().top-6);
-  setTimeout(()=>{if(a.hit===k){a.hit=null; a.dirty=true}},2500);
-});
 $('#fleet').onclick=ev=>{const b=ev.target.closest('[data-go]'); if(b) setFocus(b.dataset.go)};
 $('#crumb').onclick=ev=>{const u=ev.target.closest('[data-unlink]'); if(u){if(DEMO) return; post('/unlink',{child:u.dataset.unlink}).catch(()=>{}); return} const b=ev.target.closest('[data-go]'); if(b&&b.dataset.go!==focus) setFocus(b.dataset.go)};
 function lineage(a){const up=[], seen=new Set([a.id]); let p=a.parent; while(p&&!seen.has(p)){seen.add(p); up.unshift(p); p=A[p]&&A[p].parent} return up}
@@ -1767,15 +1727,7 @@ function desk(){
     return head+sum+(open?c.items.map(item).join(''):c.items.filter(x=>x[1].t==='compact'||x[1].t==='end'||(ls&&x[1]===ls)).map(item).join(''))+nowm;      /* in recorded order, never reordered */
   }).join('');
   if(storyEl._h!==h&&!getSelection().toString()){put(storyEl,h||'<p>Nothing recorded yet.</p>'); storyEl.dataset.a=a.id; if(stick) storyEl.scrollTop=storyEl.scrollHeight}
-  /* comms: only what you said to it, and what it seems to need from you */
-  const cm=(a.assign?`<p class="u as">Its assignment: ${esc(one(a.assign.text).slice(0,700))}</p>`:'')
-    +a.msgs.map(m=>{const k='u'+(m.seq>=0?m.seq:m.ts); const t=one(m.text), long=t.length>240, wide=a.wide&&a.wide.has(k);
-      return `<p class="u jump" data-k="${esc(k)}" title="Show what the agent did after this message">${esc(long&&!wide?t.slice(0,200).replace(/\s+\S*$/,'')+'…':t)}${long?` <u data-more>${wide?'show less':'show all'}</u>`:''}<small>${clock(m.ts)}${a.miss===k?' · '+a.missWhy:''}</small></p>`}).join('')
-    +a.q.map(m=>`<p class="qd">✉ Queued in the app<br>${esc(one(m.text).slice(0,300))}</p>`).join('');
-  if(commsEl._h!==cm&&!getSelection().toString()){put(commsEl,cm||(a.observed?'<p>Messages between you and this agent live in ChatGPT; none reaches this computer.</p>':'<p>No message from you found in what has been read of its log.</p>')); commsEl.dataset.a=a.id; if(stickC) commsEl.scrollTop=commsEl.scrollHeight}
-  const N=S.need, chan=$('#chan');
-  chan.className=N?'warn':a.q.length?'q':'';
-  put(chan,N?`▲ ${N.sure?'Agent requests':'Agent may be asking'} · ${N.kind}${N.sure?'':' (probably)'}<p>${esc(one(N.text).slice(0,300))}</p>`:a.q.length?`✉ ${a.q.length} message${a.q.length>1?'s':''} queued in the app`:'● No request detected');
+  cuSources(a); cuPaint();
   /* readouts: recorded facts, labelled as what they are */
   const par=a.parent&&A[a.parent], f=(k,v)=>`<span><b>${k}</b><em>${esc(v)}</em></span>`;
   put($('#badge'),f('Model',(a.model||'not recorded')+(a.effort?' · '+a.effort+' effort':''))+f('Approval setting',a.perm||'not recorded')
@@ -1885,25 +1837,76 @@ function ofHistory(rows){return (Array.isArray(rows)?rows:[]).filter(t=>t&&(t.ro
 function ofSnapshot(scope,id,agents,epoch){const context=scope==='station'&&id?{scope:'station',agent:id}:{scope:'room'};return {context:Object.freeze(context),history:Object.freeze({...context,...(context.scope==='station'?{name:[...String(agents[id]?.name||id)].slice(0,120).join('')}:{})}),epoch}}
 function ofMayAct(request,epoch,active){return !request||(request.epoch===epoch&&active)}
 /* end officer context helpers */
-const OFUI={tab:'officer',scope:'room',epoch:0,subject:'',docked:false};
+const OFUI={tab:'officer',recipient:'watch',scope:'room',epoch:0,subject:'',docked:false};
+/* unified conversation helpers: identities never depend on message text. */
+function cuEventKey(it){return Number.isInteger(it.seq)&&it.seq>=0?'seq:'+it.seq:it.key?'key:'+it.key:it.n!=null?'story:'+it.n:null}
+function cuSourceRows(a){const rows=[],seen=new Set();for(const it of a.story){if(!['you','say'].includes(it.t))continue;const key=cuEventKey(it);if(key&&seen.has(key))continue;if(key)seen.add(key);rows.push({...it,key:key||'story-index:'+rows.length})}for(const [i,m] of a.msgs.entries()){const key=cuEventKey(m);if(key&&seen.has(key))continue;if(key)seen.add(key);rows.push({...m,t:'you',key:key||'message-index:'+i})}return rows}
+function cuEnvelopeMatch(it,agent,records){
+  const text=String(it.text||''),match=text.match(/^WATCH_(REQUEST|REPLY) ([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\n/i);if(!match)return false;
+  const r=records.get(match[2]);if(!r||r.agent!==agent)return false;
+  if(it.t==='say')return match[1]==='REPLY'&&r.state==='answered'&&text==='WATCH_REPLY '+r.request_id+'\n'+r.reply;
+  if(it.t!=='you'||match[1]!=='REQUEST')return false;
+  const prefix='WATCH_REQUEST '+r.request_id+'\nThe owner asks through the Officer of the Watch:\n'+r.question;
+  const guidance="This message relays the owner's request. Preserve its scope and authorization: an explicit work instruction authorizes that work under your existing permissions; a status question asks only for information. Do not infer additional tasks or permissions. For a progress question, inspect your own current state.";
+  const old='This is a question, not permission to change files or send messages. For a progress question, inspect your own current state.';
+  const codex='\nReply in your final answer with WATCH_REPLY '+r.request_id+' on its own line, followed by your answer. ';
+  const claude="\nUse this channel's reply tool with request_id "+r.request_id+" and your answer in text. Preserve the owner's scope and authorization: an explicit work instruction authorizes that work under your existing permissions; a status question asks only for information. Do not infer additional tasks or permissions. For a progress question, inspect your own current state.";
+  return text===prefix+codex+guidance||text===prefix+codex+old||text===prefix+claude;
+}
+function cuDirectReason(id,a){return !a?'This station is no longer available.':a.observed?'This agent’s conversation stays in ChatGPT; direct messaging is unavailable.':!['x:','c:'].includes(String(id).slice(0,2))||a.runtime!==(String(id).startsWith('c:')?'Claude':'Codex')||(String(id).startsWith('c:')&&a.sub)?'Direct messaging supports local Codex chats and parent Claude sessions.':''}
+function cuDraftKey(station,recipient,scope){return JSON.stringify([station||'room',recipient,recipient==='watch'?scope:'station'])}
+function cuVisible(context,station){return !station||context?.scope==='room'||context?.scope==='station'&&context.agent===station}
+function cuMeta(value){return value&&typeof value.id==='string'&&/^turn:[a-zA-Z0-9:-]{1,100}$/.test(value.id)&&typeof value.ts==='number'&&Number.isFinite(value.ts)&&value.ts>0?{id:value.id,ts:value.ts}:null}
+/* end unified conversation helpers */
+const CU={nodes:new Map(),drafts:new Map(),busy:new Set(),serial:0,draftKey:null};
+function cuDraftSave(){const key=cuDraftKey(focus,OFUI.recipient,OFUI.scope);CU.drafts.set(key,ofIn.value);CU.draftKey=key}
+function cuDraftRestore(){const key=cuDraftKey(focus,OFUI.recipient,OFUI.scope);ofIn.value=CU.drafts.get(key)||'';CU.draftKey=key}
+function cuTurnMeta(){return {id:'turn:'+(globalThis.crypto?.randomUUID?.()||Date.now()+':'+ ++CU.serial),ts:Date.now()/1000}}
+function cuPaint(follow=false){
+  const bottom=follow||nearEnd(ofLog),top=ofLog.scrollTop,anchor=[...ofLog.children].find(n=>!n.hidden&&n.getBoundingClientRect().bottom>ofLog.getBoundingClientRect().top),offset=anchor?.getBoundingClientRect().top;
+  const rows=[...CU.nodes.values()].sort((a,b)=>(a.ts||0)-(b.ts||0));let at=ofLog.firstElementChild;
+  for(const r of rows){const show=r.kind==='source'?r.context?.agent===focus:cuVisible(r.context,focus)||r.global;r.el.hidden=!show;if(r.el!==at)ofLog.insertBefore(r.el,at);at=r.el.nextElementSibling}
+  ofLog.dataset.a=focus||'';
+  if(bottom)ofLog.scrollTop=ofLog.scrollHeight;else if(anchor?.isConnected&&!anchor.hidden)ofLog.scrollTop=top+anchor.getBoundingClientRect().top-offset;else ofLog.scrollTop=top;
+}
+function cuSources(a){
+  const active=new Set(),rows=cuSourceRows(a),sayRows=rows.filter(r=>r.t==='say');
+  const add=(id,it,queue=false)=>{active.add(id);let r=CU.nodes.get(id);if(!r){const el=document.createElement('div');r={el,kind:'source',context:Object.freeze({scope:'station',agent:a.id,name:a.name}),ts:it.ts||0};CU.nodes.set(id,r)}
+    const text=plain(it.text||''),legacy=!r.ts?' · time not recorded':' · '+clock(r.ts),by=queue?'Queued in the app · observation only':it.t==='you'?'You → '+r.context.name:r.context.name;
+    const content=STEADY&&it.t==='say'?'(narration hidden in steady mode)':text;
+    const html='<b>'+esc(by)+'</b><small>Recorded log'+esc(legacy)+'</small>'+(queue?'<small>Queue observation does not confirm delivery.</small>':'')+(it.t==='say'?'<details'+(it===sayRows.at(-1)?' open':'')+'><summary><span class="closed-update">'+esc(one(content).slice(0,100)||'Agent update')+'</span><span class="open-update">Agent update</span></summary><p>'+esc(content)+'</p></details>':'<p>'+esc(content)+'</p>');
+    if(r.content!==content||r.by!==by){const open=r.el.querySelector('details')?.open;r.el.innerHTML=html;r.content=content;r.by=by;if(open!==undefined&&r.el.querySelector('details'))r.el.querySelector('details').open=open}const highlighted=r.el.classList?.contains('hl');r.el.className='source '+(queue?'queue':it.t==='you'?'you':'agent')+(highlighted?' hl':'');if(it.n!=null)r.el.dataset.sourceN=it.n;r.el.dataset.sourceAgent=a.id;
+  };
+  if(!rows.length)add('source:'+a.id+':empty',{t:'info',text:a.observed?'Conversation history stays in ChatGPT; this computer records commands only.':'No conversation entries have been read from this agent’s log yet.'});
+  if(a.assign)add('source:'+a.id+':assignment',{...a.assign,t:'info',text:'Recorded assignment: '+a.assign.text});
+  const needNow=need(a);if(needNow)add('source:'+a.id+':request',{t:'info',text:(needNow.sure?'Confirmed request':'Possible request · inferred')+' · '+needNow.kind+'\n'+needNow.text});
+  for(const it of rows)if(!cuEnvelopeMatch(it,a.id,OFM.records))add('source:'+a.id+':'+it.key,it);
+  for(const [i,it] of a.q.entries())add('queue:'+a.id+':'+(cuEventKey(it)||'index:'+i),it,true);
+  for(const [id,r] of CU.nodes){if(r.kind==='source'&&r.context.agent===a.id&&!active.has(id)){r.el.remove();CU.nodes.delete(id)}}
+}
+function cuNotice(html){const id='notice:'+ ++CU.serial,d=ofAdd('k',html,{id});CU.nodes.get(id).global=true;cuPaint();return d}
+function cuRevealEvent(id,n){if(focus!==id)setFocus(id);if(!A[id])return;cuSources(A[id]);cuPaint();if(!STATION.compact&&!sideW())narrow='R';render();const el=[...ofLog.querySelectorAll('[data-source-n]')].find(x=>x.dataset.sourceAgent===id&&+x.dataset.sourceN===n);if(el){const detail=el.querySelector('details');if(detail)detail.open=true;el.scrollIntoView({block:'center'});el.classList.add('hl');setTimeout(()=>el.classList.remove('hl'),1600)}}
+function cuCard(r,kind){const id=kind+':'+r.request_id;let row=CU.nodes.get(id);if(!row){const el=ofAdd('of '+kind,'',{id,context:{scope:'station',agent:r.agent,name:r.name},ts:r.created||0});row=CU.nodes.get(id);row.el=el}return row.el}
 function ofCurrent(){return ofSnapshot(focus?OFUI.scope:'room',focus,A,OFUI.epoch)}
 function ofLabel(c){return !c?'Earlier context unknown':c.scope==='room'?'Whole room':(c.name||c.agent)+(A[c.agent]?'':' · unavailable')}
-function ofAttributed(c,html){return '<small class="turn-context">'+esc(ofLabel(c))+'</small>'+html}
-function ofContextPaint(){const c=ofCurrent().history;txt($('#ofSubject'),c.scope==='station'?(A[c.agent]?.name||c.agent):'Whole room');$('#ofSubject').title=$('#ofSubject').textContent;ofIn.placeholder=c.scope==='station'?'Ask about '+(A[c.agent]?.name||'this station')+'…':'Ask about the room…';for(const b of $('#ofScope').querySelectorAll('button')){b.setAttribute('aria-pressed',String(b.dataset.scope===c.scope));b.disabled=b.dataset.scope==='station'&&!focus}}
-function ofTab(tab,interaction=true){if(OFUI.tab!==tab&&interaction)OFUI.epoch++;OFUI.tab=tab;for(const [name,id,panel] of [['officer','#officerTab','#officerSlot'],['comms','#commsTab','#commsPanel']]){const on=name===tab;$(id).setAttribute('aria-selected',String(on));$(id).tabIndex=on?0:-1;$(panel).hidden=!on}if(tab==='comms'&&stickC)commsEl.scrollTop=commsEl.scrollHeight}
-function ofInit(){if(OF.loaded)return;OF.loaded=true;ofLoad();ofMessageLoad();if(!OF.turns.length)ofAdd('of','<p class="k">Ask what changed, what’s stuck, or what needs you. Answers use recorded logs. To contact an agent, include its name.</p>')}
+function ofAttributed(c,html){return '<small class="turn-context">'+esc(c?.scope==='station'?'About '+ofLabel(c):ofLabel(c))+'</small>'+html}
+function ofContextPaint(){const c=ofCurrent().history, direct=!!focus&&OFUI.recipient==='agent',blocked=direct?(cuDirectReason(focus,A[focus])||(!DEMO&&(!KEY||claiming||locked)?'Unlock the room to send a direct message.':!DEMO&&!connected?'Room connection is offline.':!DEMO&&OFM.available===false?'Agent messaging unavailable: '+(OFM.reason||'transport not ready'):'')):'';txt($('#ofSubject'),focus?(A[focus]?.name||focus):'Whole room');$('#ofSubject').title=$('#ofSubject').textContent;ofIn.placeholder=direct?'Message '+(A[focus]?.name||'agent')+'…':c.scope==='station'?'Ask WATCH about '+(A[c.agent]?.name||'this station')+'…':'Ask WATCH about the room…';ofIn.setAttribute('aria-label',ofIn.placeholder.replace('…',''));ofIn.maxLength=direct?2000:4000;$('#ofScope').hidden=direct;for(const b of $('#ofScope').querySelectorAll('button')){b.setAttribute('aria-pressed',String(b.dataset.scope===c.scope));b.disabled=b.dataset.scope==='station'&&!focus}for(const b of $('#recipient').querySelectorAll('button')){b.setAttribute('aria-pressed',String(b.dataset.recipient===(direct?'agent':'watch')));b.hidden=b.dataset.recipient==='agent'&&!focus;if(b.dataset.recipient==='agent')b.textContent=A[focus]?.name||'Agent'}$('#ofQuick').hidden=direct;txt($('#ofSend'),direct?'Send ↗':'Ask WATCH ↗');$('#ofSend').disabled=direct?CU.busy.has(focus)||!!blocked:OF.busy;txt($('#sendHint'),direct?(blocked||'Delivery status appears in the conversation.'):'WATCH answers from logs and can act on explicit requests.');ofProgressPaint();cuPaint()}
+function ofTab(tab,interaction=true){if(interaction)OFUI.epoch++;OFUI.tab='officer';$('#officerSlot').hidden=false;}
+function ofInit(){if(OF.loaded)return;OF.loaded=true;ofLoad();ofMessageLoad();if(!OF.turns.length)ofAdd('k','<p>Choose the agent to send a direct message, or Ask WATCH for help with recorded activity.</p>')}
 function ofPlace(){const docked=!!focus;if(docked!==OFUI.docked){OFUI.docked=docked;if(docked){$('#officerSlot').appendChild(ofEl);ofEl.classList.add('docked');ofEl.classList.remove('fold');ofInit()}else{$('#officerHome').after(ofEl);ofEl.classList.remove('docked');ofEl.classList.add('fold');$('#ofB').setAttribute('aria-expanded','false')}}ofTab(OFUI.tab,false);ofContextPaint()}
-function ofReveal(){if(focus){ofTab('officer');if(STATION.compact)$('#deskR').scrollIntoView({block:'start'})}ofToggle(true)}
-function ofOwnsFocus(request){return request.epoch===OFUI.epoch&&(!focus||OFUI.tab==='officer')&&!ofEl.classList.contains('fold')&&ofEl.contains(document.activeElement)}
-$('#ofScope').onclick=e=>{const b=e.target.closest('button[data-scope]');if(!b||b.disabled||b.dataset.scope===ofCurrent().context.scope)return;OFUI.scope=b.dataset.scope;OFUI.epoch++;ofContextPaint()};
+function ofReveal(){if(focus){cuDraftSave();OFUI.recipient='watch';OFUI.epoch++;cuDraftRestore();ofContextPaint();ofTab('officer');if(STATION.compact)$('#deskR').scrollIntoView({block:'start'})}ofToggle(true)}
+function ofOwnsFocus(request){return request.epoch===OFUI.epoch&&(!focus||OFUI.recipient==='watch')&&!ofEl.classList.contains('fold')&&(document.activeElement===ofIn||document.activeElement===$('#ofSend'))}
+$('#ofScope').onclick=e=>{const b=e.target.closest('button[data-scope]');if(!b||b.disabled||b.dataset.scope===ofCurrent().context.scope)return;cuDraftSave();OFUI.scope=b.dataset.scope;OFUI.epoch++;cuDraftRestore();ofContextPaint()};
 $('#ofScope').onkeydown=e=>e.stopPropagation();
-$('#officerTab').onclick=()=>ofTab('officer');$('#commsTab').onclick=()=>ofTab('comms');
-$('#officerTabs').onkeydown=e=>{const keys=['ArrowLeft','ArrowRight','Home','End'];if(keys.includes(e.key)){e.preventDefault();ofTab(e.key==='Home'?'officer':e.key==='End'?'comms':OFUI.tab==='officer'?'comms':'officer');$(OFUI.tab==='officer'?'#officerTab':'#commsTab').focus()}else if(e.key==='Escape'){e.preventDefault();setFocus(null)}else if(e.key==='/'){e.preventDefault();ofReveal()}e.stopPropagation()};
+$('#recipient').onclick=e=>{const b=e.target.closest('[data-recipient]');if(!b||b.hidden)return;cuDraftSave();OFUI.recipient=b.dataset.recipient;OFUI.epoch++;cuDraftRestore();ofContextPaint()};
+$('#recipient').onkeydown=e=>e.stopPropagation();
+ofIn.addEventListener('input',cuDraftSave);
 $('#compactDesk').addEventListener('pointerdown',()=>{moved=false;drop()});
 $('#compactDesk').addEventListener('scroll',()=>{if(focus&&A[focus]){A[focus].dirty=true;render()}},{passive:true});
-function ofStatus(t){txt(ofSt,t);txt($('#ofProgress'),t);$('#ofProgress').hidden=/^(ready|listening|demo · scripted answers)$/i.test(t)}
+function ofProgressPaint(){const p=$('#ofProgress'),c=OF.pending?.history,show=OF.busy&&(!focus||c?.scope==='room'||c?.agent===focus);p.hidden=!show;if(show)txt(p,'WATCH · '+ofLabel(c)+' · thinking…')}
+function ofStatus(t){txt(ofSt,t);ofProgressPaint()}
 function ofStand(n,who,maybe){const sure=n===0?(order.length?'no confirmed request':''):n===1&&who?(who.name||'an agent')+' is waiting on you':n+' agents are waiting on you'; txt(ofLine,sure+(maybe&&sure?' · '+maybe+' possible':'')); ofEl.classList.toggle('need',n>0); ofEl.classList.toggle('maybe',!n&&maybe>0)}      /* the plate's one line is the room's own count, not the model's: a request the log only suggests is "possible", never absent */
-function ofAdd(cls,html){const d=document.createElement('div'); d.className=cls; d.innerHTML=html; ofLog.appendChild(d); ofLog.scrollTop=ofLog.scrollHeight; return d}
+function ofAdd(cls,html,meta={}){const d=document.createElement('div'); d.className=cls; d.innerHTML=html; const id=meta.id||'ui:'+ ++CU.serial;CU.nodes.set(id,{el:d,context:meta.context||null,ts:meta.ts||0,kind:'watch'});cuPaint();return d}
 /* answer markup (tests/test_page.js evaluates this block on its own; keep it self-contained, up to the end marker)
    The Officer's answers render a safe slice of Markdown, the parts a README uses: the text is escaped first, and
    only tags with no attributes are added afterwards (bold, italics, strikethrough, inline and fenced code, bullet,
@@ -1943,25 +1946,25 @@ function ofParas(t){
   return out||'<p class="k">(no words came back)</p>'}
 /* end answer markup */
 function ofDay(){const day=new Date().toDateString(); if(OF.day&&OF.day!==day){OF.turns=[]; OF.day=day; ofAdd('k','<span class="k">A new day: the Officer starts a fresh conversation.</span>'); ofSave()} else if(!OF.day) OF.day=day}      /* a window left open overnight does not carry yesterday into today */
-function ofSave(){if(DEMO) return; try{store.setItem('liveRoomShift',JSON.stringify({day:OF.day,turns:OF.turns.slice(-40)}))}catch(err){}}
-function ofLoad(){const day=new Date().toDateString();OF.day=day;if(DEMO)return;try{const v=JSON.parse(store.getItem('liveRoomShift')||'null');if(v&&v.day===day){OF.turns=ofHistory(v.turns);for(const t of OF.turns)ofAdd(t.role==='user'?'you':'of',ofAttributed(t.context,t.role==='user'?esc(t.content):ofParas(t.content)));if(OF.turns.length)ofAdd('k','Earlier today · kept on this computer; your next question sends it as context.')}}catch(err){}}
+function ofSave(){if(DEMO) return; try{store.setItem('liveRoomShift',JSON.stringify({day:OF.day,turns:ofHistory(OF.turns),ui:OF.turns.slice(-40).map(t=>cuMeta(t.ui))}))}catch(err){}}
+function ofLoad(){const day=new Date().toDateString();OF.day=day;if(DEMO)return;try{const v=JSON.parse(store.getItem('liveRoomShift')||'null');if(v&&v.day===day){OF.turns=ofHistory(v.turns);for(const [i,t] of OF.turns.entries()){t.ui=cuMeta(v.ui?.[i]);ofAdd(t.role==='user'?'you':'of',ofAttributed(t.context,(t.role==='user'?'<b>You → WATCH</b>':'<b>WATCH</b>')+'<small class="turn-context">'+(t.ui?clock(t.ui.ts):'Earlier history · time not recorded')+'</small>'+(t.role==='user'?esc(t.content):ofParas(t.content))),{...t.ui,context:t.context})}}}catch(err){}}
 function ofCite(c){const aid=c.aid||(Object.keys(A).find(k=>A[k].name===c.agent)||''); return `<button data-n="${esc(String(c.n))}" data-a="${esc(aid)}" title="${esc(c.what||'')}">${esc(c.agent||'?')} · ${esc(c.ago||'')} ago</button>`}
-function ofJump(aid,n){const a=A[aid]; if(!a){ofAdd('k','<span class="k">That agent is no longer in the room.</span>'); return}
+function ofJump(aid,n){const a=A[aid]; if(!a){cuNotice('<span class="k">That agent is no longer in the room.</span>'); return}
   setFocus(aid); const it=a.story.find(x=>x.seq===n||(x.e&&x.e.seq===n));
-  if(!it){ofAdd('k',`<span class="k">That entry is no longer on ${esc(a.name||'the')}'s desk: a desk keeps its last three hundred.</span>`); return}
+  if(!it){cuNotice(`<span class="k">That entry is no longer on ${esc(a.name||'the')}'s desk: a desk keeps its last three hundred.</span>`); return}
   if(it.t==='you')ofTab('comms');
-  if(it.t==='say'){a.pin=null; a.sayAt=it.n; deskView='said'} else if(it.e){a.pin=it.e; deskView='doing'}
+  if(it.e){a.pin=it.e; deskView='doing'}
   let key='start'; for(const x of a.story){if(x.t==='you') key=x.key||'t'+x.ts; if(x===it) break}
-  capAdd(a.open,key); stick=false; if(!STATION.compact&&(covered()||(!portrait()&&!sideW()))) narrow=it.t==='you'?'R':'L';      /* on a narrow window, open the panel the entry is in */
+  capAdd(a.open,key); stick=false; if(!STATION.compact&&(covered()||(!portrait()&&!sideW()))) narrow=['you','say'].includes(it.t)?'R':'L';      /* on a narrow window, open the panel the entry is in */
   a.dirty=true; render();
   const t0=performance.now();
   const land=()=>{      /* only once this desk has drawn: a step-up defers rendering, and the panels may still show the previous desk */
-    if(focus!==aid){ofAdd('k','<span class="k">You moved on before that desk opened.</span>'); return}
-    const pane=it.t==='you'?commsEl:storyEl;
-    if(STEPPING||pane.dataset.a!==aid){if(performance.now()-t0<4000){if(!STEPPING){a.dirty=true; render()} setTimeout(land,120); return} ofAdd('k','<span class="k">That desk did not finish drawing, so the entry was not shown.</span>'); return}
-    const el=it.t==='you'?[...commsEl.querySelectorAll('[data-k]')].find(x=>x.dataset.k===key):storyEl.querySelector(`[data-s="${it.n}"]`);
-    if(el&&el.getClientRects().length){el.scrollIntoView({block:'center'}); el.classList.add('hl'); setTimeout(()=>el.classList.remove('hl'),1600)}
-    else ofAdd('k',`<span class="k">That entry is kept for ${esc(a.name||'this agent')} but is not drawn on its desk right now.</span>`)};
+    if(focus!==aid){cuNotice('<span class="k">You moved on before that desk opened.</span>'); return}
+    const pane=['you','say'].includes(it.t)?ofLog:storyEl;
+    if(STEPPING||pane.dataset.a!==aid){if(performance.now()-t0<4000){if(!STEPPING){a.dirty=true; render()} setTimeout(land,120); return} cuNotice('<span class="k">That desk did not finish drawing, so the entry was not shown.</span>'); return}
+    const el=['you','say'].includes(it.t)?[...ofLog.querySelectorAll('[data-source-n]')].find(x=>x.dataset.sourceAgent===aid&&+x.dataset.sourceN===it.n):storyEl.querySelector(`[data-s="${it.n}"]`);
+    if(el&&el.getClientRects().length){const detail=el.querySelector('details');if(detail)detail.open=true;el.scrollIntoView({block:'center'}); el.classList.add('hl'); setTimeout(()=>el.classList.remove('hl'),1600)}
+    else cuNotice(`<span class="k">That entry is kept for ${esc(a.name||'this agent')} but is not drawn on its desk right now.</span>`)};
   land()}
 /* agent message helpers: display backend requests; replies never become Officer instructions. */
 const OFM={records:new Map(),controls:new Map(),polling:false,available:null,reason:'',notice:null};
@@ -1969,25 +1972,27 @@ function ofMessageFulfillment(v){
   if(!v||v.state!=='fulfilled'||v.intent!=='pause'||v.via!=='interrupt'||typeof v.control_request_id!=='string'||!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(v.control_request_id)) return null;
   return {state:'fulfilled',intent:'pause',via:'interrupt',control_request_id:v.control_request_id};
 }
-function ofMessageSave(){if(DEMO) return; try{store.setItem('liveRoomMessages',JSON.stringify([...OFM.records.values()].filter(r=>r.request_id).slice(-100).map(r=>({request_id:r.request_id,agent:r.agent,name:r.name,question:r.question,state:r.state,reply:r.reply,error:r.error,delivery_warning:typeof r.delivery_warning==='string'?r.delivery_warning:'',fulfillment:ofMessageFulfillment(r.fulfillment)}))))}catch(err){}}
-function ofMessageNotice(t){if(!OFM.notice) OFM.notice=ofAdd('k',''); OFM.notice.textContent=t}
+function ofMessageSave(){if(DEMO) return; try{store.setItem('liveRoomMessages',JSON.stringify([...OFM.records.values()].filter(r=>r.request_id).slice(-100).map(r=>({request_id:r.request_id,agent:r.agent,name:r.name,question:r.question,created:r.created||0,state:r.state,reply:r.reply,error:r.error,delivery_warning:typeof r.delivery_warning==='string'?r.delivery_warning:'',fulfillment:ofMessageFulfillment(r.fulfillment)}))))}catch(err){}}
+function ofMessageNotice(t){if(!OFM.notice){OFM.notice=ofAdd('k','',{id:'status:transport'});CU.nodes.get('status:transport').global=true}OFM.notice.textContent=t;cuPaint()}
 function ofMessagePaint(r){
-  if(!r.el) r.el=ofAdd('of message','');
+  const follow=nearEnd(ofLog);
+  if(!r.el) r.el=cuCard(r,'message');
   const labels={sending:'Sending · delivery not yet confirmed',queued:'Queued · waiting for a reply',awaiting_reply:'Awaiting reply',answered:'Answered',expired:'Expired · delivery may have occurred; no automatic resend',failed:'Failed · no automatic resend',unknown:'Delivery unknown · check status; do not resend'};
   const state=labels[r.state]||labels.unknown;
   const fulfilled=ofMessageFulfillment(r.fulfillment);
   const originalLabels={sending:'Original message was sending; delivery is not confirmed.',queued:'Original message was queued; delivery is not confirmed. It may still run later.',awaiting_reply:'Original message was delivered; awaiting a reply.',answered:'Original message received a reply.',expired:'Original message expired; delivery may have occurred. No automatic resend.',failed:'Original message failed; no automatic resend.',unknown:'Original message delivery is unknown; do not resend.'};
   const delivery=fulfilled?(originalLabels[r.state]||originalLabels.unknown):state;
-  const markup=`${fulfilled?'<p class="k" role="status">Pause completed by a later interrupt</p>':''}<b>Message to ${esc(r.name||r.agent)}</b><div class="k message-id">${esc(r.agent)}</div><div class="draft">${esc(r.question)}</div><p class="k" role="status">${esc(delivery)}${r.error?' · '+esc(r.error):''}</p>${r.delivery_warning?`<p class="k">${esc(r.delivery_warning)}</p>`:''}${r.state==='answered'?`<b>Reply from ${esc(r.name||r.agent)}</b>${ofParas(String(r.reply||''))}`:''}${r.state==='unknown'?'<div class="cites"><button type="button" class="message-check">Check status</button></div>':''}`;
+  const markup=`${fulfilled?'<p class="k" role="status">Pause completed by a later interrupt</p>':''}<b>Message to ${esc(r.name||r.agent)}</b><div class="k message-id">${esc(r.agent)} · ${r.created?clock(r.created):'time not recorded'}</div><div class="draft">${esc(r.question)}</div><p class="k" role="status">${esc(delivery)}${r.error?' · '+esc(r.error):''}</p>${r.delivery_warning?`<p class="k">${esc(r.delivery_warning)}</p>`:''}${r.state==='answered'?`<b>Reply from ${esc(r.name||r.agent)}</b>${ofParas(String(r.reply||''))}`:''}${r.state==='unknown'?'<div class="cites"><button type="button" class="message-check">Check status</button></div>':''}`;
   if(r.painted!==markup){r.el.innerHTML=markup; r.painted=markup}
-  const retry=r.el.querySelector('.message-check'); if(retry){retry.onclick=()=>ofMessagePoll()}
+  const retry=r.el.querySelector('.message-check'); if(retry){retry.onclick=()=>ofMessagePoll()}cuPaint(follow);
 }
 function ofMessageMerge(rows){
   if(DEMO) return;
   for(const v of rows){if(!v||typeof v.request_id!=='string'||typeof v.agent!=='string'||typeof v.question!=='string') continue;
     let r=OFM.records.get(v.request_id);
-    if(!r){r={}; OFM.records.set(v.request_id,r)}
-    Object.assign(r,{request_id:v.request_id,agent:v.agent,name:String(v.name||v.agent),question:v.question,state:v.state,reply:v.reply,error:v.error,delivery_warning:typeof v.delivery_warning==='string'?v.delivery_warning:'',fulfillment:ofMessageFulfillment(v.fulfillment)}); ofMessagePaint(r);
+    if(!r){r={request_id:v.request_id,agent:v.agent,name:String(v.name||v.agent),question:v.question,created:typeof v.created==='number'&&Number.isFinite(v.created)&&v.created>0?v.created:0}; OFM.records.set(v.request_id,r)}
+    if(r.agent!==v.agent||r.question!==v.question)continue;
+    Object.assign(r,{state:v.state,reply:v.reply,error:v.error,delivery_warning:typeof v.delivery_warning==='string'?v.delivery_warning:'',fulfillment:ofMessageFulfillment(v.fulfillment)}); ofMessagePaint(r);
   }
   ofMessageSave();
 }
@@ -1999,11 +2004,12 @@ function ofControlPublic(v){
 }
 function ofControlSave(){if(DEMO) return; try{store.setItem('liveRoomControls',JSON.stringify([...OFM.controls.values()].slice(-100).map(ofControlPublic).filter(Boolean)))}catch(err){}}
 function ofControlPaint(r){
-  if(!r.el) r.el=ofAdd('of control','');
+  const follow=nearEnd(ofLog);
+  if(!r.el) r.el=cuCard(r,'control');
   const labels={sending:'Control pending; outcome is not yet confirmed. Do not repeat it.',interrupted:'Recorded outcome: the targeted turn was interrupted. This does not mean the agent remains paused.',acknowledged:'Recorded outcome: steer acknowledged; execution is not confirmed.',no_op:'Recorded outcome: no interruption occurred (no-op).',failed:'Recorded outcome: control failed. No automatic retry.',unknown:'Control outcome is unknown. Do not repeat it.'};
   const status=r.unavailable?'Control outcome is uncertain; this record is no longer available from the server. Do not repeat it.':r.restoredPending?'Control outcome is uncertain after reload; waiting for server status. Do not repeat it.':labels[r.state];
   const markup=`<b>${r.action==='interrupt'?'Interrupt':'Steer'} · ${esc(r.name||r.agent)}</b><div class="k message-id">${esc(r.agent)}</div>${r.instruction?`<div class="draft">${esc(r.instruction)}</div>`:''}<p class="k" role="status">${esc(status)}${r.error?' · '+esc(r.error):''}</p><p class="k">Historical control record; it does not guarantee the agent’s current state.</p>`;
-  if(r.painted!==markup){r.el.innerHTML=markup; r.painted=markup}
+  if(r.painted!==markup){r.el.innerHTML=markup; r.painted=markup}cuPaint(follow);
 }
 function ofControlMerge(rows,{snapshot=false,restored=false}={}){
   if(DEMO) return;
@@ -2012,7 +2018,7 @@ function ofControlMerge(rows,{snapshot=false,restored=false}={}){
     let r=OFM.controls.get(v.request_id); if(!r){r={}; OFM.controls.set(v.request_id,r)}
     // A delayed sending result cannot erase an already observed outcome.
     if(r.state&&r.state!=='sending'&&v.state==='sending') continue;
-    Object.assign(r,v,{restoredPending:restored&&v.state==='sending',unavailable:false}); ofControlPaint(r);
+    if(r.agent&&r.agent!==v.agent)continue;const name=r.name||v.name;Object.assign(r,v,{name,restoredPending:restored&&v.state==='sending',unavailable:false}); ofControlPaint(r);
   }
   if(snapshot) for(const [id,r] of OFM.controls){if(!seen.has(id)&&(r.state==='sending'||r.state==='unknown')){r.unavailable=true;ofControlPaint(r)}}
   ofControlSave();
@@ -2032,12 +2038,12 @@ async function ofMessagePoll(){
 }
 function ofMessageLoad(){
   if(DEMO) return;
-  try{const rows=JSON.parse(store.getItem('liveRoomMessages')||'[]'); if(Array.isArray(rows)) ofMessageMerge(rows.slice(-100).map(r=>({...r,state:r.state==='sending'?'unknown':r.state})))}catch(err){}
+  try{const rows=JSON.parse(store.getItem('liveRoomMessages')||'[]'); if(Array.isArray(rows)) ofMessageMerge(rows.slice(-100).map(r=>({...r,state:['sending','queued','awaiting_reply'].includes(r.state)?'unknown':r.state})))}catch(err){}
   try{const rows=JSON.parse(store.getItem('liveRoomControls')||'[]'); if(Array.isArray(rows)) ofControlMerge(rows.slice(-100),{restored:true})}catch(err){}
   ofMessagePoll();
 }
 /* end agent message helpers */
-function ofAct(x){      /* [done, words]: done only when the screen actually changed as asked */
+function ofAct(x,request){      /* [done, words]: done only when the screen actually changed as asked */
   if(x.do==='filter'){const n=String(x.project||'').trim(); if(!n){setProj(null); return [true,'showing every project']}
     const low=n.toLowerCase(), key=order.map(k=>proj(k)).find(k=>k&&(k.toLowerCase()===low||String(projLabel(k)).toLowerCase()===low)); if(!key) return [false,'no project called '+n+' is in the room, so the filter was not changed'];
     setProj(key); return [PROJ===key,PROJ===key?'showing only '+projLabel(key):'the filter could not be applied']}
@@ -2048,33 +2054,54 @@ function ofAct(x){      /* [done, words]: done only when the screen actually cha
     OF.drafted=true; WATCH_SUG=label; watchOpen(true); const t=$('#watchTry'); t.value=w; hid($('#watchSaved'),true); judge(w);      /* the words go into Try with their preview; the suggested chip is marked, never pressed */
     txt($('#watchDraftT'),`The Officer suggests a rule: flag "${w}" as ${WATCH_NAME[label]||label}. Nothing is saved until you press Keep.`); const dr=$('#watchDraft'); dr.dataset.w=w; dr.dataset.l=label; hid(dr,false);
     return [true,`drafted a Watch rule in the Watch panel: "${w}" shown as ${WATCH_NAME[label]||label}. Press Keep this rule there to save it; nothing is saved until you do`]}
-  if(x.do==='draft'){const t=String(x.text||''); const d=ofAdd('of',`<div class="draft">${esc(t)}</div><div class="cites"><button class="copy">Copy to clipboard</button></div>`); d.querySelector('.copy').onclick=async ev=>{try{await navigator.clipboard.writeText(t); ev.target.textContent='Copied'}catch(err){ev.target.textContent='Select and copy it above'}}; return [true,'drafted the text above; press Copy']}
+  if(x.do==='draft'){const t=String(x.text||''); const d=ofAdd('of',`<div class="draft">${esc(t)}</div><div class="cites"><button class="copy">Copy to clipboard</button></div>`,{context:request?.history,ts:Date.now()/1000}); d.querySelector('.copy').onclick=async ev=>{try{await navigator.clipboard.writeText(t); ev.target.textContent='Copied'}catch(err){ev.target.textContent='Select and copy it above'}}; return [true,'drafted the text above; press Copy']}
   return [false,'']}
+/* Direct sending is an explicit transport choice; it never passes through the Officer. */
+async function cuSend(){
+  if(!focus||OFUI.recipient==='watch')return ofSend();
+  const id=focus,a=A[id],q=ofIn.value.trim();if(!q||CU.busy.has(id))return;
+  const fail=text=>ofAdd('k',esc(text),{context:{scope:'station',agent:id,name:a?.name||id},ts:Date.now()/1000});
+  if([...q].length>2000||q.includes('\0'))return fail('Message must contain 1–2000 characters and no null characters. Nothing was sent.');
+  if(!DEMO&&(!KEY||claiming||locked))return fail('Unlock the room before sending. Nothing was sent.');
+  if(!DEMO&&!connected)return fail('Room connection is offline. Nothing was sent.');
+  const unavailable=cuDirectReason(id,a);if(unavailable)return fail(unavailable+' Nothing was sent.');
+  const request_id=globalThis.crypto?.randomUUID?.();if(!request_id)return fail('This browser cannot create a secure request ID. Nothing was sent.');
+  const r={request_id,agent:id,name:a.name||id,question:q,state:'sending',created:Date.now()/1000};
+  CU.busy.add(id);OFM.records.set(request_id,r);ofMessagePaint(r);ofMessageSave();ofIn.value='';cuDraftSave();ofContextPaint();
+  try{
+    if(DEMO){await new Promise(done=>setTimeout(done,700));r.state='answered';r.reply='Scripted demo reply. No agent was contacted.';ofMessagePaint(r);return}
+    const res=await post('/agent-message',{agent:id,question:q,request_id});
+    if(!res.ok){const error=(await res.text()).slice(0,1000)||'Message could not be accepted ('+res.status+').';if(r.state==='sending'){r.state=res.status>=500?'unknown':'failed';r.error=error;ofMessagePaint(r)}return}
+    const v=await res.json();if(v.request_id!==request_id||v.agent!==id||v.question!==q)throw Error('The response did not match this request.');
+    if(r.state==='sending'||v.state==='answered')ofMessageMerge([v]);
+  }catch(err){if(r.state==='sending'){r.state='unknown';r.error='Delivery could not be confirmed. Check status; do not resend.';ofMessagePaint(r)}}
+  finally{CU.busy.delete(id);ofMessageSave();ofContextPaint()}
+}
 async function ofSend(){
-  const q=ofIn.value.trim();if(!q||OF.busy)return;
-  ofDay();const request=ofCurrent(),turn={role:'user',content:q,context:request.history};
-  OF.turns.push(turn);ofAdd('you',ofAttributed(request.history,esc(q)));ofIn.value='';OF.busy=true;$('#ofSend').disabled=true;ofStatus('thinking…');
+  const q=ofIn.value.trim();if(!q||OF.busy)return;if([...q].length>4000){ofAdd('k','Question is too long; nothing was sent.',{context:ofCurrent().history});return;}
+  ofDay();const request=ofCurrent(),turn={role:'user',content:q,context:request.history,ui:cuTurnMeta()};
+  OF.turns.push(turn);ofAdd('you',ofAttributed(request.history,'<b>You → WATCH</b><p>'+esc(q)+'</p>'),{...turn.ui,context:request.history});ofIn.value='';cuDraftSave();OF.busy=true;OF.pending=request;ofContextPaint();ofStatus('thinking…');
   const remove=()=>{const i=OF.turns.indexOf(turn);if(i>=0)OF.turns.splice(i,1)};
   try{
-    if(DEMO){await new Promise(r=>setTimeout(r,700));ofShow(ofDemoAnswer(q,request),request);ofAdd('k','Scripted demo answer · no live agents contacted.');remove();return}
+    if(DEMO){await new Promise(r=>setTimeout(r,700));ofShow(ofDemoAnswer(q,request),request);ofAdd('k','Scripted demo answer · no live agents contacted.',{context:request.history,ts:Date.now()/1000});remove();return}
     const request_id=globalThis.crypto?.randomUUID?.();
-    const res=await post('/ask',{turns:OF.turns.slice(-20),context:request.context,...(request_id?{request_id}:{})});
-    if(!res.ok){const t=await res.text();remove();ofAdd('of',ofAttributed(request.history,`<p class="k">${esc(t||('The Officer could not answer ('+res.status+').'))}</p>`));ofStatus(res.status===503?'off':'listening');return}
-    const r=await res.json();if(r.error){remove();ofAdd('of',ofAttributed(request.history,`<p class="k">${esc(r.error)}</p>`));return}
-    OF.turns.push({role:'assistant',content:String(r.text||'').slice(0,4000),context:request.history});OF.turns=OF.turns.slice(-40);ofShow(r,request);ofSave();
-  }catch(err){remove();ofAdd('of',ofAttributed(request.history,'<p class="k">The Officer could not be reached. If you asked it to message or control an agent, check message/control status. Do not repeat the request while its outcome is uncertain.</p>'))}
-  finally{OF.busy=false;$('#ofSend').disabled=false;if(ofSt.textContent==='thinking…')ofStatus(DEMO?'demo · scripted answers':'listening');if(ofOwnsFocus(request))ofIn.focus()}
+    const res=await post('/ask',{turns:ofHistory(OF.turns).slice(-20),context:request.context,...(request_id?{request_id}:{})});
+    if(!res.ok){const t=await res.text();remove();ofAdd('of',ofAttributed(request.history,`<p class="k">${esc(t||('The Officer could not answer ('+res.status+').'))}</p>`),{context:request.history,ts:Date.now()/1000});ofStatus(res.status===503?'off':'listening');return}
+    const r=await res.json();if(r.error){remove();ofAdd('of',ofAttributed(request.history,`<p class="k">${esc(r.error)}</p>`),{context:request.history,ts:Date.now()/1000});return}
+    request.replyUI=cuTurnMeta();OF.turns.push({role:'assistant',content:String(r.text||'').slice(0,4000),context:request.history,ui:request.replyUI});OF.turns=OF.turns.slice(-40);ofShow(r,request);ofSave();
+  }catch(err){remove();ofAdd('of',ofAttributed(request.history,'<p class="k">The Officer could not be reached. If you asked it to message or control an agent, check message/control status. Do not repeat the request while its outcome is uncertain.</p>'),{context:request.history,ts:Date.now()/1000})}
+  finally{OF.busy=false;OF.pending=null;ofContextPaint();if(ofSt.textContent==='thinking…')ofStatus(DEMO?'demo · scripted answers':'listening')}
 }
 /* response actions preserve suggestions across navigation; only a user invokes a deferred action. */
-function ofSuggestion(x){let used=false;const d=ofAdd('done','<button class="suggestion" type="button">'+esc('Apply suggestion · '+({go_to:'Go to '+(A[x.agent]?.name||x.agent),filter:'Filter '+(x.project||'all projects'),dismiss:'Dismiss '+(A[x.agent]?.name||x.agent),watch_draft:'Draft Watch rule: '+(x.words||'')}[x.do]||x.do))+'</button>');const b=d.querySelector('button');b.onclick=()=>{if(used)return;used=true;b.disabled=true;const [ok,words]=ofAct(x);ofAdd('done',(ok?'Done · ':'Not done · ')+esc(words));if(ok&&x.do==='watch_draft'){if(!focus)ofToggle(false);$('#watchTry').focus()}}}
+function ofSuggestion(x,request){let used=false;const d=ofAdd('done','<button class="suggestion" type="button">'+esc('Apply suggestion · '+({go_to:'Go to '+(A[x.agent]?.name||x.agent),filter:'Filter '+(x.project||'all projects'),dismiss:'Dismiss '+(A[x.agent]?.name||x.agent),watch_draft:'Draft Watch rule: '+(x.words||'')}[x.do]||x.do))+'</button>',{context:request?.history,ts:Date.now()/1000});const b=d.querySelector('button');b.onclick=()=>{if(used)return;used=true;b.disabled=true;const [ok,words]=ofAct(x,request);ofAdd('done',(ok?'Done · ':'Not done · ')+esc(words),{context:request?.history,ts:Date.now()/1000});if(ok&&x.do==='watch_draft'){if(!focus)ofToggle(false);$('#watchTry').focus()}}}
 function ofShow(r,request){
   if(Array.isArray(r.messages))ofMessageMerge(r.messages);
   if(Array.isArray(r.controls))ofControlMerge(r.controls);
   const seen=new Set(),cites=(r.cites||[]).filter(c=>c&&c.n!=null&&!seen.has(c.n)&&seen.add(c.n)).slice(0,12);
-  const d=ofAdd('of',ofAttributed(request?.history,ofParas(r.text)+(cites.length?`<details><summary>Recorded evidence · ${cites.length}</summary><div class="cites">${cites.map(ofCite).join('')}</div></details>`:'')));
+  const d=ofAdd('of',ofAttributed(request?.history,'<b>WATCH</b>'+ofParas(r.text)+(cites.length?`<details><summary>Recorded evidence · ${cites.length}</summary><div class="cites">${cites.map(ofCite).join('')}</div></details>`:'')),{...request?.replyUI,context:request?.history,ts:request?.replyUI?.ts||Date.now()/1000});
   d.querySelectorAll('.cites button[data-n]').forEach(b=>b.onclick=()=>ofJump(b.dataset.a,+b.dataset.n));
-  const active=ofMayAct(request,OFUI.epoch,(!focus||OFUI.tab==='officer')&&!ofEl.classList.contains('fold'))&&(!request||ofOwnsFocus(request));let toWatch=false;
-  for(const x of (r.actions||[])){if(!active&&x.do!=='draft'){ofSuggestion(x);continue}const [ok,words]=ofAct(x);if(words)ofAdd('done',(ok?'Done · ':'Not done · ')+esc(words));if(ok&&x.do==='watch_draft')toWatch=true}
+  const active=ofMayAct(request,OFUI.epoch,(!focus||OFUI.recipient==='watch')&&!ofEl.classList.contains('fold'))&&(!request||ofOwnsFocus(request));let toWatch=false;
+  for(const x of (r.actions||[])){if(!active&&x.do!=='draft'){ofSuggestion(x,request);continue}const [ok,words]=ofAct(x,request);if(words)ofAdd('done',(ok?'Done · ':'Not done · ')+esc(words),{context:request?.history,ts:Date.now()/1000});if(ok&&x.do==='watch_draft')toWatch=true}
   if(toWatch){if(!focus)ofToggle(false);$('#watchTry').focus()}
 }
 function ofDemoAnswer(q,request){      /* the demo's Officer: four scripted answers, each built from the synthetic agents as they are on screen now, never from a model */
@@ -2111,10 +2138,10 @@ function ofDemoAnswer(q,request){      /* the demo's Officer: four scripted answ
 }
 function ofToggle(on){if(OFUI.docked){if(on){ofTab('officer');ofInit();ofIn.focus()}return}ofEl.classList.toggle('fold',!on);$('#ofB').setAttribute('aria-expanded',String(on));if(on){ofInit();ofContextPaint();if(!OF.busy)ofStatus(DEMO?'demo · scripted answers':'listening');ofIn.focus()}else{$('#ofB').focus();OFUI.epoch++}}
 setInterval(()=>ofMessagePoll(),3000);
-$('#ofB').onclick=()=>ofToggle(ofEl.classList.contains('fold')); $('#ofSend').onclick=ofSend;
-$('#ofQuick').onclick=ev=>{const b=ev.target.closest('[data-q]'); if(b&&!OF.busy){ofIn.value=b.dataset.q; ofSend()}};      /* the three questions you ask most, one tap each */
-ofIn.addEventListener('keydown',ev=>{if(ev.key==='Enter'){ev.preventDefault(); ofSend()}});
-addEventListener('keydown',e=>{if(e.key!=='Escape')return;if(OFUI.docked){if(ofEl.contains(e.target)||$('#commsPanel').contains(e.target)||e.target===$('#ofScope')){e.preventDefault();e.stopImmediatePropagation();OFUI.epoch++;$(OFUI.tab==='officer'?'#officerTab':'#commsTab').focus()}}else if(!ofEl.classList.contains('fold')){ofToggle(false);e.stopImmediatePropagation()}},true);
+$('#ofB').onclick=()=>ofToggle(ofEl.classList.contains('fold')); $('#ofSend').onclick=cuSend;
+$('#ofQuick').onclick=ev=>{const b=ev.target.closest('[data-q]'); if(b&&!OF.busy){if(OFUI.recipient!=='watch'){cuDraftSave();OFUI.recipient='watch';OFUI.epoch++;cuDraftRestore();ofContextPaint()}ofIn.value=b.dataset.q; ofSend()}};      /* the three questions you ask most, one tap each */
+ofIn.addEventListener('keydown',ev=>{if(ev.key==='Enter'){ev.preventDefault(); cuSend()}});
+addEventListener('keydown',e=>{if(e.key!=='Escape')return;if(OFUI.docked){if(ofEl.contains(e.target)||e.target===$('#ofScope')){e.preventDefault();e.stopImmediatePropagation();OFUI.epoch++;$('#recipient [aria-pressed="true"]').focus()}}else if(!ofEl.classList.contains('fold')){ofToggle(false);e.stopImmediatePropagation()}},true);
 addEventListener('pointerdown',e=>{if(!OFUI.docked&&!ofEl.classList.contains('fold')&&!ofEl.contains(e.target))ofToggle(false)},true);
 
 function demo(){

@@ -75,7 +75,7 @@ function messaging(code=messageCode,storage=new Map()){
     ofAdd:(cls,h)=>{const el=new Card();el.className=cls;el.innerHTML=h;cards.push(el);return el},
     fetch:async(p,o)=>{gets.push({p,o});return ctx.response},
     response:{ok:true,json:async()=>({requests:[],available:true})}};
-  ctx.ofParas=s=>'<p>'+ctx.esc(s)+'</p>';
+  ctx.ofParas=s=>'<p>'+ctx.esc(s)+'</p>';ctx.clock=String;ctx.nearEnd=()=>true;ctx.ofLog={};ctx.CU={nodes:new Map()};ctx.cuPaint=()=>{};const add=ctx.ofAdd;ctx.ofAdd=(c,h,m)=>{const el=add(c,h);if(m?.id)ctx.CU.nodes.set(m.id,{el});return el};ctx.cuCard=(r,k)=>ctx.ofAdd('of '+k,'');
   vm.createContext(ctx);const api=vm.runInContext(code+';({OFM,ofMessagePoll,ofMessageMerge,ofMessageLoad,ofControlMerge})',ctx);
   return {...api,ctx,cards,gets,storage};
 }
@@ -118,11 +118,11 @@ async function fulfillmentChecks(code=messageCode){
     if(state==='answered'){assert.match(card.innerHTML,/Reply from/);assert.match(card.innerHTML,/Late matching reply &lt;img/);assert.doesNotMatch(card.innerHTML,/<img/);assert.match(card.innerHTML,/Pause your work &lt;script&gt;/)}
   }
   for(const invalid of [undefined,null,{},'fulfilled',[],{...fulfillment,state:'unknown'},{...fulfillment,intent:'resume'},{...fulfillment,via:'steer'},{...fulfillment,control_request_id:'bad'},{...fulfillment,control_request_id:'<img src=x>'},{...fulfillment,control_request_id:42}]){
-    t.ofMessageMerge([source]);t.ofMessageMerge([{...request,fulfillment:invalid}]);assert.equal(r.fulfillment,null,'invalid or missing snapshot annotation clears cached fulfillment');assert.doesNotMatch(card.innerHTML,/Pause completed/,'invalid annotation never claims success');
+    t.ofMessageMerge([source]);t.ofMessageMerge([{...source,fulfillment:invalid}]);assert.equal(r.fulfillment,null,'invalid or missing snapshot annotation clears cached fulfillment');assert.doesNotMatch(card.innerHTML,/Pause completed/,'invalid annotation never claims success');
     const cached=new Map([['liveRoomMessages',JSON.stringify([{...request,fulfillment:invalid,private_path:'/private/example'}])]]),badReload=messaging(code,cached);badReload.ctx.connected=false;badReload.ofMessageLoad();assert.doesNotMatch(badReload.OFM.records.get(request.request_id).el.innerHTML,/Pause completed/);assert.doesNotMatch(cached.get('liveRoomMessages'),/private_path/);
   }
   // A server snapshot is authoritative even after valid local history has loaded.
-  reload.ctx.connected=true;reload.ctx.response={ok:true,json:async()=>({requests:[request],available:true})};await reload.ofMessagePoll();assert.doesNotMatch(reload.OFM.records.get(request.request_id).el.innerHTML,/Pause completed/);assert.equal(JSON.parse(reload.storage.get('liveRoomMessages'))[0].fulfillment,null);
+  reload.ctx.connected=true;reload.ctx.response={ok:true,json:async()=>({requests:[{...source,fulfillment:undefined}],available:true})};await reload.ofMessagePoll();assert.doesNotMatch(reload.OFM.records.get(request.request_id).el.innerHTML,/Pause completed/);assert.equal(JSON.parse(reload.storage.get('liveRoomMessages'))[0].fulfillment,null);
 }
 const control={request_id:'abcdef12-1234-4123-8123-123456789abc',action:'interrupt',agent:'x:exact-thread-id',name:'Aster',instruction:'Pause work',state:'interrupted',error:'',created:1800000000};
 async function controlChecks(code=messageCode){
@@ -159,7 +159,7 @@ async function controlChecks(code=messageCode){
   const cachedPrivate=new Map([['liveRoomControls',JSON.stringify([malicious])]]),privateReload=messaging(code,cachedPrivate);privateReload.ctx.connected=false;privateReload.ofMessageLoad();assert.equal(privateReload.OFM.controls.size,1);assert.doesNotMatch(cachedPrivate.get('liveRoomControls'),/private_path|expected_turn_id|transcript/);
   const warningReload=messaging(code,c.storage);warningReload.ctx.connected=false;warningReload.ofMessageLoad();assert.match(warningReload.OFM.records.get(request.request_id).el.innerHTML,/Older &lt;img&gt;/);
   const showCode=html.slice(html.indexOf('function ofShow('),html.indexOf('function ofDemoAnswer('));
-  const shown=messaging(code);Object.assign(shown.ctx,{OFUI:{epoch:1,tab:'officer'},focus:null,ofEl:{classList:{contains:()=>false}},ofMayAct:()=>true,ofAttributed:(c,h)=>h});shown.ctx.ofAdd=()=>({querySelectorAll:()=>[]});shown.ctx.ofCite=()=>'';shown.ctx.ofAct=()=>[false,''];shown.ctx.OF={};vm.runInContext(showCode+';ofShow({text:"recorded",controls:['+JSON.stringify(control)+']})',shown.ctx);assert.equal(shown.OFM.controls.size,1,'Officer response merges control even without polling');
+  const shown=messaging(code);Object.assign(shown.ctx,{OFUI:{epoch:1,tab:'officer',recipient:'watch'},focus:null,ofEl:{classList:{contains:()=>false}},ofMayAct:()=>true,ofAttributed:(c,h)=>h});shown.ctx.ofAdd=()=>({querySelectorAll:()=>[]});shown.ctx.ofCite=()=>'';shown.ctx.ofAct=()=>[false,''];shown.ctx.OF={};vm.runInContext(showCode+';ofShow({text:"recorded",controls:['+JSON.stringify(control)+']})',shown.ctx);assert.equal(shown.OFM.controls.size,1,'Officer response merges control even without polling');
 }
 (async()=>{
   await controlChecks();console.log('ok controls: lost response recovery, outcomes, reload uncertainty, stale races, retention and privacy');
@@ -190,7 +190,7 @@ async function officerSubmitChecks(mutate=false){
   if(mutate) sendCode=sendCode.replace('...(request_id?{request_id}:{})','...{}');
   const bodies=[],shown=[],button={disabled:false},status={textContent:''};let ids=0;
   const ctx={OF:{turns:[],busy:false},ofIn:{value:'Ask Aster for progress',focus(){}},ofSt:status,DEMO:false,
-    crypto:{randomUUID:()=>`uuid-${++ids}`},ofDay(){},ofAdd:(c,t)=>shown.push(t),ofStatus:t=>status.textContent=t,
+    crypto:{randomUUID:()=>`uuid-${++ids}`},cuTurnMeta:()=>({id:'turn:1',ts:1}),cuDraftSave(){},ofContextPaint(){},ofHistory:t=>t.map(({role,content,context})=>({role,content,context})),ofDay(){},ofAdd:(c,t)=>shown.push(t),ofStatus:t=>status.textContent=t,
     $:()=>button,ofSave(){},ofShow(){},esc:String,ofCurrent:()=>({context:{scope:'room'},history:{scope:'room'},epoch:0}),ofAttributed:(c,h)=>h,ofOwnsFocus:()=>false,
     post:async(route,body)=>{bodies.push({route,body});return {ok:true,json:async()=>({text:'Question queued',messages:[]})}}};
   vm.createContext(ctx);const send=vm.runInContext(sendCode+';ofSend',ctx);
@@ -198,7 +198,7 @@ async function officerSubmitChecks(mutate=false){
   ctx.ofIn.value='Ask Aster another question';await send();assert.equal(bodies[1].body.request_id,'uuid-2');assert.equal(ids,2);
   ctx.crypto=undefined;ctx.ofIn.value='What happened?';await send();assert.equal(Object.hasOwn(bodies[2].body,'request_id'),false,'ordinary questions work without secure UUID support');
   ctx.post=async()=>{throw new Error('offline')};ctx.ofIn.value='Ask Aster for status';await send();assert.match(shown.at(-1),/check message\/control status/);
-  assert.ok(!messageCode.includes('/agent-message\''),'UI never sends messages directly');
+  assert.ok(!sendCode.includes('/agent-message\''),'WATCH never bypasses its explicit /ask route');
   console.log('ok Officer submission: one UUID per question, /ask only, no-crypto log queries, uncertainty warning');
 }
 (async()=>{await officerSubmitChecks();let failed=false;try{await officerSubmitChecks(true)}catch(err){failed=true}assert.ok(failed,'missing request ID mutation must fail');console.log('ok mutation detected: missing Officer request ID')})().catch(err=>{console.error(err);process.exitCode=1});
@@ -227,7 +227,7 @@ async function officerLateChecks(){
   let release,epoch=1,selected='Birch',focuses=0,posted;const shown=[],responses=[];
   const ctx={OF:{turns:[],busy:false},ofIn:{value:'Why did it stop?',focus(){focuses++}},ofSt:{textContent:''},DEMO:false,
     ofCurrent:()=>({context:{scope:'station',agent:'x:12345678'},history:{scope:'station',agent:'x:12345678',name:selected},epoch}),
-    ofDay(){},ofAdd:(c,t)=>shown.push(t),ofAttributed:(c,h)=>c.name+' '+h,esc:String,ofStatus(t){ctx.ofSt.textContent=t},$:()=>({disabled:false}),ofSave(){},ofShow:(r,q)=>responses.push(q),ofOwnsFocus:q=>q.epoch===epoch,
+    cuTurnMeta:()=>({id:'turn:1',ts:1}),cuDraftSave(){},ofContextPaint(){},ofHistory:t=>t.map(({role,content,context})=>({role,content,context})),ofDay(){},ofAdd:(c,t)=>shown.push(t),ofAttributed:(c,h)=>c.name+' '+h,esc:String,ofStatus(t){ctx.ofSt.textContent=t},$:()=>({disabled:false}),ofSave(){},ofShow:(r,q)=>responses.push(q),ofOwnsFocus:q=>q.epoch===epoch,
     post:async(p,b)=>{posted=b;await new Promise(r=>release=r);return {ok:true,json:async()=>({text:'Stopped'})}}};
   vm.createContext(ctx);const send=vm.runInContext(code+';ofSend',ctx);const pending=send();selected='Aster';epoch++;release();await pending;
   assert.equal(posted.context.agent,'x:12345678');assert.equal(responses[0].history.name,'Birch');assert.equal(ctx.OF.turns[1].context.name,'Birch');assert.equal(focuses,0);
@@ -243,16 +243,25 @@ officerLateChecks().catch(e=>{console.error(e);process.exitCode=1});
   const suggest=vm.runInNewContext(code+';ofSuggestion',ctx);suggest({do:'watch_draft',words:'test'});assert.equal(calls,0);buttons[0].onclick();buttons[0].onclick();assert.equal(calls,1);assert.equal(buttons[0].disabled,true);assert.match(lines.at(-1),/^Done/);console.log('ok deferred suggestion: explicit single use, truthful outcome');
 }
 
-/* Real tab/citation helpers reveal the existing Comms node before navigation. */
+/* Conversation navigation uses agent + local entry identity and expands old speech. */
+function citationChecks(mutate=false){
+  let jumpCode=html.slice(html.indexOf('function ofJump('),html.indexOf('/* agent message helpers:'));
+  let revealCode=html.slice(html.indexOf('function cuRevealEvent('),html.indexOf('function cuCard('));
+  if(mutate===true){jumpCode=jumpCode.replace('x.dataset.sourceAgent===aid&&','');revealCode=revealCode.replace('x.dataset.sourceAgent===id&&','')}
+  if(mutate==='collapsed'){jumpCode=jumpCode.replace('if(detail)detail.open=true','if(false)detail.open=true');revealCode=revealCode.replace('if(detail)detail.open=true','if(false)detail.open=true')}
+  for(const t of ['you','say']){
+    let scrolled=0,notices=[];const entry={t,seq:7,n:17,key:'message'},detail={open:false},el={dataset:{sourceN:'17',sourceAgent:'id'},querySelector:()=>detail,getClientRects:()=>[{}],scrollIntoView(){scrolled++},classList:{add(){},remove(){}}},wrong={...el,dataset:{sourceN:'17',sourceAgent:'other'},getClientRects:()=>[],scrollIntoView(){throw Error('wrong station')}};
+    const env={A:{id:{name:'Birch',story:[entry],open:new Set()}},focus:'id',setFocus(){},ofTab(){},capAdd:(s,k)=>s.add(k),STATION:{compact:true},render(){},performance:{now:()=>0},STEPPING:false,ofLog:{dataset:{a:'id'},querySelectorAll:()=>[wrong,el]},storyEl:{},setTimeout(){},cuNotice:text=>notices.push(text),cuSources(){},cuPaint(){},esc:String};
+    vm.runInNewContext(jumpCode+';ofJump("id",7)',env);assert.equal(scrolled,1);assert.equal(detail.open,true);assert.equal(env.deskView,undefined);
+    detail.open=false;vm.runInNewContext(revealCode+';cuRevealEvent("id",17)',env);assert.equal(scrolled,2);assert.equal(detail.open,true);
+    vm.runInNewContext(jumpCode+';ofJump("id",404);ofJump("missing",7)',env);assert.equal(notices.length,2);assert.match(notices[0],/no longer/);assert.match(notices[1],/no longer/);
+  }
+  assert.doesNotMatch(html,/data-v="said"|deskView='said'/);
+}
+citationChecks();let collisionCaught=false;try{citationChecks(true)}catch(e){collisionCaught=true}assert.ok(collisionCaught);let collapseCaught=false;try{citationChecks('collapsed')}catch(e){collapseCaught=true}assert.ok(collapseCaught);console.log('ok conversation navigation: two stations with same local n, collapsed speech, absent citations; collision and collapsed-target mutations detected');
 {
-  const nodes={};for(const key of ['#officerTab','#commsTab','#officerSlot','#commsPanel'])nodes[key]={setAttribute(k,v){this[k]=v}};
-  const ctx={OFUI:{tab:'officer',epoch:0},$:k=>nodes[k],stickC:true,commsEl:{scrollTop:0,scrollHeight:90}};
-  const code=html.slice(html.indexOf('function ofTab('),html.indexOf('function ofInit('));
-  const tab=vm.runInNewContext(code+';ofTab',ctx);tab('comms');assert.equal(ctx.OFUI.epoch,1);assert.equal(nodes['#officerSlot'].hidden,true);assert.equal(nodes['#commsPanel'].hidden,false);assert.equal(nodes['#commsTab'].tabIndex,0);assert.equal(ctx.commsEl.scrollTop,90);tab('comms',false);assert.equal(ctx.OFUI.epoch,1);
-  const jumpCode=html.slice(html.indexOf('function ofJump('),html.indexOf('/* agent message helpers:'));
-  let visible=false,scrolled=false;const entry={t:'you',seq:7,key:'message'},el={dataset:{k:'message'},getClientRects:()=>visible?[{}]:[],scrollIntoView(){scrolled=true},classList:{add(){},remove(){}}};
-  const env={A:{id:{name:'Birch',story:[entry],open:new Set()}},focus:'id',setFocus(){},ofTab(t){visible=t==='comms'},capAdd:(s,k)=>s.add(k),STATION:{compact:true},render(){},performance:{now:()=>0},STEPPING:false,commsEl:{dataset:{a:'id'},querySelectorAll:()=>[el]},storyEl:{},setTimeout(){},ofAdd(){throw Error('citation failed')},esc:String};
-  vm.runInNewContext(jumpCode+';ofJump("id",7)',env);assert.equal(scrolled,true);console.log('ok tabs and citations: existing Comms revealed, roving tab state, epoch and sticky bottom');
+  const nodes=new Map(),ctx={CU:{serial:0,nodes},ofAdd:(c,h,m)=>{const el={text:h};nodes.set(m.id,{el});return el},cuPaint(){}};
+  const noticeCode=html.slice(html.indexOf('function cuNotice('),html.indexOf('function cuRevealEvent('));vm.runInNewContext(noticeCode+';cuNotice("Unavailable citation")',ctx);assert.equal([...nodes.values()][0].global,true,'navigation failure remains visible regardless of selected context');
 }
 
 /* Visibility is an all-rectangle safety check, including compact-host clipping. */
@@ -268,7 +277,7 @@ visibilityChecks();let clippingFailed=false;try{visibilityChecks(true)}catch(e){
 /* A still-visible dock is not ownership: another focused control defers navigation actions. */
 function responseFocusChecks(mutate=false){
   let code=html.slice(html.indexOf('function ofShow('),html.indexOf('function ofDemoAnswer('));if(mutate)code=code.replace('&&(!request||ofOwnsFocus(request))','');
-  let acts=0,suggestions=0;const ctx={OFUI:{epoch:1,tab:'officer'},focus:'station',ofEl:{classList:{contains:()=>false}},ofOwnsFocus:()=>false,ofMayAct:(q,e,a)=>q.epoch===e&&a,ofAttributed:(c,h)=>h,ofParas:String,ofAdd:()=>({querySelectorAll:()=>[]}),ofSuggestion:()=>suggestions++,ofAct:()=>{acts++;return [false,'']},esc:String};
+  let acts=0,suggestions=0;const ctx={OFUI:{epoch:1,tab:'officer',recipient:'watch'},focus:'station',ofEl:{classList:{contains:()=>false}},ofOwnsFocus:()=>false,ofMayAct:(q,e,a)=>q.epoch===e&&a,ofAttributed:(c,h)=>h,ofParas:String,ofAdd:()=>({querySelectorAll:()=>[]}),ofSuggestion:()=>suggestions++,ofAct:()=>{acts++;return [false,'']},esc:String};
   const show=vm.runInNewContext(code+';ofShow',ctx);show({text:'Draft',actions:[{do:'watch_draft'}]},{epoch:1});assert.equal(acts,0);assert.equal(suggestions,1);
   ctx.ofOwnsFocus=()=>true;show({text:'Draft',actions:[{do:'watch_draft'}]},{epoch:1});assert.equal(acts,1);
 }
@@ -289,4 +298,83 @@ responseFocusChecks();let focusFailed=false;try{responseFocusChecks(true)}catch(
 /* Leave scrolling room around the approval banner and code, not only an exact fit. */
 {
   const code=html.slice(html.indexOf('function compactMonitorHeight('),html.indexOf('function stationLayout('));const height=vm.runInNewContext(code+';compactMonitorHeight');assert.equal(height(390,97),169);assert.equal(height(200,100),120);assert.ok(64+169+12<=293-40);console.log('ok compact approval geometry reserves scroll breathing space and minimum monitor height');
+}
+
+/* Unified conversation identities, context isolation and legacy metadata. */
+const unifiedCode=html.slice(html.indexOf('function cuEventKey('),html.indexOf('/* end unified conversation helpers */'));
+function unifiedChecks(code=unifiedCode){
+  const api=vm.runInNewContext(code+';({cuSourceRows,cuEnvelopeMatch,cuDraftKey,cuVisible,cuMeta})');
+  const a={story:[{t:'you',seq:1,n:1,text:'same'},{t:'say',seq:2,n:2,text:'same'},{t:'you',seq:3,n:3,text:'same'}],msgs:[{seq:1,text:'same'},{seq:0,text:'older'}]};
+  const rows=api.cuSourceRows(a);assert.equal(rows.length,4);assert.equal(rows.filter(r=>r.text==='same').length,3,'same text with different identities remains visible');assert.equal(rows.filter(r=>r.seq===1).length,1,'same event across two stores appears once');
+  const id='12345678-1234-4123-8123-123456789abc',record={request_id:id,agent:'x:agent-a',question:'Hello',state:'answered',reply:'Done'},records=new Map([[id,record]]);
+  const reply={t:'say',text:'WATCH_REPLY '+id+'\nDone'};assert.equal(api.cuEnvelopeMatch(reply,'x:agent-a',records),true);assert.equal(api.cuEnvelopeMatch(reply,'x:agent-b',records),false);assert.equal(api.cuEnvelopeMatch({...reply,text:reply.text+' extra'},'x:agent-a',records),false);assert.equal(api.cuEnvelopeMatch({...reply,text:'WATCH_REPLY '+id},'x:agent-a',records),false);assert.equal(api.cuEnvelopeMatch(reply,'x:agent-a',new Map()),false);
+  const requestText='WATCH_REQUEST '+id+'\nThe owner asks through the Officer of the Watch:\nHello\nReply in your final answer with WATCH_REPLY '+id+' on its own line, followed by your answer. This is a question, not permission to change files or send messages. For a progress question, inspect your own current state.';
+  assert.equal(api.cuEnvelopeMatch({t:'you',text:requestText},record.agent,records),true);assert.equal(api.cuEnvelopeMatch({t:'you',text:requestText.slice(0,-1)},record.agent,records),false);assert.equal(api.cuEnvelopeMatch({t:'you',text:requestText.replace('Hello','Different')},record.agent,records),false);
+  assert.equal(api.cuVisible({scope:'room'},'A'),true);assert.equal(api.cuVisible({scope:'station',agent:'A'},'A'),true);assert.equal(api.cuVisible({scope:'station',agent:'A'},'B'),false);assert.equal(api.cuVisible(null,'A'),false);assert.equal(api.cuVisible(null,null),true);
+  assert.equal(api.cuMeta(null),null);assert.equal(api.cuMeta({id:'turn:old'}),null);assert.equal(api.cuMeta({id:'turn:x',ts:NaN}),null);assert.equal(api.cuMeta({id:'turn:x',ts:4}).ts,4);
+  const keys=[api.cuDraftKey('A','agent','station'),api.cuDraftKey('A','watch','station'),api.cuDraftKey('A','watch','room'),api.cuDraftKey('B','agent','station')];assert.equal(new Set(keys).size,4);
+}
+unifiedChecks();
+for(const [label,from,to] of [['cross-agent envelope','r.agent!==agent','false'],['event dedup','if(key&&seen.has(key))continue','if(false)continue'],['legacy timestamp invention',"return value&&typeof value.id", "return !value?{id:'turn:invented',ts:1}:value&&typeof value.id"]]){
+  let failed=false;try{unifiedChecks(unifiedCode.replaceAll(from,to))}catch(e){failed=true}assert.ok(failed,label+' must be caught');
+}
+console.log('ok unified identities, exact envelope correlation, legacy dates, context and draft partitions; three mutations detected');
+
+/* The real draft save/restore helpers preserve independent destinations. */
+{
+  const code=html.slice(html.indexOf('function cuDraftSave('),html.indexOf('function cuTurnMeta('));
+  const key=vm.runInNewContext(unifiedCode+';cuDraftKey');const ctx={focus:'A',OFUI:{recipient:'agent',scope:'station'},CU:{drafts:new Map()},ofIn:{value:'Agent A draft'},cuDraftKey:key};
+  const api=vm.runInNewContext(code+';({cuDraftSave,cuDraftRestore})',ctx);api.cuDraftSave();ctx.OFUI.recipient='watch';api.cuDraftRestore();assert.equal(ctx.ofIn.value,'');ctx.ofIn.value='WATCH A draft';api.cuDraftSave();ctx.OFUI.scope='room';api.cuDraftRestore();assert.equal(ctx.ofIn.value,'');ctx.ofIn.value='Room draft';api.cuDraftSave();ctx.focus='B';api.cuDraftRestore();assert.equal(ctx.ofIn.value,'');ctx.focus='A';api.cuDraftRestore();assert.equal(ctx.ofIn.value,'Room draft');ctx.OFUI.recipient='agent';api.cuDraftRestore();assert.equal(ctx.ofIn.value,'Agent A draft');
+  console.log('ok drafts: agent, WATCH station, WATCH room and station switches');
+}
+
+/* Exercise the actual direct send boundary with delayed responses and failures. */
+const directCode=html.slice(html.indexOf('async function cuSend('),html.indexOf('async function ofSend('));
+function directHarness(code=directCode){
+  const posts=[],lines=[],painted=[];let ids=0;
+  const ctx={focus:'x:A',A:{'x:A':{name:'Ada',runtime:'Codex'},'x:B':{name:'Bram',runtime:'Codex'}},OFUI:{recipient:'agent'},CU:{busy:new Set()},OFM:{records:new Map()},ofIn:{value:'Please inspect'},DEMO:false,KEY:'key',claiming:false,locked:false,connected:true,
+    crypto:{randomUUID:()=>`12345678-1234-4123-8123-${String(++ids).padStart(12,'0')}`},ofSend:()=>{ctx.watchCalls++;},watchCalls:0,esc:String,ofAdd:(c,h,m)=>lines.push({h,m}),ofMessagePaint:r=>painted.push({...r}),ofMessageSave(){},cuDraftSave(){},ofContextPaint(){},ofMessageMerge:rows=>{for(const v of rows)Object.assign(ctx.OFM.records.get(v.request_id),v)},post:async(p,b)=>{posts.push({p,b});return {ok:true,json:async()=>({...b,state:'queued'})}}};
+  ctx.cuDirectReason=vm.runInNewContext(unifiedCode+';cuDirectReason');ctx.OF=Object.freeze({turns:Object.freeze([])});vm.createContext(ctx);const send=vm.runInContext(code+';cuSend',ctx);return {ctx,send,posts,lines,painted};
+}
+async function directChecks(code=directCode){
+  const h=directHarness(code);let release;h.ctx.post=async(p,b)=>{h.posts.push({p,b});await new Promise(r=>release=r);return {ok:true,json:async()=>({...b,state:'queued'})}};
+  const pending=h.send();assert.equal(h.posts[0].p,'/agent-message');assert.equal(h.posts[0].b.agent,'x:A');assert.equal(h.posts[0].b.question,'Please inspect');assert.ok(h.posts[0].b.request_id);assert.equal(h.ctx.watchCalls,0);assert.equal(h.ctx.OF.turns.length,0);
+  h.ctx.ofIn.value='second';await h.send();assert.equal(h.posts.length,1,'same target busy gate');h.ctx.focus='x:B';h.ctx.OFUI.recipient='watch';h.ctx.ofIn.value='Bram WATCH draft';h.ctx.A['x:A'].name='Renamed';release();await pending;
+  const r=[...h.ctx.OFM.records.values()][0];assert.equal(r.agent,'x:A');assert.equal(r.name,'Ada');assert.equal(r.question,'Please inspect');assert.equal(h.ctx.ofIn.value,'Bram WATCH draft');assert.equal(h.ctx.CU.busy.size,0);
+  await h.send();assert.equal(h.ctx.watchCalls,1,'WATCH routes only to ofSend');
+  for(const field of ['locked','claiming']){const t=directHarness(code);t.ctx[field]=true;await t.send();assert.equal(t.posts.length,0);assert.match(t.lines[0].h,/Nothing was sent/)}
+  for(const [field,value] of [['KEY',''],['connected',false],['crypto',undefined]]){const t=directHarness(code);t.ctx[field]=value;await t.send();assert.equal(t.posts.length,0);assert.equal(t.ctx.OFM.records.size,0)}
+  const tooLong=directHarness(code);tooLong.ctx.ofIn.value='x'.repeat(2001);await tooLong.send();assert.equal(tooLong.posts.length,0);
+  const unsupported=directHarness(code);unsupported.ctx.A['x:A'].observed=true;await unsupported.send();assert.equal(unsupported.posts.length,0);
+  const lost=directHarness(code);lost.ctx.post=async()=>{throw Error('offline')};await lost.send();assert.equal([...lost.ctx.OFM.records.values()][0].state,'unknown');assert.match(lost.painted.at(-1).error,/do not resend/);
+  const mismatch=directHarness(code);mismatch.ctx.post=async(p,b)=>({ok:true,json:async()=>({...b,agent:'x:B'})});await mismatch.send();assert.equal([...mismatch.ctx.OFM.records.values()][0].state,'unknown');
+  for(const status of [403,500]){const lateError=directHarness(code);lateError.ctx.post=async(p,b)=>{Object.assign(lateError.ctx.OFM.records.get(b.request_id),{state:'answered',reply:'Already received'});return {ok:false,status,text:async()=> 'Late error'}};await lateError.send();assert.equal([...lateError.ctx.OFM.records.values()][0].state,'answered');}
+  const late=directHarness(code);late.ctx.post=async(p,b)=>{Object.assign(late.ctx.OFM.records.get(b.request_id),{state:'answered',reply:'Already received'});return {ok:true,json:async()=>({...b,state:'sending'})}};await late.send();assert.equal([...late.ctx.OFM.records.values()][0].state,'answered');
+}
+(async()=>{await directChecks();for(const [label,from,to] of [['wrong route',"post('/agent-message'","post('/ask'"],['mutable target','{agent:id,question:q,request_id}','{agent:focus,question:q,request_id:undefined}'],['lost uncertainty',"r.state='unknown';r.error='Delivery", "r.state='failed';r.error='Delivery"],['late HTTP regression',"if(r.state==='sending'){r.state=res.status","if(true){r.state=res.status"]]){let failed=false;try{await directChecks(directCode.replace(from,to))}catch(e){failed=true}assert.ok(failed,label+' mutation caught')}console.log('ok direct routing: exact identity, independent busy gates, delayed response, drafts, errors, uncertainty and no replay; four mutations detected')})().catch(e=>{console.error(e);process.exitCode=1});
+
+/* Card updates cannot relabel historical recipients; pending reloads are uncertain. */
+{
+  const t=messaging();t.ofMessageMerge([{...request,name:'Original',state:'sending',created:22}]);const r=t.OFM.records.get(request.request_id);t.ofMessageMerge([{...request,name:'Renamed',state:'answered',reply:'Matched'}]);assert.equal(r.name,'Original');assert.equal(r.created,22);assert.equal(r.reply,'Matched');t.ofMessageMerge([{...request,agent:'x:other',state:'answered',reply:'Wrong'}]);assert.equal(r.reply,'Matched');t.ofMessageMerge([{...request,question:'Wrong',state:'answered',reply:'Wrong'}]);assert.equal(r.reply,'Matched');
+  for(const state of ['sending','queued','awaiting_reply']){const cache=new Map([['liveRoomMessages',JSON.stringify([{...request,state,created:22}])]]),reload=messaging(messageCode,cache);reload.ctx.connected=false;reload.ofMessageLoad();assert.equal(reload.OFM.records.get(request.request_id).state,'unknown');assert.equal(reload.OFM.records.get(request.request_id).created,22);assert.equal(reload.gets.length,0)}
+  console.log('ok immutable message attribution, exact request identity and uncertain reload recovery');
+}
+
+/* Real source reconciliation preserves expanded nodes and keeps queue evidence separate. */
+function sourceChecks(mutate=false){
+  let code=html.slice(html.indexOf('function cuSources('),html.indexOf('function cuNotice('));
+  if(mutate)code=code.replace("if(!r){const el=", "if(true){const el=");
+  class Node{constructor(){this.dataset={};this.paints=0}set innerHTML(v){this.html=v;this.paints++;this.detail=v.includes('<details')?{open:v.includes('<details open')}:null}get innerHTML(){return this.html}querySelector(){return this.detail}remove(){this.removed=true}}
+  const helpers=vm.runInNewContext(unifiedCode+';({cuSourceRows,cuEventKey,cuEnvelopeMatch})');const pending={state:'queued'},ctx={...helpers,CU:{nodes:new Map()},OFM:{records:new Map([['pending',pending]])},document:{createElement:()=>new Node()},plain:String,one:String,esc:String,clock:String,STEADY:false,need:a=>a.need};
+  const sources=vm.runInNewContext(code+';cuSources',ctx),a={id:'A',name:'Ada',story:[{t:'say',n:1,seq:1,ts:1,text:'First'}],msgs:[],q:[{seq:2,ts:2,text:'Queued task'}],need:{sure:false,kind:'Decide',text:'Choose one'}};
+  sources(a);const row=ctx.CU.nodes.get('source:A:seq:1'),card=row.el;card.detail.open=false;const paints=card.paints;sources(a);assert.equal(ctx.CU.nodes.get('source:A:seq:1').el,card);assert.equal(card.paints,paints);assert.equal(card.detail.open,false,'expanded state survives refresh');assert.match(ctx.CU.nodes.get('queue:A:seq:2').el.innerHTML,/Queue observation does not confirm delivery/);assert.match(ctx.CU.nodes.get('source:A:request').el.innerHTML,/Possible request · inferred/);
+  a.name='Renamed';a.need.sure=true;a.q=[];sources(a);assert.equal(row.context.name,'Ada');assert.match(ctx.CU.nodes.get('source:A:request').el.innerHTML,/Confirmed request/);assert.equal(ctx.CU.nodes.has('queue:A:seq:2'),false);assert.equal(pending.state,'queued','queue removal never changes independent delivery');
+  a.story.push({t:'say',n:3,seq:3,ts:3,text:'Later'});sources(a);assert.equal(card.detail.open,false);assert.equal(ctx.CU.nodes.get('source:A:seq:3').el.detail.open,true);assert.equal(row.el,card);
+}
+sourceChecks();let reconciliationCaught=false;try{sourceChecks(true)}catch(e){reconciliationCaught=true}assert.ok(reconciliationCaught);console.log('ok stable source DOM/details, immutable name, confirmed/inferred requests and independent native queue; recreation mutation detected');
+
+/* Unsupported stations explain their limitation before a send is attempted. */
+{
+  const reason=vm.runInNewContext(unifiedCode+';cuDirectReason');assert.equal(reason('x:demo',{runtime:'Codex'}),'');assert.equal(reason('c:demo',{runtime:'Claude'}),'');assert.match(reason('e:cloud',{runtime:'Codex',observed:true}),/ChatGPT/);assert.match(reason('c:child',{runtime:'Claude',sub:true}),/parent/);assert.match(reason('x:gone',null),/no longer/);assert.match(reason('k:remote',{runtime:'Codex'}),/local/);
+  console.log('ok direct availability: local parents supported, cloud/subagent/unavailable targets explained');
 }
