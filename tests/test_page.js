@@ -361,30 +361,46 @@ function pendingChecks(code=unifiedCode){
   const envelope='WATCH_REQUEST '+id+'\nThe owner asks through the Officer of the Watch:\nSame text\nReply in your final answer with WATCH_REPLY '+id+' on its own line, followed by your answer. This is a question, not permission to change files or send messages. For a progress question, inspect your own current state.';
   a.q=[{seq:4,text:envelope}];assert.equal(rows(agent,a,records,controls).length,1,'exact WATCH request envelope is one item');record.state='answered';assert.equal(rows(agent,a,records,controls).length,0,'terminal correlated request cannot remain as a duplicate observation');a.q[0].text+='extra';assert.equal(rows(agent,a,records,controls).length,1,'partial envelope match never drops unproven entry');a.q=[];
   const control={request_id:id,agent,action:'steer',state:'sending',instruction:'Focus on tests'};controls.set(id,control);assert.equal(rows(agent,a,records,controls)[0].label,'Steer pending');
-  for(const flag of ['restoredPending','unavailable']){control[flag]=true;assert.equal(rows(agent,a,records,controls)[0].label,'Steer outcome unknown');control[flag]=false}
+  control.restoredPending=true;assert.equal(rows(agent,a,records,controls)[0].label,'Steer outcome unknown');assert.equal(rows(agent,a,records,controls)[0].unresolved,true);control.restoredPending=false;
+  control.unavailable=true;assert.equal(rows(agent,a,records,controls).length,0,'unavailable controls leave strip');assert.equal(controls.get(id),control,'unavailable control history remains');control.unavailable=false;
   control.state='unknown';assert.equal(rows(agent,a,records,controls)[0].label,'Steer outcome unknown');
   for(const state of ['acknowledged','failed']){control.state=state;assert.equal(rows(agent,a,records,controls).length,0);assert.equal(controls.get(id),control)}
   control.state='sending';control.action='interrupt';assert.equal(rows(agent,a,records,controls).length,0,'interrupt is not misrepresented as steer');
 }
 pendingChecks();
 for(const [label,from,to] of [['cross-station pending','r.agent===agent&&Object.hasOwn','true&&Object.hasOwn'],['false pending acknowledgement',"['sending','unknown'].includes(r.state)","['sending','unknown','acknowledged'].includes(r.state)"],['lost queue identity','if(key&&seen.has(key))continue','if(false)continue']]){let caught=false;try{pendingChecks(unifiedCode.replaceAll(from,to))}catch(e){caught=true}assert.ok(caught,label+' mutation detected')}
-{
+function pendingPaintChecks(code=html.slice(html.indexOf('function cuPendingPaint('),html.indexOf('function cuSources('))){
+  const doc={activeElement:null};let moves=0;
   class PendingNode{
     constructor(){this.children=[];this.dataset={};this.parts={};this.hidden=false;this.open=false;this.textContent=''}
-    set innerHTML(markup){this.template=markup;for(const tag of ['b','span','pre','small'])this.parts[tag]=new PendingNode()}
+    set innerHTML(markup){this.template=markup;for(const tag of ['summary','b','span','pre','small']){const part=this.parts[tag]=new PendingNode();this.children.push(part);part.parent=this}}
     querySelector(tag){return this.parts[tag]}
+    contains(el){return !!el&&(this===el||this.children.some(child=>child.contains(el)))}
+    focus(){doc.activeElement=this}
     get firstElementChild(){return this.children[0]||null}
     get nextElementSibling(){return this.parent?.children[this.parent.children.indexOf(this)+1]||null}
-    insertBefore(el,at){el.remove();const index=at?this.children.indexOf(at):this.children.length;assert.ok(index>=0);this.children.splice(index,0,el);el.parent=this}
-    remove(){if(this.parent){this.parent.children.splice(this.parent.children.indexOf(this),1);this.parent=null}}
+    insertBefore(el,at){if(el.parent)moves++;el.remove();const index=at?this.children.indexOf(at):this.children.length;assert.ok(index>=0);this.children.splice(index,0,el);el.parent=this}
+    remove(){if(this.parent){if(this.contains(doc.activeElement))doc.activeElement=doc.body;this.parent.children.splice(this.parent.children.indexOf(this),1);this.parent=null}}
   }
-  const els=Object.fromEntries(['#pendingQueue','#pendingQueueList','#pendingQueueTitle'].map(id=>[id,new PendingNode()])),r={request_id:'first',agent:'A',state:'queued',question:'<img src=x onerror=bad()>'.repeat(30)},ctx={focus:'A',A:{A:{name:'Ada',q:[]},B:{name:'Bram',q:[]}},OFM:{records:new Map([['first',r]]),controls:new Map()},$:s=>els[s],txt:(el,text)=>{el.textContent=text},document:{createElement:()=>new PendingNode()}};
-  const code=html.slice(html.indexOf('function cuPendingPaint('),html.indexOf('function cuSources(')),paint=vm.runInNewContext(unifiedCode+'\n'+code+';cuPendingPaint',ctx);
-  paint();const list=els['#pendingQueueList'],row=list.children[0];assert.equal(row.querySelector('pre').textContent,r.question);assert.doesNotMatch(row.template,/<img/,'untrusted text never becomes markup');row.open=true;paint();assert.equal(list.children[0],row);assert.equal(row.open,true,'ordinary polling preserves expansion');
-  r.state='unknown';paint();assert.equal(list.children[0],row);assert.match(row.querySelector('b').textContent,/unknown/);
-  ctx.focus='B';paint();assert.equal(list.children.length,0);assert.equal(els['#pendingQueue'].hidden,true,'switching stations clears prior agent queue');ctx.focus='A';paint();assert.equal(list.children.length,1);r.state='answered';paint();assert.equal(list.children.length,0);assert.equal(ctx.OFM.records.size,1,'clearing pending does not remove historical record');
+  doc.body=new PendingNode();doc.activeElement=doc.body;doc.createElement=()=>new PendingNode();
+  const els=Object.fromEntries(['#pendingQueue','#pendingQueueList','#pendingQueueTitle'].map(id=>[id,new PendingNode()])),r={request_id:'first',agent:'A',state:'queued',question:'<img src=x onerror=bad()>'.repeat(30)},ctx={focus:'A',A:{A:{name:'Ada',q:[]},B:{name:'Bram',q:[]}},OFM:{records:new Map([['first',r]]),controls:new Map()},$:s=>els[s],txt:(el,text)=>{el.textContent=text},document:doc,ofIn:new PendingNode()};
+  const paint=vm.runInNewContext(unifiedCode+'\n'+code+';cuPendingPaint',ctx);
+  paint();const list=els['#pendingQueueList'],row=list.children[0];assert.equal(row.querySelector('pre').textContent,r.question);assert.doesNotMatch(row.template,/<img/,'untrusted text never becomes markup');row.open=true;paint();assert.equal(list.children[0],row);assert.equal(row.open,true,'ordinary polling preserves expansion');assert.equal(els['#pendingQueueTitle'].textContent,'Pending · 1 · Ada');
+  r.state='unknown';paint();assert.equal(list.children[0],row);assert.match(row.querySelector('b').textContent,/unknown/);assert.equal(els['#pendingQueueTitle'].textContent,'Unresolved · 1 · Ada','unknown-only title never counts as pending');
+  const second={request_id:'second',agent:'A',state:'queued',question:'Second request'};ctx.OFM.records.set('second',second);paint();const secondRow=list.children[1],secondSummary=secondRow.querySelector('summary');secondRow.open=true;secondSummary.focus();assert.equal(els['#pendingQueueTitle'].textContent,'Pending · 1 · Unresolved · 1 · Ada');
+  const movesBefore=moves;r.state='answered';paint();assert.equal(list.children[0],secondRow);assert.equal(doc.activeElement,secondSummary,'clearing earlier sibling preserves focused summary');assert.equal(moves,movesBefore,'clearing earlier row does not move survivor');assert.equal(secondRow.open,true);
+  second.state='answered';paint();assert.equal(doc.activeElement,ctx.ofIn,'removed focused last row returns focus to composer');assert.equal(els['#pendingQueue'].hidden,true);
+  r.state='queued';second.state='queued';paint();list.children[0].querySelector('summary').focus();r.state='answered';paint();assert.equal(doc.activeElement,ctx.ofIn,'removed focused row returns focus even with another row remaining');
+  const elsewhere=new PendingNode();elsewhere.focus();second.state='answered';paint();assert.equal(doc.activeElement,elsewhere,'terminal updates never steal focus outside removed row');
+  second.state='queued';paint();ctx.focus='B';paint();assert.equal(list.children.length,0);assert.equal(els['#pendingQueue'].hidden,true,'switching stations clears prior agent queue');assert.equal(doc.activeElement,elsewhere,'navigation does not steal focus');ctx.focus='A';paint();assert.equal(list.children.length,1);second.state='answered';paint();assert.equal(list.children.length,0);assert.equal(ctx.OFM.records.size,2,'clearing pending does not remove historical record');
 }
-console.log('ok pending strip: identity/source isolation, observed queue, truthful message/steer states, terminal clearing, safe text, stable expansion and navigation; three mutations detected');
+pendingPaintChecks();
+{
+  const paintCode=html.slice(html.indexOf('function cuPendingPaint('),html.indexOf('function cuSources('));
+  const removal='for(const [id,el] of existing)if(!active.has(id)){if(el.contains(focused))restoreFocus=true;el.remove()}';
+  for(const [label,code] of [['stale rows removed late',paintCode.replace(removal,'').replace('if(restoreFocus)ofIn.focus',removal+';if(restoreFocus)ofIn.focus')],['focus not restored',paintCode.replace('if(restoreFocus)ofIn.focus({preventScroll:true});','')],['unknown counted pending',paintCode.replace('rows.filter(r=>r.unresolved).length','0')]]){let caught=false;try{pendingPaintChecks(code)}catch(e){caught=true}assert.ok(caught,label+' mutation detected')}
+}
+console.log('ok pending strip: identity/source isolation, observed queue, truthful message/steer states, terminal clearing, safe text, stable expansion, focused sibling removal, composer restoration and navigation; six mutations detected');
 
 /* The real draft save/restore helpers preserve independent destinations. */
 {

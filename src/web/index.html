@@ -2224,10 +2224,10 @@ function cuMeta(value){return value&&typeof value.id==='string'&&/^turn:[a-zA-Z0
 function cuPendingRows(agent,a,records,controls){
   if(!agent||!a)return [];
   const rows=[],seen=new Set(),labels={sending:'Sending · WATCH',queued:'Queued · WATCH',unknown:'Delivery unknown · WATCH'};
-  for(const r of records.values())if(r.agent===agent&&Object.hasOwn(labels,r.state))rows.push({id:'message:'+r.request_id,label:labels[r.state],text:String(r.question||''),note:r.state==='unknown'?'Delivery could not be confirmed. Do not resend.':r.state==='queued'?'Waiting for the agent. This does not steer its current turn.':'Delivery is not yet confirmed.'});
-  for(const r of controls.values())if(r.agent===agent&&r.action==='steer'&&['sending','unknown'].includes(r.state)){
-    const uncertain=r.state==='unknown'||r.restoredPending||r.unavailable;
-    rows.push({id:'control:'+r.request_id,label:uncertain?'Steer outcome unknown':'Steer pending',text:String(r.instruction||''),note:uncertain?'The steer outcome could not be confirmed. Do not repeat it.':'Waiting for acknowledgement. Execution is not yet confirmed.'});
+  for(const r of records.values())if(r.agent===agent&&Object.hasOwn(labels,r.state))rows.push({id:'message:'+r.request_id,label:labels[r.state],unresolved:r.state==='unknown',text:String(r.question||''),note:r.state==='unknown'?'Delivery could not be confirmed. Do not resend.':r.state==='queued'?'Waiting for the agent. This does not steer its current turn.':'Delivery is not yet confirmed.'});
+  for(const r of controls.values())if(r.agent===agent&&!r.unavailable&&r.action==='steer'&&['sending','unknown'].includes(r.state)){
+    const uncertain=r.state==='unknown'||r.restoredPending;
+    rows.push({id:'control:'+r.request_id,label:uncertain?'Steer outcome unknown':'Steer pending',unresolved:!!uncertain,text:String(r.instruction||''),note:uncertain?'The steer outcome could not be confirmed. Do not repeat it.':'Waiting for acknowledgement. Execution is not yet confirmed.'});
   }
   for(const [i,it] of (a.q||[]).entries()){
     if(cuEnvelopeMatch({...it,t:'you'},agent,records))continue;
@@ -2251,15 +2251,19 @@ function cuPaint(follow=false){
 }
 function cuPendingPaint(){
   const host=$('#pendingQueue'),list=$('#pendingQueueList'),rows=cuPendingRows(focus,A[focus],OFM.records,OFM.controls);
-  host.hidden=!rows.length;txt($('#pendingQueueTitle'),rows.length?'Pending · '+rows.length+' · '+(A[focus]?.name||focus):'');
-  const active=new Set(),existing=new Map([...list.children].map(el=>[el.dataset.pendingId,el]));let at=list.firstElementChild;
+  const unresolved=rows.filter(r=>r.unresolved).length,pending=rows.length-unresolved,title=[pending?'Pending · '+pending:'',unresolved?'Unresolved · '+unresolved:''].filter(Boolean).join(' · ');
+  txt($('#pendingQueueTitle'),title?title+' · '+(A[focus]?.name||focus):'');
+  const active=new Set(rows.map(r=>r.id)),existing=new Map([...list.children].map(el=>[el.dataset.pendingId,el])),focused=document.activeElement;let restoreFocus=false;
+  // Remove obsolete siblings first so surviving summaries never move merely because an earlier row cleared.
+  for(const [id,el] of existing)if(!active.has(id)){if(el.contains(focused))restoreFocus=true;el.remove()}
+  host.hidden=!rows.length;let at=list.firstElementChild;
   for(const r of rows){
-    active.add(r.id);let el=existing.get(r.id);
+    let el=existing.get(r.id);
     if(!el){el=document.createElement('details');el.dataset.pendingId=r.id;el.innerHTML='<summary><b></b><span></span></summary><pre></pre><small></small>'}
     txt(el.querySelector('b'),r.label);txt(el.querySelector('span'),r.text);txt(el.querySelector('pre'),r.text);txt(el.querySelector('small'),r.note);
     if(el!==at)list.insertBefore(el,at);at=el.nextElementSibling;
   }
-  for(const [id,el] of existing)if(!active.has(id))el.remove();
+  if(restoreFocus)ofIn.focus({preventScroll:true});
 }
 function cuSources(a){
   const active=new Set(),rows=cuSourceRows(a),sayRows=rows.filter(r=>r.t==='say');
