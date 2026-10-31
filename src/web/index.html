@@ -504,12 +504,40 @@ html[data-theme=neutral] .flag .rev:hover,html[data-theme=neutral] .flag .fx:hov
 html[data-theme=neutral] .flag .yes:hover,html[data-theme=neutral] #compactMonitor .flag .yes:hover{color:#237a43;border-color:#237a43;background:#edf5ef}
 html[data-theme=neutral] .flag .no:hover,html[data-theme=neutral] #compactMonitor .flag .no:hover{color:#b63838;border-color:#b63838;background:#fff0f0}
 
+#back .mobile-label{display:none}
+/* Keep phone navigation compact; measured bar heights still position the desk. */
+@media(max-width:600px){
+  #hud{gap:4px;padding:4px 8px;font-size:10px;letter-spacing:.04em}
+  #hud #brand{font-size:0;padding-right:0}
+  #mark{width:22px;height:22px;margin-right:0;vertical-align:middle}
+  #live{min-height:36px;gap:5px;padding:4px 6px}
+  #hud button{min-width:36px;min-height:36px;padding:5px 7px}
+  #hud #console{gap:4px;padding:0;border:0;background:none}
+  #hud .sw,#hud .ic{justify-content:center;gap:4px;padding:5px 6px}
+  #acts{gap:4px}
+  #hud #back{margin-left:auto}
+  #back .full-label{display:none}
+  #back .mobile-label{display:inline}
+  #demoTag{max-width:40px;padding:3px 4px;font-size:9px;letter-spacing:0}
+  #deskT{left:8px;right:8px;flex-wrap:nowrap;gap:8px}
+  #deskT:has(#crumb>.pill.me:only-child){display:none}
+  #deskT .lbl{flex:0 0 auto;max-width:112px;line-height:1.35;white-space:normal}
+  #crumb{flex:1;flex-wrap:nowrap;overflow-x:auto;overflow-y:hidden;overscroll-behavior-x:contain;padding:2px;scrollbar-width:thin}
+  #crumb>*{flex:none}
+  #crumb .pill{min-height:36px;max-width:200px;padding:6px 8px}
+  #crumb .pill:focus-visible{outline:2px solid var(--hl);outline-offset:-2px}
+  #compactDesk{gap:4px}
+  #deskToolbar{gap:4px;padding:0 8px;min-height:36px}
+  #deskToolbar button{min-height:36px;padding:5px 8px}
+  #deskToolbar .theme-choices{display:flex;gap:4px}
+}
+
 </style>
 </head>
 <body>
 <div id="room"><div id="world"><div id="floor"></div></div></div>
 <div id="hud">
-  <span id="brand" title="Window on Agents, Tools, Changes and Hand-offs"><img id="mark" src="/static/icon.svg?v=fleet-3" alt="">W.A.T.C.H.</span>
+  <span id="brand" role="img" aria-label="W.A.T.C.H." title="Window on Agents, Tools, Changes and Hand-offs"><img id="mark" src="/static/icon.svg?v=fleet-3" alt="">W.A.T.C.H.</span>
   <span id="live" class="off">connecting…</span>
   <span id="fleetS" hidden><b>Fleet</b><span id="projs"></span></span>
   <button id="needN" hidden></button>
@@ -519,7 +547,7 @@ html[data-theme=neutral] .flag .no:hover,html[data-theme=neutral] #compactMonito
     <button id="appr" class="sw" aria-label="Answer prompts here"><svg viewBox="0 0 24 24"><path d="M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6z"/><path d="M8.5 12l2.5 2.5 4.5-5"/></svg><span>Answer here</span></button>
   </span>
   <span id="acts"><button id="clearQ" class="ic" hidden title="Dismiss every agent that is idle and not waiting on you; pinned ones stay" aria-label="Dismiss idle agents"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="12" rx="1"/><path d="M9 20h6M12 16v4M9 8l6 4M15 8l-6 4"/></svg></button><button id="bringB" class="ic" hidden aria-label="Bring back dismissed agents"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="12" rx="1"/><path d="M9 20h6M12 16v4M12 7v6M9 10h6"/></svg><b></b></button><span id="watchW"><button id="watchB" title="Add or remove what counts as a risk, a check, or probably needing you" aria-expanded="false" aria-controls="watchP">Watch</button><div id="watchP" hidden><div id="watchDraft" hidden><span id="watchDraftT"></span><span class="row"><button type="button" id="watchKeep">Keep this rule</button><button type="button" id="watchDrop">Not now</button></span></div><input id="watchTry" maxlength="80" autocomplete="off" placeholder="a command, or something an agent might say" aria-label="Try a command or a sentence"><div id="watchMiniK" hidden>Preview · what the room would show</div><div id="watchMini" hidden></div><div id="watchAsK" class="wkk" hidden>Show it as</div><div id="watchAs" hidden></div><div id="watchSaved" hidden></div><div class="wkk" id="watchYoursK">Your rules</div><div id="watchYours"></div><details id="watchRules"><summary>Built-in rules</summary><div id="watchList"></div></details></div></span><span id="helpW"><button id="help" title="Gestures and keys" aria-label="Gestures and keys">?</button><span id="hint">pinch out on a screen to step up · two-finger scroll or ← → to turn along the row · pinch to move closer · double-click empty space to reset · hover a screen to lean in · / asks the Officer</span></span></span>
-  <button id="back" hidden>← Back to the room</button>
+  <button id="back" aria-label="Back to the room" hidden><span class="full-label">← Back to the room</span><span class="mobile-label" aria-hidden="true">← Room</span></button>
 </div>
 <div id="needs"></div>
 <div id="deskL" class="desk hud" hidden><div class="in"><h3>Agent log</h3><div class="scroll story"></div></div></div>
@@ -1632,7 +1660,7 @@ addEventListener('keydown',deskKeydown,true);
 function apply(){
   room.classList.toggle('stepped',!!focus); document.body.classList.toggle('stepped',!!focus); document.body.classList.toggle('portrait',portrait());
   if(focus&&A[focus]){
-    const hudH=Math.max(40,$('#hud').offsetHeight),chain=$('#deskT');chain.style.top=(hudH+4)+'px';stationLayout(hudH+4+Math.max(28,chain.offsetHeight)+6);
+    const hudH=Math.max(40,$('#hud').offsetHeight),chain=$('#deskT');chain.style.top=(hudH+4)+'px';stationLayout(hudH+4+(innerWidth<=600?chain.offsetHeight:Math.max(28,chain.offsetHeight))+6);
     for(const id of order){A[id].el.classList.toggle('focus',id===focus);if(id===focus)A[id].el.classList.remove('behind')}
     $('#back').hidden=false;$('#helpW').hidden=true;document.body.classList.remove('short');subs(Date.now()/1000);return;
   }
