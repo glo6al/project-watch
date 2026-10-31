@@ -13,16 +13,16 @@ html,body{height:100%;margin:0;overflow:hidden;overscroll-behavior:none;backgrou
 code,pre{font:12.5px/1.5 ui-monospace,Menlo,monospace}
 #hud{position:fixed;top:0;left:0;right:0;z-index:10;display:flex;flex-wrap:nowrap;gap:8px 10px;align-items:center;padding:10px 14px 6px;pointer-events:none;font:600 11px ui-monospace,Menlo,monospace;letter-spacing:.1em;text-transform:uppercase;color:#7fa6c2}
 #hud>*{pointer-events:auto}
-#live{display:inline-flex;align-items:center;gap:7px;color:#7fa6c2;border:1px solid #1f3a52;background:#0a1420;border-radius:3px;padding:4px 10px;white-space:nowrap}
+#live{display:inline-flex;align-items:center;gap:7px;color:#7fa6c2;border:1px solid #1f3a52;background:#0a1420;border-radius:0;padding:4px 10px;white-space:nowrap}
 #live::before{content:"";width:7px;height:7px;border-radius:50%;background:var(--add);box-shadow:0 0 6px var(--add)}
 #hud.on #live::before{animation:breathe 2.4s ease-in-out infinite}
 @keyframes breathe{0%,100%{box-shadow:0 0 6px var(--add)}50%{box-shadow:0 0 1px var(--add)}}
 #live.off{color:var(--del)}#live.off::before{background:var(--del);box-shadow:0 0 6px var(--del);animation:none}
-#hud button{font:inherit;letter-spacing:inherit;text-transform:inherit;color:var(--ink);background:#0d1a2b;border:1px solid #1f3a52;border-radius:3px;padding:5px 12px;cursor:pointer;white-space:nowrap}
+#hud button{font:inherit;letter-spacing:inherit;text-transform:inherit;color:var(--ink);background:#0d1a2b;border:1px solid #1f3a52;border-radius:0;padding:5px 12px;cursor:pointer;white-space:nowrap}
 #hud button:hover{border-color:var(--hl)}
 /* the instrument strip: the mark and wordmark, a link pill whose lamp breathes while connected, one lit cell per agent, and a bank of switches */
 #mark{height:22px;width:auto;margin-right:10px;vertical-align:-6px}
-#fleetS,#console{display:inline-flex;align-items:center;gap:6px;border:1px solid #1f3a52;border-radius:3px;padding:3px 8px 3px 10px;background:#0a1420;flex:none}
+#fleetS,#console{display:inline-flex;align-items:center;gap:6px;border:1px solid #1f3a52;border-radius:0;padding:3px 8px 3px 10px;background:#0a1420;flex:none}
 #fleetS{flex:1 1 auto;min-width:min(300px,34vw);overflow:hidden;position:relative}      /* keeps a usable slice of the bar even on a narrow window; the rest scrolls */#projs{min-width:0;max-width:100%}
 /* one row, whatever the width: on a narrow window the fleet strip gives up its minimum width and scrolls sideways
    (its chips never squeeze), so the brand, lamp, fleet and controls stay on the same line */
@@ -30,16 +30,16 @@ code,pre{font:12.5px/1.5 ui-monospace,Menlo,monospace}
 #fleetS.more::after{content:"";position:absolute;right:0;top:0;bottom:0;width:28px;background:linear-gradient(90deg,transparent,#0a1420);pointer-events:none}      /* there is more to the right: swipe */
 #projs button{flex:none}#projs button span.n{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:190px}      /* chips keep their names; the strip scrolls instead of squeezing them */
 #brand,#live,#needN,#acts,#back,#demoTag{flex:none}
-#demoTag{color:#ffd166;border:1px dashed #ffd166;border-radius:3px;padding:3px 8px;letter-spacing:.1em}
+#demoTag{color:#ffd166;border:1px dashed #ffd166;border-radius:0;padding:3px 8px;letter-spacing:.1em}
 #fleetS b,#console b{font-weight:600;color:#4f7590;margin-right:4px}
 #projs{display:inline-flex;gap:5px;align-items:center;overflow-x:auto;overflow-y:hidden;scrollbar-width:none;overscroll-behavior-x:contain}#projs::-webkit-scrollbar{display:none}      /* a long fleet scrolls sideways (two-finger swipe over it), with no scrollbar in the instrument */
 #projs .cells i:focus-visible{outline:2px solid var(--hl);outline-offset:1px}
 #projs button{display:inline-flex;align-items:center;gap:7px;padding:3px 8px 3px 7px;color:#7fa6c2;border-color:transparent;background:transparent}
 #projs button.on{color:var(--ink);border-color:#1f3a52;background:#0d1a2b}
 #projs button:hover{border-color:var(--hl)}
-#projs button em{width:8px;height:8px;border-radius:1px;background:var(--pc);flex:none}
+#projs button em{width:8px;height:8px;border-radius:0;background:var(--pc);flex:none}
 #projs .cells{display:inline-flex;gap:3px;align-items:flex-end;height:12px}
-#projs .cells i{display:block;width:7px;height:7px;background:#2b3a4d;border-radius:1px;transition:height .2s}
+#projs .cells i{display:block;width:7px;height:7px;background:#2b3a4d;border-radius:0;transition:height .2s}
 #projs .cells i.busy{background:var(--add)}#projs .cells i.need{background:var(--warn);height:12px;box-shadow:0 0 5px var(--warn)}#projs .cells i.alarm{background:var(--del)}
 #projs .cells i:hover{outline:1px solid var(--hl)}
 #acts{display:inline-flex;gap:6px;align-items:center}
@@ -54,7 +54,7 @@ code,pre{font:12.5px/1.5 ui-monospace,Menlo,monospace}
 #help{width:28px;padding:5px 0;text-align:center;color:#4f7590}
 #watchP{position:absolute;right:0;top:36px;width:380px;max-width:calc(100vw - 24px);max-height:calc(100vh - 60px);overflow:auto;padding:10px 12px;background:var(--hbg);border:1px solid var(--hl);z-index:12;text-transform:none;letter-spacing:0;font:13px/1.4 system-ui;color:var(--ink)}
 /* the Watch panel: type a command or a sentence, see the monitor banner it would get, change it with one click */
-#watchTry{width:100%;box-sizing:border-box;font:inherit;color:var(--ink);background:#0d1a2b;border:1px solid #1f3a52;border-radius:3px;padding:6px 9px;text-transform:none;letter-spacing:0}
+#watchTry{width:100%;box-sizing:border-box;font:inherit;color:var(--ink);background:#0d1a2b;border:1px solid #1f3a52;border-radius:0;padding:6px 9px;text-transform:none;letter-spacing:0}
 #watchTry:focus{border-color:var(--hl);outline:none}
 #watchP .wkk{font:600 10px ui-monospace,Menlo,monospace;letter-spacing:.14em;text-transform:uppercase;color:#4f7590;display:flex;align-items:center;gap:8px;margin:10px 0 6px}#watchP .wkk::after{content:"";flex:1;height:1px;background:#1f3a52}
 /* the Officer of the Watch: a plate on the bottom band, in the desk's own frame, that opens upward into its panel */
@@ -76,52 +76,52 @@ body.stepped #officer{bottom:118px}body.stepped.portrait #officer{bottom:296px}b
 #officer.fold #ofBody{display:none}
 #ofBody{display:flex;flex-direction:column;flex:1;min-height:0}
 #ofLog{flex:1;min-height:120px;overflow:auto;padding:10px 12px;display:flex;flex-direction:column;gap:9px}
-#ofLog .you{align-self:flex-end;max-width:88%;background:#0d1a2b;border:1px solid #1f3a52;border-radius:8px 8px 2px 8px;padding:6px 10px;color:#cfe3f5}
+#ofLog .you{align-self:flex-end;max-width:88%;background:#0d1a2b;border:1px solid #1f3a52;border-radius:0;padding:6px 10px;color:#cfe3f5}
 #ofLog .of{max-width:94%;color:var(--ink)}#ofLog .of p{margin:0 0 6px}#ofLog .of p:last-child{margin:0}
 #ofLog .k{color:var(--mute);font-size:12px}#ofLog .done{color:#9fc3e0;font-size:12px}
-#ofLog .of b{color:#eef2f7}#ofLog .of i{color:#cfe3f5}#ofLog .of code{font:12px ui-monospace,Menlo,monospace;background:#0d1016;border:1px solid #2a3340;border-radius:3px;padding:0 4px}
+#ofLog .of b{color:#eef2f7}#ofLog .of i{color:#cfe3f5}#ofLog .of code{font:12px ui-monospace,Menlo,monospace;background:#0d1016;border:1px solid #2a3340;border-radius:0;padding:0 4px}
 #ofLog .of ul,#ofLog .of ol{margin:0 0 6px 18px;padding:0}#ofLog .of li{margin:2px 0}#ofLog .of li>ul,#ofLog .of li>ol{margin:2px 0 2px 16px}#ofLog .of .box{color:var(--hl)}
 #ofLog .of .h1{font:700 14px system-ui,-apple-system,sans-serif;color:#eef2f7;margin:10px 0 4px}#ofLog .of .h2{font:600 10px ui-monospace,Menlo,monospace;letter-spacing:.14em;text-transform:uppercase;color:#7fa6c2;margin:8px 0 4px}#ofLog .of .h3{font:600 12px system-ui,-apple-system,sans-serif;color:#cfe3f5;margin:6px 0 2px}
 #ofLog .of s{color:var(--mute)}#ofLog .of blockquote{margin:4px 0 6px;padding:2px 10px;border-left:2px solid #1f3a52;color:#b9c3d1}#ofLog .of hr{border:0;border-top:1px solid #1f3a52;margin:8px 0}
-#ofLog .of pre{margin:4px 0 6px;padding:8px 10px;background:#0d1016;border:1px solid #2a3340;border-radius:3px;overflow:auto;font:12px/1.5 ui-monospace,Menlo,monospace;color:#d7dbe4;white-space:pre}#ofLog .of pre code{border:0;background:none;padding:0}
+#ofLog .of pre{margin:4px 0 6px;padding:8px 10px;background:#0d1016;border:1px solid #2a3340;border-radius:0;overflow:auto;font:12px/1.5 ui-monospace,Menlo,monospace;color:#d7dbe4;white-space:pre}#ofLog .of pre code{border:0;background:none;padding:0}
 #ofLog .of table{border-collapse:collapse;margin:4px 0 8px;font-size:12px;max-width:100%}#ofLog .of th,#ofLog .of td{border:1px solid #1f3a52;padding:3px 8px;text-align:left;vertical-align:top}#ofLog .of th{font:600 10px ui-monospace,Menlo,monospace;letter-spacing:.1em;text-transform:uppercase;color:#7fa6c2;background:#0d1a2b}
-#ofLog .cites{display:flex;flex-wrap:wrap;gap:4px;margin-top:4px}#ofLog .cites button{all:unset;cursor:pointer;font:600 10px ui-monospace,Menlo,monospace;letter-spacing:.06em;color:#9fc3e0;background:#0d1a2b;border:1px solid #1f3a52;border-radius:3px;padding:2px 7px}
+#ofLog .cites{display:flex;flex-wrap:wrap;gap:4px;margin-top:4px}#ofLog .cites button{all:unset;cursor:pointer;font:600 10px ui-monospace,Menlo,monospace;letter-spacing:.06em;color:#9fc3e0;background:#0d1a2b;border:1px solid #1f3a52;border-radius:0;padding:2px 7px}
 #ofLog .message{border-left:2px solid #1f3a52;padding-left:10px;overflow-wrap:anywhere}#ofLog .message-id{overflow-wrap:anywhere}#ofLog .cites button:disabled{opacity:.5;cursor:default}
 #ofLog .cites button:hover{border-color:var(--hl)}
-#ofLog .draft{white-space:pre-wrap;background:#0d1016;border:1px solid #2a3340;border-radius:3px;padding:8px 10px;font:12px ui-monospace,Menlo,monospace;color:#d7dbe4;margin-top:4px}
-#ofQuick{display:flex;gap:6px;flex-wrap:wrap;padding:8px 10px 0;border-top:1px solid #1f3a52}#ofQuick button{all:unset;cursor:pointer;font:600 10px ui-monospace,Menlo,monospace;letter-spacing:.06em;color:#9fc3e0;background:#0d1a2b;border:1px solid #1f3a52;border-radius:3px;padding:3px 8px}#ofQuick button:hover,#ofQuick button:focus-visible{border-color:var(--hl);outline:none}
+#ofLog .draft{white-space:pre-wrap;background:#0d1016;border:1px solid #2a3340;border-radius:0;padding:8px 10px;font:12px ui-monospace,Menlo,monospace;color:#d7dbe4;margin-top:4px}
+#ofQuick{display:flex;gap:6px;flex-wrap:wrap;padding:8px 10px 0;border-top:1px solid #1f3a52}#ofQuick button{all:unset;cursor:pointer;font:600 10px ui-monospace,Menlo,monospace;letter-spacing:.06em;color:#9fc3e0;background:#0d1a2b;border:1px solid #1f3a52;border-radius:0;padding:3px 8px}#ofQuick button:hover,#ofQuick button:focus-visible{border-color:var(--hl);outline:none}
 #ofRow{display:flex;gap:6px;padding:8px 10px}
-#ofIn{flex:1;min-width:0;font:inherit;color:var(--ink);background:#0d1a2b;border:1px solid #1f3a52;border-radius:3px;padding:7px 9px}#ofIn:focus{outline:none;border-color:var(--hl)}
-.story p.hl,#ofLog .hl{background:#162136;box-shadow:inset 0 0 0 1px #8fb6ff;border-radius:3px;transition:background 1.2s,box-shadow 1.2s}
-#ofSend{font:600 11px ui-monospace,Menlo,monospace;letter-spacing:.1em;text-transform:uppercase;color:#7fa6c2;background:#0d1a2b;border:1px solid #1f3a52;border-radius:3px;padding:4px 12px;cursor:pointer}#ofSend:disabled{opacity:.5;cursor:default}
+#ofIn{flex:1;min-width:0;font:inherit;color:var(--ink);background:#0d1a2b;border:1px solid #1f3a52;border-radius:0;padding:7px 9px}#ofIn:focus{outline:none;border-color:var(--hl)}
+.story p.hl,#ofLog .hl{background:#162136;box-shadow:inset 0 0 0 1px #8fb6ff;border-radius:0;transition:background 1.2s,box-shadow 1.2s}
+#ofSend{font:600 11px ui-monospace,Menlo,monospace;letter-spacing:.1em;text-transform:uppercase;color:#7fa6c2;background:#0d1a2b;border:1px solid #1f3a52;border-radius:0;padding:4px 12px;cursor:pointer}#ofSend:disabled{opacity:.5;cursor:default}
 
 #watchMiniK{margin-top:10px;font:600 10px ui-monospace,Menlo,monospace;letter-spacing:.14em;text-transform:uppercase;color:#4f7590}
-#watchMini{margin-top:4px;border:1.5px solid #2a3340;border-radius:3px;background:#0d1016;overflow:hidden}
+#watchMini{margin-top:4px;border:1.5px solid #2a3340;border-radius:0;background:#0d1016;overflow:hidden}
 #watchMini .mf{display:flex;align-items:center;gap:8px;background:#1a1d26;height:26px;padding-right:10px;font-size:11.5px;color:#d7dbe4}
 #watchMini .mf .tg{font:700 10px ui-monospace,Menlo,monospace;letter-spacing:.12em;text-transform:uppercase;padding:0 10px;height:100%;display:flex;align-items:center;color:#161000;background:var(--warn);clip-path:polygon(0 0,100% 0,calc(100% - 8px) 100%,0 100%);white-space:nowrap}
 #watchMini .mf .tg.red{background:var(--del);color:#1a0505}#watchMini .mf .tg.chk{background:#39c8ff;color:#04121c}#watchMini .mf .tg.none{background:#232834;color:#7d8596}
-#watchMini .mh{padding:8px 10px;display:flex;gap:10px;align-items:center}#watchMini .mh .av{width:22px;height:22px;border-radius:4px;background:#1b2230;border:1px solid #2a3340;flex:none}
+#watchMini .mh{padding:8px 10px;display:flex;gap:10px;align-items:center}#watchMini .mh .av{width:22px;height:22px;border-radius:0;background:#1b2230;border:1px solid #2a3340;flex:none}
 #watchMini .mh b{color:#ff7bd1;display:block}#watchMini .mh span{color:#d7dbe4;font-size:12px}
 #watchMini .mb{padding:4px 10px 10px;font:11px/1.5 ui-monospace,Menlo,monospace;color:#9aa4b2;white-space:pre-wrap;word-break:break-word}#watchMini .mb .c{color:#d7dbe4}#watchMini .mb .al{color:var(--del);font-weight:700;margin-left:6px}#watchMini .mb .q{font:13px/1.4 -apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-serif;color:#eef2f7}
 #watchP .wch.sug{border-color:var(--hl);box-shadow:0 0 0 1px var(--hl)}#watchP .wch.sug::after{content:" · suggested";font-weight:400;letter-spacing:0;text-transform:none;color:#9fc3e0}
 #watchAs{display:flex;flex-direction:column;gap:6px}#watchAs.busy .wch{opacity:.5;cursor:progress}
 #watchAs .grow{display:flex;flex-wrap:wrap;gap:4px;align-items:center}      /* one row per group: a command, something it says, neither */
 #watchAs .grp{font:600 10px ui-monospace,Menlo,monospace;letter-spacing:.1em;text-transform:uppercase;color:#4f7590;margin-right:4px;white-space:nowrap}
-#watchDraft{display:flex;flex-direction:column;gap:8px;margin:0 0 10px;padding:10px 12px;background:#0d1a2b;border:1px solid var(--hl);border-radius:3px;font:13px/1.45 system-ui,-apple-system,sans-serif;letter-spacing:0;text-transform:none;color:var(--ink)}
-#watchDraft .row{display:flex;gap:8px}#watchDraft button{font:600 11px ui-monospace,Menlo,monospace;letter-spacing:.1em;text-transform:uppercase;border-radius:3px;padding:6px 12px;cursor:pointer}
+#watchDraft{display:flex;flex-direction:column;gap:8px;margin:0 0 10px;padding:10px 12px;background:#0d1a2b;border:1px solid var(--hl);border-radius:0;font:13px/1.45 system-ui,-apple-system,sans-serif;letter-spacing:0;text-transform:none;color:var(--ink)}
+#watchDraft .row{display:flex;gap:8px}#watchDraft button{font:600 11px ui-monospace,Menlo,monospace;letter-spacing:.1em;text-transform:uppercase;border-radius:0;padding:6px 12px;cursor:pointer}
 #watchKeep{color:#04121c;background:var(--hl);border:1px solid var(--hl)}#watchDrop{color:#7fa6c2;background:#0d1a2b;border:1px solid #1f3a52}
-#watchP .wch{font:600 11px ui-monospace,Menlo,monospace;letter-spacing:.1em;text-transform:uppercase;color:#7fa6c2;background:#0d1a2b;border:1px solid #1f3a52;border-radius:3px;padding:3px 9px;cursor:pointer}
+#watchP .wch{font:600 11px ui-monospace,Menlo,monospace;letter-spacing:.1em;text-transform:uppercase;color:#7fa6c2;background:#0d1a2b;border:1px solid #1f3a52;border-radius:0;padding:3px 9px;cursor:pointer}
 #watchP .wch:hover{border-color:var(--hl)}#watchP .wch.on{color:#04121c;background:var(--hl);border-color:var(--hl)}
-#watchSaved{margin-top:8px;padding:6px 9px;border-left:2px solid var(--add);background:#0d1a2b;border-radius:0 3px 3px 0;font-size:12.5px;color:var(--ink)}#watchSaved.off{border-left-color:#4f7590}#watchSaved button{all:unset;cursor:pointer;color:var(--hl);margin-left:8px}
+#watchSaved{margin-top:8px;padding:6px 9px;border-left:2px solid var(--add);background:#0d1a2b;border-radius:0;font-size:12.5px;color:var(--ink)}#watchSaved.off{border-left-color:#4f7590}#watchSaved button{all:unset;cursor:pointer;color:var(--hl);margin-left:8px}
 #watchYours{display:flex;flex-direction:column;gap:3px;max-height:170px;overflow:auto}#watchYours .yr{display:flex;align-items:center;gap:8px;padding:4px 0;border-bottom:1px solid #121a26;font-size:12.5px;color:var(--ink)}#watchYours .yr:last-child{border:0}
-#watchYours .yr code{font:600 12px ui-monospace,Menlo,monospace;color:#d7dbe4;background:#0d1a2b;border:1px solid #1f3a52;border-radius:3px;padding:1px 6px;max-width:190px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#watchYours .yr code{font:600 12px ui-monospace,Menlo,monospace;color:#d7dbe4;background:#0d1a2b;border:1px solid #1f3a52;border-radius:0;padding:1px 6px;max-width:190px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 #watchYours .yr i{font:600 10px ui-monospace,Menlo,monospace;letter-spacing:.1em;text-transform:uppercase;color:var(--hl);font-style:normal}
 #watchYours .yr button{all:unset;cursor:pointer;color:#4f7590;margin-left:auto;padding:0 4px}#watchYours .yr button:hover{color:var(--del)}
 #watchYours .none{color:var(--mute);font-size:12.5px}
 #watchRules{margin-top:10px;color:var(--mute);font-size:12.5px}#watchRules summary{cursor:pointer;color:#7fa6c2;text-transform:none;letter-spacing:0}
 #watchList{display:flex;flex-direction:column;gap:3px;margin-top:6px}
 #watchList .wr{display:flex;align-items:center;gap:8px;padding:3px 0;min-width:0;color:var(--ink)}
-#watchList .wr .sw{flex:none;width:28px;height:16px;border-radius:8px;background:#121a26;border:1px solid #1f3a52;position:relative;cursor:pointer}#watchList .wr .sw::after{content:"";position:absolute;top:2px;left:2px;width:10px;height:10px;border-radius:50%;background:#4f7590;transition:left .15s}
+#watchList .wr .sw{flex:none;width:28px;height:16px;border-radius:0;background:#121a26;border:1px solid #1f3a52;position:relative;cursor:pointer}#watchList .wr .sw::after{content:"";position:absolute;top:2px;left:2px;width:10px;height:10px;border-radius:50%;background:#4f7590;transition:left .15s}
 #watchList .wr .sw[aria-checked="true"]{border-color:var(--add)}#watchList .wr .sw[aria-checked="true"]::after{left:14px;background:var(--add);box-shadow:0 0 6px var(--add)}
 #watchList .wr .nm{min-width:150px}#watchList .wr small{color:var(--mute);font:11px ui-monospace,Menlo,monospace;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;min-width:0}
 /* the examples are cut short; hovering a row slides them along so the whole line can be read, then they slide back */
@@ -147,7 +147,7 @@ body.stepped #officer{bottom:118px}body.stepped.portrait #officer{bottom:296px}b
      shows through where the floor fades, instead of a darker square stopping against it */
   mask-image:radial-gradient(circle,#000 0,#000 36%,transparent 74%);-webkit-mask-image:radial-gradient(circle,#000 0,#000 36%,transparent 74%)}
 
-.st{position:absolute;width:640px;height:520px;left:-320px;top:-260px;background:var(--panel);border:2px solid var(--line);border-radius:3px;padding:14px;
+.st{position:absolute;width:640px;height:520px;left:-320px;top:-260px;background:var(--panel);border:2px solid var(--line);border-radius:0;padding:14px;
   display:flex;flex-direction:column;gap:9px;cursor:pointer}
 .st.busy{border-color:var(--c)}
 .st.idle>*{opacity:.5}   /* dim the contents, not the 3D panel: opacity on the panel itself mis-sorts in the 3D scene */
@@ -162,18 +162,18 @@ body.stepped #officer{bottom:118px}body.stepped.portrait #officer{bottom:296px}b
 .flag .tag::before{content:"";width:8px;height:8px;background:currentColor}
 .flag .msg{flex:1;min-width:0;display:flex;align-items:center;padding:0 12px 0 6px;font:500 15px system-ui;white-space:nowrap;overflow:hidden}
 .flag .msg span{overflow:hidden;text-overflow:ellipsis}
-.flag button{flex:none;align-self:center;margin-right:8px;font:700 12px ui-monospace,Menlo,monospace;letter-spacing:.12em;text-transform:uppercase;border:1px solid;border-radius:3px;padding:6px 16px;cursor:pointer;background:transparent}
+.flag button{flex:none;align-self:center;margin-right:8px;font:700 12px ui-monospace,Menlo,monospace;letter-spacing:.12em;text-transform:uppercase;border:1px solid;border-radius:0;padding:6px 16px;cursor:pointer;background:transparent}
 /* Allow and Deny in the HUD's own idiom: dark fill, thin frame, key-style type; colour only in the word and on hover */
 .flag .yes,.flag .no{font-weight:600;letter-spacing:.14em;border-color:#1f3a52;padding:4px 12px;background:#0d1a2b}
-.flag .yes{color:var(--add)}.flag .yes:hover{border-color:var(--add);background:#0e2418}
-.flag .no{color:var(--del)}.flag .no:hover{border-color:var(--del);background:#2a1214}
+.flag .yes{color:var(--add)}.flag .yes:not(:disabled):hover{border-color:var(--add);background:#0e2418}
+.flag .no{color:var(--del)}.flag .no:not(:disabled):hover{border-color:var(--del);background:#2a1214}
 .flag.w{background:linear-gradient(90deg,rgba(240,160,32,.22),rgba(240,160,32,.06));border-bottom:1px solid var(--warn);color:#ffdca3}
 .flag.w .tag{background:var(--warn);color:#161000}
 .flag.w.soft .tag{background:repeating-linear-gradient(135deg,rgba(240,160,32,.34) 0 7px,rgba(240,160,32,.14) 7px 14px);color:var(--warn)}
 .flag.r{background:linear-gradient(90deg,rgba(248,113,113,.22),rgba(248,113,113,.06));border-bottom:1px solid var(--del);color:#ffd0d0}
 .flag.r .tag{background:var(--del);color:#1a0505}
 #needs{position:fixed;top:44px;left:0;right:0;z-index:10;display:flex;flex-direction:column;align-items:flex-start;gap:6px;padding:0 14px;pointer-events:none}
-#needs button{pointer-events:auto;display:flex;align-items:stretch;gap:0;padding:0;max-width:min(980px,100%);min-height:30px;cursor:pointer;border:1px solid var(--del);border-radius:2px;background:linear-gradient(90deg,rgba(60,14,14,.96),rgba(22,10,14,.96));color:#ffd0d0;font:500 13.5px system-ui;text-align:left;overflow:hidden}
+#needs button{pointer-events:auto;display:flex;align-items:stretch;gap:0;padding:0;max-width:min(980px,100%);min-height:30px;cursor:pointer;border:1px solid var(--del);border-radius:0;background:linear-gradient(90deg,rgba(60,14,14,.96),rgba(22,10,14,.96));color:#ffd0d0;font:500 13.5px system-ui;text-align:left;overflow:hidden}
 #needs button b{flex:none;display:flex;align-items:center;gap:8px;background:var(--del);color:#1a0505;font:700 11px ui-monospace,Menlo,monospace;letter-spacing:.16em;text-transform:uppercase;padding:0 22px 0 12px;clip-path:polygon(0 0,100% 0,calc(100% - 10px) 100%,0 100%)}
 #needs button b::before{content:"";width:7px;height:7px;background:currentColor}
 #needs button span{flex:none;align-self:center;padding:0 10px 0 4px;white-space:nowrap}
@@ -201,10 +201,10 @@ body.stepped #officer{bottom:118px}body.stepped.portrait #officer{bottom:296px}b
 .id .ctx{display:block;font-size:13px;line-height:1.3;color:var(--mute);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:1px}
 .id .ctx .pj{font-style:normal;font-weight:650;color:var(--pc,var(--mute))}.id .ctx .pj:not(:empty)::after{content:" · ";color:var(--mute);font-weight:400}
 .st.focus .id .ctx{white-space:normal;font-size:14px}
-.go{font:600 12px ui-monospace,Menlo,monospace;letter-spacing:.08em;text-transform:uppercase;border:1px solid var(--line);border-radius:3px;padding:6px 12px;color:var(--ink);background:#262b36;align-self:flex-start;cursor:pointer;white-space:nowrap}
+.go{font:600 12px ui-monospace,Menlo,monospace;letter-spacing:.08em;text-transform:uppercase;border:1px solid var(--line);border-radius:0;padding:6px 12px;color:var(--ink);background:#262b36;align-self:flex-start;cursor:pointer;white-space:nowrap}
 .st:not(.focus) .go,.st:not(.focus) .x,.st:not(.focus) .pinb{visibility:hidden}
 #room:not(.stepped) .st:hover .go,#room:not(.stepped) .st:hover .x,#room:not(.stepped) .st:hover .pinb,#room:not(.stepped) .st.pinned .pinb{visibility:visible}
-.pinb{font:600 12px ui-monospace,Menlo,monospace;letter-spacing:.08em;text-transform:uppercase;color:var(--ink);background:#262b36;border:1px solid var(--line);border-radius:3px;padding:6px 10px;align-self:flex-start;cursor:pointer;white-space:nowrap}
+.pinb{font:600 12px ui-monospace,Menlo,monospace;letter-spacing:.08em;text-transform:uppercase;color:var(--ink);background:#262b36;border:1px solid var(--line);border-radius:0;padding:6px 10px;align-self:flex-start;cursor:pointer;white-space:nowrap}
 .pinb:hover{border-color:var(--c);color:var(--c)}
 .st.pinned .pinb{color:#07090d;background:var(--c);border-color:var(--c)}
 .st.focus .pinb{display:none}
@@ -224,7 +224,7 @@ body.stepped #officer{bottom:118px}body.stepped.portrait #officer{bottom:296px}b
 #subs button:hover span{max-height:13.1em;margin-top:4px;mask-image:linear-gradient(180deg,#000 92%,transparent);-webkit-mask-image:linear-gradient(180deg,#000 92%,transparent)}
 /* a working monitor's slot: a rail with a light sweeping along it for as long as the turn is on, then the
    same doing-label as the monitor; nothing quoted, nothing to open */
-#subs button.live .rail{display:block;position:relative;height:5px;margin:5px 0 4px;background:color-mix(in srgb,var(--sc,#7fa6c2) 16%,transparent);overflow:hidden;border-radius:1px}
+#subs button.live .rail{display:block;position:relative;height:5px;margin:5px 0 4px;background:color-mix(in srgb,var(--sc,#7fa6c2) 16%,transparent);overflow:hidden;border-radius:0}
 #subs button.live .rail s{position:absolute;top:0;left:0;width:18%;height:100%;background:linear-gradient(90deg,transparent,var(--sc,#7fa6c2),transparent);opacity:0;transform:translateX(-100%);will-change:transform}
 #subs button.live .rail s{opacity:1;animation:railscan 1.4s linear infinite}      /* sweeping the whole time the turn is on: that is what working looks like from here */
 @keyframes railscan{to{transform:translateX(560%)}}      /* across the rail (100% / 18% ≈ 5.6 of its own width) and off the end; transform only, so the room is never re-laid-out for it */
@@ -247,11 +247,11 @@ body.stepped #officer{bottom:118px}body.stepped.portrait #officer{bottom:296px}b
 .st.kid:not(.focus){border-width:4px}
 .st.peek>*{opacity:1}
 .st.peek{border-color:var(--c)}
-.x{font:700 18px/1 system-ui;color:var(--mute);background:transparent;border:1px solid var(--line);border-radius:3px;width:30px;height:30px;align-self:flex-start;cursor:pointer;padding:0}
+.x{font:700 18px/1 system-ui;color:var(--mute);background:transparent;border:1px solid var(--line);border-radius:0;width:30px;height:30px;align-self:flex-start;cursor:pointer;padding:0}
 .x:hover{color:var(--del);border-color:var(--del)}
 .st.focus .x{display:none}
 .go:hover{border-color:var(--c);color:var(--c)}
-.mon{flex:1;min-height:0;background:var(--mon);color:var(--monink);border-radius:2px;overflow:hidden;display:flex;flex-direction:column}
+.mon{flex:1;min-height:0;background:var(--mon);color:var(--monink);border-radius:0;overflow:hidden;display:flex;flex-direction:column}
 .tab{font:600 12.5px ui-monospace,Menlo,monospace;padding:6px 11px;background:#171b24;color:var(--mondim);display:flex;gap:10px;justify-content:space-between}
 .tab .what{color:var(--monink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;direction:rtl;text-align:left}
 .tab .how{white-space:nowrap}
@@ -270,13 +270,13 @@ body.stepped #officer{bottom:118px}body.stepped.portrait #officer{bottom:296px}b
 .split.pv .code{flex:0 0 44%;border-right:1px solid #232834}
 .pvw{flex:1;min-width:0;position:relative;background:#fff;overflow:hidden}
 .pvw iframe{position:absolute;left:0;top:0;width:250%;height:250%;border:0;transform:scale(.4);transform-origin:0 0;pointer-events:none}
-.pvn{position:absolute;right:0;bottom:0;font:600 11px ui-monospace,Menlo,monospace;background:#171b24;color:var(--monink);padding:2px 8px;border-radius:8px 0 0 0}
+.pvn{position:absolute;right:0;bottom:0;font:600 11px ui-monospace,Menlo,monospace;background:#171b24;color:var(--monink);padding:2px 8px;border-radius:0}
 .a{color:var(--add);background:rgba(74,222,128,.09);display:block}
 .d{color:var(--del);background:rgba(248,113,113,.09);display:block}
 .k{color:var(--mondim)}.bad{color:var(--del)}.ok{color:var(--add)}
 .mon{position:relative}
 .plan{flex:none;display:flex;align-items:center;gap:4px;padding:5px 11px;background:#12161e;font-size:12.5px;color:var(--mondim);white-space:nowrap;overflow:hidden}
-.plan i{flex:1;min-width:6px;max-width:44px;height:5px;border-radius:3px;background:#2c3342}
+.plan i{flex:1;min-width:6px;max-width:44px;height:5px;border-radius:0;background:#2c3342}
 .plan i.d{background:var(--add)}.plan i.n{background:var(--c)}
 .plan span{margin-left:8px;overflow:hidden;text-overflow:ellipsis;color:var(--monink)}
 .pin{flex:none;background:var(--warn);color:#141000;font:600 13px system-ui;padding:4px 11px;cursor:pointer}
@@ -299,21 +299,21 @@ body.stepped #officer{bottom:118px}body.stepped.portrait #officer{bottom:296px}b
 .lbl{margin:0;flex:none}
 #crumb{display:flex;gap:6px;align-items:center;flex-wrap:wrap;min-width:0}
 #crumb i{color:var(--hl);font-style:normal}
-.pill{font:600 12px ui-monospace,Menlo,monospace;letter-spacing:.06em;text-transform:uppercase;color:var(--ink);background:#0b1626;border:1px solid #1f3a52;border-radius:3px;padding:6px 12px;cursor:pointer;max-width:260px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.pill{font:600 12px ui-monospace,Menlo,monospace;letter-spacing:.06em;text-transform:uppercase;color:var(--ink);background:#0b1626;border:1px solid #1f3a52;border-radius:0;padding:6px 12px;cursor:pointer;max-width:260px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .pill:hover{border-color:var(--hl)}
 .pill.me{border-color:var(--hl);color:var(--hl);cursor:default;box-shadow:inset 0 -2px 0 var(--hl)}
 .pill.off{color:var(--mute);cursor:default}
 .views{display:none;gap:6px;flex:none;align-self:center}
 .st.focus .views{display:flex;justify-content:flex-end;align-items:center}
 .views span{font:600 10px ui-monospace,Menlo,monospace;letter-spacing:.16em;text-transform:uppercase;color:#4f7590;margin-right:4px}
-.views button{font:600 12px ui-monospace,Menlo,monospace;letter-spacing:.14em;text-transform:uppercase;white-space:nowrap;color:#7fa6c2;background:#0d1a2b;border:1px solid #1f3a52;border-radius:3px;padding:4px 12px;cursor:pointer;display:flex;flex-direction:row;align-items:center;gap:7px}
-.views button i{font-style:normal;font-size:10px;color:#4f7590;border:1px solid #1f3a52;border-radius:2px;padding:0 5px}
+.views button{font:600 12px ui-monospace,Menlo,monospace;letter-spacing:.14em;text-transform:uppercase;white-space:nowrap;color:#7fa6c2;background:#0d1a2b;border:1px solid #1f3a52;border-radius:0;padding:4px 12px;cursor:pointer;display:flex;flex-direction:row;align-items:center;gap:7px}
+.views button i{font-style:normal;font-size:10px;color:#4f7590;border:1px solid #1f3a52;border-radius:0;padding:0 5px}
 .views button:hover{border-color:var(--hl)}
 .views button.on{color:#04121c;background:var(--hl);border-color:var(--hl)}
 .views button.on i{color:#04121c;border-color:#04121c}
 #bay{flex:0 1 40%;min-width:0;display:flex;flex-direction:column;gap:6px;overflow:hidden}
 #bayH{display:flex;align-items:center;gap:8px;flex:none}
-#bayH button{font:700 15px/1 ui-monospace,Menlo,monospace;color:var(--hl);background:#0d1a2b;border:1px solid #1f3a52;border-radius:3px;width:24px;height:20px;cursor:pointer;padding:0}
+#bayH button{font:700 15px/1 ui-monospace,Menlo,monospace;color:var(--hl);background:#0d1a2b;border:1px solid #1f3a52;border-radius:0;width:24px;height:20px;cursor:pointer;padding:0}
 #bayH button:hover{border-color:var(--hl)}
 #bayT{font:600 10px ui-monospace,Menlo,monospace;letter-spacing:.16em;text-transform:uppercase;color:var(--hl);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
 #crumb i.soft{font-style:normal;font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--warn)}
@@ -332,7 +332,7 @@ body.stepped #officer{bottom:118px}body.stepped.portrait #officer{bottom:296px}b
 #fleet .t{font:600 10px ui-monospace,Menlo,monospace;letter-spacing:.16em;text-transform:uppercase;color:var(--hl)}
 #fleet .row{display:flex;gap:6px;flex-wrap:nowrap;overflow-x:auto;overflow-y:hidden;padding-bottom:6px;scrollbar-width:thin;scrollbar-color:#1f3a52 transparent}
 #fleet .row button{flex:none}
-#fleet button{font:600 12px ui-monospace,Menlo,monospace;color:var(--ink);background:#0d1a2b;border:1px solid #1f3a52;border-radius:3px;padding:5px 10px;cursor:pointer;display:flex;align-items:center;gap:7px;max-width:210px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#fleet button{font:600 12px ui-monospace,Menlo,monospace;color:var(--ink);background:#0d1a2b;border:1px solid #1f3a52;border-radius:0;padding:5px 10px;cursor:pointer;display:flex;align-items:center;gap:7px;max-width:210px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 #fleet button:hover{border-color:var(--hl)}
 #fleet button i{flex:none;width:9px;height:9px;border-radius:50%;background:#3a4a5c}
 #fleet button.b i{background:#5fd38a}
@@ -345,10 +345,10 @@ body.stepped #officer{bottom:118px}body.stepped.portrait #officer{bottom:296px}b
 @media (max-width:1300px){#badge span{font-size:12px;padding:2px 8px}.views button{padding:6px 9px;letter-spacing:.06em}}
 .story .dv{font:600 10px ui-monospace,Menlo,monospace;letter-spacing:.14em;text-transform:uppercase;color:#4f7590;display:flex;align-items:center;gap:8px;margin:14px 0 8px}
 .story .dv::after{content:"";flex:1;height:1px;background:#1f3a52}
-.st.focus{border-radius:3px;border-width:2px;box-shadow:0 0 0 1px rgba(57,200,255,.15),0 0 40px -12px var(--c)}
+.st.focus{border-radius:0;border-width:2px;box-shadow:0 0 0 1px rgba(57,200,255,.15),0 0 40px -12px var(--c)}
 .st.focus .code{font-size:14px}
 .st.focus::after{display:none}
-.lk{position:absolute;left:22px;bottom:100%;font:700 13px system-ui;color:#07090d;padding:3px 12px 2px;border-radius:7px 7px 0 0;white-space:nowrap;max-width:80%;overflow:hidden;text-overflow:ellipsis}
+.lk{position:absolute;left:22px;bottom:100%;font:700 13px system-ui;color:#07090d;padding:3px 12px 2px;border-radius:0;white-space:nowrap;max-width:80%;overflow:hidden;text-overflow:ellipsis}
 .lk.hot{font-size:15px;padding:5px 14px 4px;animation:blink .5s 6 alternate}
 @keyframes blink{to{filter:brightness(1.6)}}
 .st.focus .lk{display:none}
@@ -356,11 +356,11 @@ body.stepped #officer{bottom:118px}body.stepped.portrait #officer{bottom:296px}b
 .split.full .code{display:none}
 .split{--zm:1}
 .split.full .pvw iframe{width:calc(166.7%/var(--zm));height:calc(166.7%/var(--zm));transform:scale(calc(.6*var(--zm)))}
-.code img{width:calc(var(--zm,1)*100%);max-width:none;display:block;margin:0 auto;border-radius:2px}
-.story .sum{cursor:pointer;border:1px solid #1f3a52;border-left:3px solid var(--hl);border-radius:2px;background:#0d1a2b;padding:5px 9px;color:var(--ink)}
+.code img{width:calc(var(--zm,1)*100%);max-width:none;display:block;margin:0 auto;border-radius:0}
+.story .sum{cursor:pointer;border:1px solid #1f3a52;border-left:3px solid var(--hl);border-radius:0;background:#0d1a2b;padding:5px 9px;color:var(--ink)}
 .story .sum:hover{border-color:var(--ink)}
-.story .qd{color:var(--corr);border:1.5px dashed var(--corr);border-radius:8px;padding:6px 9px;font-weight:600}
-.story .nd{color:#141000;background:var(--warn);border-radius:8px;padding:6px 9px;font-weight:600}
+.story .qd{color:var(--corr);border:1.5px dashed var(--corr);border-radius:0;padding:6px 9px;font-weight:600}
+.story .nd{color:#141000;background:var(--warn);border-radius:0;padding:6px 9px;font-weight:600}
 .story .as{background:transparent;border:1px solid var(--line);color:var(--mute)}
 .story p{margin:0 0 7px;font-size:13px;line-height:1.4;color:var(--mute);overflow-wrap:anywhere}
 .story p small{opacity:.7;margin-left:4px;white-space:nowrap}
@@ -373,8 +373,8 @@ body.stepped #officer{bottom:118px}body.stepped.portrait #officer{bottom:296px}b
 .story .nowm{font:600 10px ui-monospace,Menlo,monospace;letter-spacing:.12em;text-transform:uppercase;color:var(--hl);margin:6px 0 2px 12px}
 .story .nowm::before{content:'';display:inline-block;width:6px;height:6px;border-radius:50%;background:var(--hl);margin-right:6px;animation:nowblink 1.4s ease-in-out infinite}
 @keyframes nowblink{50%{opacity:.25}}
-.code.say p.hl{background:#162136;box-shadow:inset 0 0 0 1px #8fb6ff;border-radius:3px;transition:background 1.2s,box-shadow 1.2s}
-.story .u{color:#fff;background:#10243a;border:1px solid #1f3a52;border-radius:3px;padding:7px 10px}
+.code.say p.hl{background:#162136;box-shadow:inset 0 0 0 1px #8fb6ff;border-radius:0;transition:background 1.2s,box-shadow 1.2s}
+.story .u{color:#fff;background:#10243a;border:1px solid #1f3a52;border-radius:0;padding:7px 10px}
 .story .sd{cursor:pointer;padding-left:12px;border-left:2px solid var(--line)}
 .story .sd:hover{color:var(--ink);border-left-color:var(--c)}
 .story .sd.on{color:var(--ink);border-left-color:var(--warn)}
@@ -413,10 +413,10 @@ body.portrait #helpW{display:none}
 #lock{position:fixed;inset:0;z-index:50;display:grid;place-items:center;background:#07090d;text-align:center;padding:30px}
 #lock div{max-width:520px;color:var(--mute);font-size:15px;line-height:1.5}
 #lock h1{font:600 22px system-ui;color:var(--ink);margin:0 0 10px}
-#lock button{margin:18px 0 12px;font:700 13px ui-monospace,Menlo,monospace;letter-spacing:.14em;text-transform:uppercase;color:#04121c;background:var(--hl);border:0;border-radius:3px;padding:12px 26px;cursor:pointer}
+#lock button{margin:18px 0 12px;font:700 13px ui-monospace,Menlo,monospace;letter-spacing:.14em;text-transform:uppercase;color:#04121c;background:var(--hl);border:0;border-radius:0;padding:12px 26px;cursor:pointer}
 .flag .fx{color:#ffdca3;border-color:transparent;padding:6px 10px;font-size:15px}.flag .fx:hover{border-color:#ffdca3}
 .flag.w.held .tag{cursor:pointer}
-.flag .off{flex:none;align-self:center;margin-right:10px;font:600 11px ui-monospace,Menlo,monospace;letter-spacing:.08em;text-transform:uppercase;color:#ffdca3;white-space:nowrap;border:1px solid #ffdca366;border-radius:3px;padding:2px 7px;cursor:help}
+.flag .off{flex:none;align-self:center;margin-right:10px;font:600 11px ui-monospace,Menlo,monospace;letter-spacing:.08em;text-transform:uppercase;color:#ffdca3;white-space:nowrap;border:1px solid #ffdca366;border-radius:0;padding:2px 7px;cursor:help}
 body.portrait.short #fleet svg{height:16px}body.portrait.short #fleet{gap:3px}body.portrait.short #fleet .axis{font-size:10.5px}body.portrait.short #bay{gap:4px}
 body.portrait.short #deskB{height:176px}body.portrait.short #bay{height:64px;padding-bottom:6px}body.portrait.short #deskB>.in{gap:8px;padding:10px 16px}
 @media (max-width:700px){.views{flex-wrap:wrap}}
@@ -425,7 +425,7 @@ body.portrait.short #deskB{height:176px}body.portrait.short #bay{height:64px;pad
 .views [data-side]+[data-side]{margin-left:-2px}
 .desk.over{z-index:9;transform:none!important;top:150px}
 #deskL.over{left:14px}#deskR.over{right:14px}
-#bayN{font:700 10px ui-monospace,Menlo,monospace;letter-spacing:.1em;text-transform:uppercase;color:#161000;background:var(--warn);border:0;border-radius:2px;padding:2px 8px;cursor:pointer;width:auto!important;height:auto!important;white-space:nowrap}
+#bayN{font:700 10px ui-monospace,Menlo,monospace;letter-spacing:.1em;text-transform:uppercase;color:#161000;background:var(--warn);border:0;border-radius:0;padding:2px 8px;cursor:pointer;width:auto!important;height:auto!important;white-space:nowrap}
 .st.idle>*{transition:opacity .5s}
 
 /* One conversation, placed beside the monitor or in the native compact station flow. */
@@ -436,7 +436,7 @@ body.portrait.short #deskB{height:176px}body.portrait.short #bay{height:64px;pad
 body.stepped #officer.docked,body.stepped.portrait #officer.docked,body.stepped.portrait.short #officer.docked{top:auto;right:auto;bottom:auto;left:auto}
 #officer.docked::before,#officer.docked::after{display:none}#officer.docked>.in{position:static;background:none;inset:auto;height:100%}#officer.docked #ofB{display:none}
 #ofContext{padding:8px 12px;border-bottom:1px solid #1f3a52;display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:4px 8px;flex:none}#officer.docked #ofContext{padding:0 0 8px}
-#ofScope{grid-column:2;grid-row:1;display:flex;gap:2px}#ofScope button{min-height:26px;border:1px solid transparent;border-radius:2px;background:none;padding:4px 5px;color:#8eafc5;font:700 9px ui-monospace,Menlo,monospace;letter-spacing:.03em;text-transform:uppercase;cursor:pointer}#ofScope [aria-pressed="true"]{color:var(--hl);background:#102739;border-color:#25445c}#ofScope button:disabled{opacity:.35;cursor:default}
+#ofScope{grid-column:2;grid-row:1;display:flex;gap:2px}#ofScope button{min-height:26px;border:1px solid transparent;border-radius:0;background:none;padding:4px 5px;color:#8eafc5;font:700 9px ui-monospace,Menlo,monospace;letter-spacing:.03em;text-transform:uppercase;cursor:pointer}#ofScope [aria-pressed="true"]{color:var(--hl);background:#102739;border-color:#25445c}#ofScope button:disabled{opacity:.35;cursor:default}
 #ofScope button:focus-visible,#recipient button:focus-visible{outline:2px solid var(--ink);outline-offset:2px}#ofScope button:not(:disabled):hover{color:var(--ink);background:#18374c}
 #ofTarget{display:contents}#ofSubject{grid-column:1;grid-row:1;font:700 12px/1.4 ui-monospace,Menlo,monospace;color:var(--hl);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}#ofProgress{grid-column:1/-1;font:10px/1.4 ui-monospace,Menlo,monospace;color:var(--mute)}
 @media(pointer:coarse),(max-width:580px){#ofScope button{min-height:32px;padding:5px 7px}}
@@ -461,11 +461,11 @@ body.stepped #officer.docked,body.stepped.portrait #officer.docked,body.stepped.
 #compactDesk .flag.w button{font-size:10px;padding:4px 8px;letter-spacing:.04em;margin-right:4px}#compactDesk .flag.w .rev,#compactDesk .flag.w .off{grid-row:1;grid-column:3/-1}
 
 /* Unified comms: compact address controls, one stable conversation and composer. */
-#conversationTitle{margin:0;font:700 11px ui-monospace,Menlo,monospace;color:var(--hl);letter-spacing:.12em;text-transform:uppercase}#recipient{display:flex;align-items:center;gap:6px;padding:8px 0 0;flex:none}#recipient>span{font:10px ui-monospace,Menlo,monospace;color:var(--mute)}#recipient button{font:700 10px ui-monospace,Menlo,monospace;text-transform:uppercase;max-width:65%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;border:1px solid #25445c;background:#0d1a2b;color:#8eafc5;padding:6px 9px;cursor:pointer;border-radius:2px}#recipient [aria-pressed="true"]{color:var(--hl);background:#132f42;border-color:#3d718b}#recipient button:focus-visible{outline:2px solid var(--hl);outline-offset:2px}#sendHint{font:10px/1.4 system-ui;color:var(--mute);padding:0 0 6px;flex:none}#ofLog .source{border-left:2px solid #294558;padding:8px 10px;background:none}#ofLog .source.you{background:#102337;border-left-color:var(--hl)}#ofLog .source p{white-space:pre-wrap;margin:6px 0 0}#ofLog .source summary{font-size:12px}#ofLog details:not([open]) .open-update,#ofLog details[open] .closed-update{display:none}#ofLog .source small,#ofLog .source b{display:block;font:10px/1.5 ui-monospace,Menlo,monospace;color:var(--mute)}#ofLog .source b{color:var(--hl)}#ofLog .source.queue{border-style:dashed;color:var(--warn)}#ofLog [hidden]{display:none!important}#ofLog{overflow-anchor:none}#officer:not(.docked) #recipient,#officer:not(.docked) #sendHint{padding-left:12px;padding-right:12px}#ofScope[hidden],#ofQuick[hidden]{display:none}#ofRow{flex-wrap:wrap}#ofIn{flex:1;min-width:120px}#ofSend{white-space:nowrap;font-size:10px;letter-spacing:.02em}#officer.docked #ofBody{min-height:0}#officer.docked #ofLog{flex:1}#officer.docked #ofQuick{display:none}@media(pointer:coarse),(max-width:580px){#recipient button{min-height:34px}#ofSend{min-height:36px}#ofIn{font-size:16px}}
+#conversationTitle{margin:0;font:700 11px ui-monospace,Menlo,monospace;color:var(--hl);letter-spacing:.12em;text-transform:uppercase}#recipient{display:flex;align-items:center;gap:6px;padding:8px 0 0;flex:none}#recipient>span{font:10px ui-monospace,Menlo,monospace;color:var(--mute)}#recipient button{font:700 10px ui-monospace,Menlo,monospace;text-transform:uppercase;max-width:65%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;border:1px solid #25445c;background:#0d1a2b;color:#8eafc5;padding:6px 9px;cursor:pointer;border-radius:0}#recipient [aria-pressed="true"]{color:var(--hl);background:#132f42;border-color:#3d718b}#recipient button:focus-visible{outline:2px solid var(--hl);outline-offset:2px}#sendHint{font:10px/1.4 system-ui;color:var(--mute);padding:0 0 6px;flex:none}#ofLog .source{border-left:2px solid #294558;padding:8px 10px;background:none}#ofLog .source.you{background:#102337;border-left-color:var(--hl)}#ofLog .source p{white-space:pre-wrap;margin:6px 0 0}#ofLog .source summary{font-size:12px}#ofLog details:not([open]) .open-update,#ofLog details[open] .closed-update{display:none}#ofLog .source small,#ofLog .source b{display:block;font:10px/1.5 ui-monospace,Menlo,monospace;color:var(--mute)}#ofLog .source b{color:var(--hl)}#ofLog .source.queue{border-style:dashed;color:var(--warn)}#ofLog [hidden]{display:none!important}#ofLog{overflow-anchor:none}#officer:not(.docked) #recipient,#officer:not(.docked) #sendHint{padding-left:12px;padding-right:12px}#ofScope[hidden],#ofQuick[hidden]{display:none}#ofRow{flex-wrap:wrap}#ofIn{flex:1;min-width:120px}#ofSend{white-space:nowrap;font-size:10px;letter-spacing:.02em}#officer.docked #ofBody{min-height:0}#officer.docked #ofLog{flex:1}#officer.docked #ofQuick{display:none}@media(pointer:coarse),(max-width:580px){#recipient button{min-height:34px}#ofSend{min-height:36px}#ofIn{font-size:16px}}
 
 /* Conversation desk: the existing live nodes, arranged outside the spatial room. */
 #compactDesk{--desk-bg:#1b1f27;--desk-surface:#0d1016;--desk-edge:#343a46;--desk-muted:#98a5b5;position:fixed;left:14px;right:14px;bottom:14px;padding:0;overflow:hidden;background:transparent;scrollbar-gutter:auto;display:flex;flex-direction:column;gap:8px}
-#deskToolbar{display:flex;align-items:center;gap:6px;flex:none;min-height:30px}#deskToolbar .theme-choices{margin-left:auto}#deskToolbar button,#deskHead button,#deskWork button,#deskAgents button,#deskFacts button{font:600 11px ui-monospace,Menlo,monospace;letter-spacing:.02em;color:var(--ink);background:#0d1a2b;border:1px solid #25445c;border-radius:3px;padding:6px 9px;cursor:pointer}#compactDesk button:focus-visible,#deskSizer:focus-visible{outline:2px solid var(--hl);outline-offset:2px}#deskToolbar [aria-pressed=true],#deskWork [aria-pressed=true]{color:#04121c;background:var(--hl);border-color:var(--hl)}
+#deskToolbar{display:flex;align-items:center;gap:6px;flex:none;min-height:30px}#deskToolbar .theme-choices{margin-left:auto}#deskToolbar button,#deskHead button,#deskWork button,#deskAgents button,#deskFacts button{font:600 11px ui-monospace,Menlo,monospace;letter-spacing:.02em;color:var(--ink);background:#0d1a2b;border:1px solid #25445c;border-radius:0;padding:6px 9px;cursor:pointer}#compactDesk button:focus-visible,#deskSizer:focus-visible{outline:2px solid var(--hl);outline-offset:2px}#deskToolbar [aria-pressed=true],#deskWork [aria-pressed=true]{color:#04121c;background:var(--hl);border-color:var(--hl)}
 #deskShell{flex:1;display:flex;gap:14px;min-height:0;min-width:0}#deskAgents,#deskFacts{flex:none;min-height:0;min-width:0;overflow:auto;padding:12px 10px;background:linear-gradient(#0b1626,#070d17);border:1px solid #1f3a52;scrollbar-width:thin}#deskAgents{width:164px}#deskFacts{width:196px}#deskAgents>header,#deskFacts>header{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px}#deskAgents h2,#deskFacts h2{font:700 11px ui-monospace,Menlo,monospace;letter-spacing:.1em;text-transform:uppercase;color:var(--hl);margin:0}
 #deskAgentList{display:flex;flex-direction:column;gap:3px}#deskAgentList button{display:flex;align-items:flex-start;gap:8px;width:100%;min-height:45px;text-align:left;background:transparent;border-color:transparent;padding:7px 6px}#deskAgentList button i{width:6px;height:6px;border-radius:50%;background:var(--mute);flex:none;margin-top:7px}#deskAgentList button[data-state=need] i{background:var(--warn)}#deskAgentList button[data-state=busy] i{background:var(--add)}#deskAgentList button[aria-current=true]{background:#113149;border-color:#25445c;box-shadow:inset 2px 0 var(--hl)}#deskAgentList button span{min-width:0}#deskAgentList strong{display:block;font:600 13px/1.35 system-ui;overflow-wrap:anywhere}#deskAgentList small{display:block;font:11px/1.4 system-ui;color:var(--desk-muted);margin-top:2px;overflow-wrap:anywhere}
 #compactDesk #bay{height:auto!important;flex:none;width:100%;margin-top:18px;padding:12px 0 0!important;border:0;border-top:1px solid #25445c}#compactDesk #bayH{flex-wrap:wrap;gap:5px}#compactDesk #bayT{font-size:9px;letter-spacing:.04em;flex:1;white-space:normal}#compactDesk #bayD{flex:none}#compactDesk #bayN{flex-basis:100%}#compactDesk #fleet{overflow:visible;max-height:none;gap:7px}#compactDesk #fleet .row{flex-direction:column;overflow:visible;padding:0;gap:4px}#compactDesk #fleet button{max-width:100%;white-space:normal;overflow-wrap:anywhere;font-size:11px;padding:5px;text-align:left}#compactDesk #fleet .axis{white-space:normal;display:block;font-size:10px}#compactDesk #fleet .axis span{display:block;text-align:left}#compactDesk #fleet .cap2{white-space:normal;font-size:11px}#compactDesk #fleet svg{height:34px}#compactDesk #badge{display:flex;flex-direction:column;gap:0;width:100%;flex:none}#compactDesk #badge span{border:0;border-bottom:1px solid #25445c;padding:8px 0;font:12px/1.45 system-ui;display:block;overflow:visible;flex:none}#compactDesk #badge b{display:block;font:11px/1.5 system-ui;letter-spacing:0;text-transform:none;color:var(--desk-muted)}#compactDesk #badge em{display:block;white-space:normal;overflow:visible;-webkit-line-clamp:unset;overflow-wrap:anywhere;font-size:12px;line-height:1.45}
@@ -473,14 +473,14 @@ body.stepped #officer.docked,body.stepped.portrait #officer.docked,body.stepped.
 #deskWorkspace{display:flex;flex:1;min-height:0;min-width:0;position:relative;overflow:hidden}#deskConversation{flex:1;min-width:0;min-height:0;display:flex}#compactDesk #deskR{position:relative!important;inset:auto!important;height:100%!important;width:100%!important;min-height:0;transform:none!important;clip-path:none;padding:0;background:none;border:0;flex:1}#compactDesk #deskR>.in{height:100%;padding:0 22px;background:transparent;clip-path:none;gap:0}#compactDesk #conversationTitle,#compactDesk #stationRequest{display:none}#compactDesk #ofContext{padding:8px 0;min-height:30px}#compactDesk #ofSubject{font-size:11px}#compactDesk #officer.docked #ofLog{padding:15px 0;gap:20px;min-height:0;flex:1;scrollbar-width:thin}#compactDesk #ofLog>.source,#compactDesk #ofLog>.of,#compactDesk #ofLog>.you{width:100%;max-width:760px;align-self:center;font-size:15px;line-height:1.55}#compactDesk #ofLog>.you,#compactDesk #ofLog>.source.you{width:auto;max-width:min(88%,760px);align-self:flex-end}#compactDesk #ofLog .source.agent{border:0;padding:0}#compactDesk #ofLog .source small{font-size:10px}#compactDesk #ofLog .source details{border:0;padding:0;margin:6px 0 0}#compactDesk #ofLog .source summary{font-size:12px}#compactDesk #ofLog .source b{font-size:12px}#compactDesk #recipient{padding-top:9px;border-top:1px solid var(--desk-edge)}#compactDesk #ofRow{padding:8px 0;align-items:flex-end;flex-wrap:nowrap}#ofIn{resize:vertical;min-height:42px;max-height:140px;line-height:1.5}#compactDesk #ofIn{min-height:68px;resize:none;font-size:15px}#compactDesk #ofSend{min-height:36px}#compactDesk #sendHint{padding-bottom:10px}
 #deskWork{position:relative;flex:none;min-width:0;width:0;overflow:hidden;transition:width 280ms cubic-bezier(.22,.7,.2,1);background:var(--desk-surface);border-left:0 solid var(--desk-edge)}#deskWork.open{width:var(--desk-work-width,46%);border-left-width:1px}#deskWorkInner{width:100%;height:100%;min-width:300px;display:flex;flex-direction:column;transform:translateX(22px);opacity:0;transition:transform 280ms,opacity 200ms;padding-left:10px}#deskWork.open #deskWorkInner{transform:none;opacity:1}#deskWorkHead{display:flex;align-items:center;gap:8px;flex:none;padding:10px 12px;border-bottom:1px solid var(--desk-edge)}#deskWorkHead h2{font:700 11px ui-monospace,Menlo,monospace;color:var(--hl);margin:0;flex:1;letter-spacing:.08em;text-transform:uppercase}#deskWorkTabs{display:flex;gap:5px;flex-wrap:wrap;flex:none;padding:8px 12px}#deskWorkContent{display:flex;flex:1;min-height:0;flex-direction:column;overflow:auto;overscroll-behavior:contain}#compactMonitor{display:flex;flex:1;min-height:140px;min-width:0}#compactDesk #compactMonitor>.st{height:100%!important;min-height:140px;width:100%!important;position:relative!important;inset:auto!important;transform:none!important;transition:none!important;margin:0!important;padding:10px;border:0;border-radius:0;box-shadow:none;background:var(--desk-surface);flex:1;gap:8px}#compactDesk #compactMonitor>.st>header,#compactDesk #compactMonitor>.st>.views,#compactDesk #compactMonitor>.st>.pband,#compactDesk #compactMonitor>.st>.lk{display:none}#compactDesk #compactMonitor>.st>.mon{max-height:none;min-height:80px;flex:1}#compactDesk #compactMonitor .flag{margin:0}#compactDesk #compactMonitor .flag.w{margin:0}#compactDesk #compactMonitor .split.full .pvw iframe{width:calc(100%/var(--zm,1));height:calc(100%/var(--zm,1));transform:scale(var(--zm,1))}#compactDesk #compactMonitor .code{font-size:13px;overflow:auto}#compactDesk #compactMonitor .tab{font-size:11px}
 #compactPanels{display:flex;flex:none;min-height:0;margin:0;width:100%}#compactDesk #deskL{position:relative!important;inset:auto!important;height:220px!important;min-height:120px;width:100%!important;transform:none!important;clip-path:none;background:none;padding:0;border-top:1px solid var(--desk-edge)}#compactDesk #deskL>.in{background:transparent;clip-path:none;padding:10px 14px}#compactDesk #deskL h3{font-size:10px}#deskWork[data-view=doing] #compactMonitor{flex:1;min-height:190px}#deskWork[data-view=doing] #compactPanels{flex:0 0 34%;min-height:120px}#deskWork[data-view=doing] #deskL{height:100%!important}#compactReadout{display:none}
-#deskSizer{position:absolute;left:0;top:0;bottom:0;width:10px;display:grid;place-items:center;z-index:4;cursor:col-resize;touch-action:none}#deskSizer:after{content:'';height:34px;width:3px;background:var(--hl);border-radius:3px}#compactDesk.resizing,#compactDesk.resizing *{cursor:col-resize!important;user-select:none!important}#compactDesk.resizing #deskWork,#compactDesk.resizing #deskWorkInner{transition:none!important}#deskWorkspace.expanded #deskConversation{display:none}#deskWorkspace.expanded #deskWork{width:100%}#deskWorkspace.expanded #deskSizer{display:none}
+#deskSizer{position:absolute;left:0;top:0;bottom:0;width:10px;display:grid;place-items:center;z-index:4;cursor:col-resize;touch-action:none}#deskSizer:after{content:'';height:34px;width:3px;background:var(--hl);border-radius:0}#compactDesk.resizing,#compactDesk.resizing *{cursor:col-resize!important;user-select:none!important}#compactDesk.resizing #deskWork,#compactDesk.resizing #deskWorkInner{transition:none!important}#deskWorkspace.expanded #deskConversation{display:none}#deskWorkspace.expanded #deskWork{width:100%}#deskWorkspace.expanded #deskSizer{display:none}
 #deskToolbar [data-drawer],.desk-rail-close{display:none}#deskScrim{position:absolute;inset:0;background:#0006;z-index:5}#compactDesk.work-compact #deskWork{position:absolute;inset:0;width:100%!important;z-index:3;transform:translateX(101%);transition:transform 280ms cubic-bezier(.22,.7,.2,1)}#compactDesk.work-compact #deskWork.open{transform:none}#compactDesk.work-compact #deskWorkInner{min-width:0;padding-left:0;transform:none;opacity:1}#compactDesk.work-compact #deskSizer,#compactDesk.work-compact #deskExpand{display:none}
 @media(max-width:1380px){#deskFacts{position:absolute;right:0;top:0;bottom:0;z-index:6;width:min(280px,85vw);transform:translateX(110%);visibility:hidden;transition:transform 250ms,visibility 250ms}#compactDesk[data-drawer=facts] #deskFacts{transform:none;visibility:visible}#deskFacts .desk-rail-close,#deskToolbar [data-drawer=facts]{display:block}}
 @media(max-width:1000px){#deskAgents{position:absolute;left:0;top:0;bottom:0;z-index:6;width:min(260px,85vw);transform:translateX(-110%);visibility:hidden;transition:transform 250ms,visibility 250ms}#compactDesk[data-drawer=agents] #deskAgents{transform:none;visibility:visible}#deskAgents .desk-rail-close,#deskToolbar [data-drawer=agents]{display:block}#compactDesk{left:8px;right:8px;bottom:8px}#deskShell{gap:0}}
 @media(max-width:580px){#compactDesk{left:0;right:0;bottom:0}#deskToolbar{padding:0 8px}#deskHead{padding:9px 12px;gap:6px}#deskName{font-size:17px}#deskStatus{font-size:11px}#deskGoal{max-width:240px;font-size:11px}#deskActions{gap:4px}#deskActions button{font-size:10px;padding:5px 7px}#compactDesk #deskR>.in{padding:0 14px}#compactDesk #ofIn{font-size:16px}#compactDesk #ofLog>.source,#compactDesk #ofLog>.of,#compactDesk #ofLog>.you{font-size:14px}#compactDesk #ofSend{font-size:9px;padding:5px 8px}#compactDesk #compactMonitor .flag.w .tag{font-size:9px;padding:0 6px}#compactDesk #compactMonitor .flag.w button{padding:4px 6px;font-size:9px}#deskWorkTabs button{min-height:32px}#deskToolbar button{min-height:32px}}
 @media(prefers-reduced-motion:reduce){#deskWork,#deskWorkInner,#deskAgents,#deskFacts{transition:none!important}}
 /* Neutral is opt-in. Original room/monitor styles above are the default. */
-html[data-theme=neutral]{--ink:#282828;--mute:#707070;--panel:#fff;--line:#d9d9d9;--mon:#fafafa;--monink:#303030;--mondim:#6c6c6c;--hl:#555;--hbg:#fafafa;--add:#237a43;--del:#b63838;--warn:#946414;--corr:#934a73}html[data-theme=neutral] body{background:#f5f5f5;color:var(--ink)}html[data-theme=neutral] #brand{color:#343434}html[data-theme=neutral] #compactDesk{--desk-bg:#fff;--desk-surface:#fafafa;--desk-edge:#dedede;--desk-muted:#707070}html[data-theme=neutral] #deskCenter{border:1px solid #ddd;border-radius:16px;overflow:hidden}html[data-theme=neutral] #deskAgents,html[data-theme=neutral] #deskFacts{background:#f5f5f5;border-color:transparent}html[data-theme=neutral] #deskAgents h2,html[data-theme=neutral] #deskFacts h2{font:600 12px system-ui;letter-spacing:0;text-transform:none;color:#717171}html[data-theme=neutral] #deskAgentList button[aria-current=true]{background:#e7e7e7;border-color:transparent;box-shadow:none}html[data-theme=neutral] #compactDesk button,html[data-theme=neutral] #hud button,html[data-theme=neutral] #officer button,html[data-theme=neutral] .pill{font-family:system-ui;letter-spacing:0;text-transform:none;background:#f5f5f5;border-color:#d6d6d6;color:#424242;border-radius:6px}html[data-theme=neutral] #compactDesk button[aria-pressed=true]{background:#e7e7e7;color:#222;border-color:#bdbdbd}html[data-theme=neutral] #deskAgentList button{background:transparent;border-color:transparent}html[data-theme=neutral] #deskToolbar .theme-choices button[aria-pressed=true]{background:#fff;border-color:#777}html[data-theme=neutral] #ofIn{background:#fff;border-color:#d0d0d0;border-radius:10px;color:#282828}html[data-theme=neutral] #ofLog .source.you,html[data-theme=neutral] #ofLog .you{background:#f0f0f0;color:#303030;border-color:#ddd;border-radius:12px}html[data-theme=neutral] #ofLog .source b,html[data-theme=neutral] #ofLog .of b,html[data-theme=neutral] #ofLog .of i,html[data-theme=neutral] #ofLog summary,html[data-theme=neutral] #ofSubject{color:#333}html[data-theme=neutral] #ofLog .of code,html[data-theme=neutral] #ofLog .of pre,html[data-theme=neutral] #ofLog .draft{color:#333;background:#f3f3f3;border-color:#ddd}html[data-theme=neutral] #ofLog .source,html[data-theme=neutral] #ofContext,html[data-theme=neutral] #ofQuick,html[data-theme=neutral] #officer:not(.fold) #ofB{border-color:#ddd}html[data-theme=neutral] #compactDesk #badge span,html[data-theme=neutral] #compactDesk #bay{border-color:#ddd}html[data-theme=neutral] #ofSend{background:#303030!important;color:#fff!important}html[data-theme=neutral] #deskWorkHead h2{font-family:system-ui;text-transform:none;letter-spacing:0;color:#555}html[data-theme=neutral] .hud{background:#d4d4d4}html[data-theme=neutral] .hud>.in{background:#fafafa}html[data-theme=neutral] #deskR,html[data-theme=neutral] #deskL{background:none}html[data-theme=neutral] .tab,html[data-theme=neutral] .plan{background:#f0f0f0;color:#666}html[data-theme=neutral] #hud,html[data-theme=neutral] #live,html[data-theme=neutral] #fleetS,html[data-theme=neutral] #console{background:#f5f5f5;border-color:#d8d8d8;color:#666}html[data-theme=neutral] .story p,html[data-theme=neutral] .story .sv,html[data-theme=neutral] .story .dv,html[data-theme=neutral] .story .end{color:#6d6d6d}html[data-theme=neutral] .story .sum,html[data-theme=neutral] .story .u{background:#eee;border-color:#ccc;color:#333}html[data-theme=neutral] .story .sv b{color:#444}html[data-theme=neutral] #officer{box-shadow:0 5px 20px #0002}html[data-theme=neutral] #officer.docked{box-shadow:none}html[data-theme=neutral] #ofLog .hl,html[data-theme=neutral] .story p.hl{background:#e1e8f0}html[data-theme=neutral] #compactMonitor .flag.w .msg{color:#704a0d}html[data-theme=neutral] #compactMonitor .flag .off,html[data-theme=neutral] #compactMonitor .flag .rev{color:#704a0d;border-color:#b59050}html[data-theme=neutral] #compactMonitor .flag .yes{color:#237a43}html[data-theme=neutral] #compactMonitor .flag .no{color:#b63838}
+html[data-theme=neutral]{--ink:#282828;--mute:#707070;--panel:#fff;--line:#d9d9d9;--mon:#fafafa;--monink:#303030;--mondim:#6c6c6c;--hl:#555;--hbg:#fafafa;--add:#237a43;--del:#b63838;--warn:#946414;--corr:#934a73}html[data-theme=neutral] body{background:#f5f5f5;color:var(--ink)}html[data-theme=neutral] #brand{color:#343434}html[data-theme=neutral] #compactDesk{--desk-bg:#fff;--desk-surface:#fafafa;--desk-edge:#dedede;--desk-muted:#707070}html[data-theme=neutral] #deskCenter{border:1px solid #ddd;border-radius:0;overflow:hidden}html[data-theme=neutral] #deskAgents,html[data-theme=neutral] #deskFacts{background:#f5f5f5;border-color:transparent}html[data-theme=neutral] #deskAgents h2,html[data-theme=neutral] #deskFacts h2{font:600 12px system-ui;letter-spacing:0;text-transform:none;color:#717171}html[data-theme=neutral] #deskAgentList button[aria-current=true]{background:#e7e7e7;border-color:transparent;box-shadow:none}html[data-theme=neutral] #compactDesk button,html[data-theme=neutral] #hud button,html[data-theme=neutral] #officer button,html[data-theme=neutral] .pill{font-family:system-ui;letter-spacing:0;text-transform:none;background:transparent;border-color:#d6d6d6;color:#424242;border-radius:0}html[data-theme=neutral] #compactDesk button[aria-pressed=true]{background:#e7e7e7;color:#222;border-color:#bdbdbd}html[data-theme=neutral] #deskAgentList button{background:transparent;border-color:transparent}html[data-theme=neutral] #deskToolbar .theme-choices button[aria-pressed=true]{background:#fff;border-color:#777}html[data-theme=neutral] #ofIn{background:#fff;border-color:#d0d0d0;border-radius:0;color:#282828}html[data-theme=neutral] #ofLog .source.you,html[data-theme=neutral] #ofLog .you{background:#f0f0f0;color:#303030;border-color:#ddd;border-radius:0}html[data-theme=neutral] #ofLog .source b,html[data-theme=neutral] #ofLog .of b,html[data-theme=neutral] #ofLog .of i,html[data-theme=neutral] #ofLog summary,html[data-theme=neutral] #ofSubject{color:#333}html[data-theme=neutral] #ofLog .of code,html[data-theme=neutral] #ofLog .of pre,html[data-theme=neutral] #ofLog .draft{color:#333;background:#f3f3f3;border-color:#ddd}html[data-theme=neutral] #ofLog .source,html[data-theme=neutral] #ofContext,html[data-theme=neutral] #ofQuick,html[data-theme=neutral] #officer:not(.fold) #ofB{border-color:#ddd}html[data-theme=neutral] #compactDesk #badge span,html[data-theme=neutral] #compactDesk #bay{border-color:#ddd}html[data-theme=neutral] #ofSend{background:#303030!important;color:#fff!important}html[data-theme=neutral] #deskWorkHead h2{font-family:system-ui;text-transform:none;letter-spacing:0;color:#555}html[data-theme=neutral] .hud{background:#d4d4d4}html[data-theme=neutral] .hud>.in{background:#fafafa}html[data-theme=neutral] #deskR,html[data-theme=neutral] #deskL{background:none}html[data-theme=neutral] .tab,html[data-theme=neutral] .plan{background:#f0f0f0;color:#666}html[data-theme=neutral] #hud,html[data-theme=neutral] #live,html[data-theme=neutral] #fleetS,html[data-theme=neutral] #console{background:#f5f5f5;border-color:#d8d8d8;color:#666}html[data-theme=neutral] .story p,html[data-theme=neutral] .story .sv,html[data-theme=neutral] .story .dv,html[data-theme=neutral] .story .end{color:#6d6d6d}html[data-theme=neutral] .story .sum,html[data-theme=neutral] .story .u{background:#eee;border-color:#ccc;color:#333}html[data-theme=neutral] .story .sv b{color:#444}html[data-theme=neutral] #officer{box-shadow:0 5px 20px #0002}html[data-theme=neutral] #officer.docked{box-shadow:none}html[data-theme=neutral] #ofLog .hl,html[data-theme=neutral] .story p.hl{background:#e1e8f0}html[data-theme=neutral] #compactMonitor .flag.w .msg{color:#704a0d}html[data-theme=neutral] #compactMonitor .flag .off,html[data-theme=neutral] #compactMonitor .flag .rev{color:#704a0d;border-color:#b59050}html[data-theme=neutral] #compactMonitor .flag .yes{color:#237a43}html[data-theme=neutral] #compactMonitor .flag .no{color:#b63838}
 
 html[data-theme=neutral] .st .id b,html[data-theme=neutral] .st .id .ctx .pj{color:#414141}html[data-theme=neutral] .st .code.say p{color:#707070}html[data-theme=neutral] .st .code.say p.now,html[data-theme=neutral] .st .code p.you{color:#333}html[data-theme=neutral] .go,html[data-theme=neutral] .pinb{background:#f2f2f2;color:#444}html[data-theme=neutral] .st .tab .what{color:#333}html[data-theme=neutral] .st .tab .how{color:#6c6c6c}
 #deskSignals{display:flex;gap:5px;margin-top:16px;padding-top:12px;border-top:1px solid var(--desk-edge)}#deskSignals button{flex:1}#deskSignals button[aria-pressed=true]{border-color:var(--hl);color:var(--hl)}#compactDesk #bayD{display:none}#compactDesk #bay{margin-top:8px}html[data-theme=neutral] #deskSignals button[aria-pressed=true]{background:#e7e7e7}
@@ -492,8 +492,8 @@ html[data-theme=neutral] #room{background:radial-gradient(ellipse at 50% 36%,#ff
 /* Work chrome must not override Original permission-control semantics. */
 html:not([data-theme=neutral]) #deskWork .flag .yes{color:var(--add)}
 html:not([data-theme=neutral]) #deskWork .flag .no{color:var(--del)}
-html:not([data-theme=neutral]) #deskWork .flag .yes:hover{color:var(--add);border-color:var(--add);background:#0e2418}
-html:not([data-theme=neutral]) #deskWork .flag .no:hover{color:var(--del);border-color:var(--del);background:#2a1214}
+html:not([data-theme=neutral]) #deskWork .flag .yes:not(:disabled):hover{color:var(--add);border-color:var(--add);background:#0e2418}
+html:not([data-theme=neutral]) #deskWork .flag .no:not(:disabled):hover{color:var(--del);border-color:var(--del);background:#2a1214}
 /* Neutral banners need dark text on their pale semantic backgrounds, in room and Work. */
 html[data-theme=neutral] .flag.w{color:#704a0d}
 html[data-theme=neutral] .flag.r{color:#8c2323}
@@ -501,20 +501,63 @@ html[data-theme=neutral] .flag.w .tag,html[data-theme=neutral] .flag.r .tag{colo
 html[data-theme=neutral] .flag.w.soft .tag{color:#704a0d}
 html[data-theme=neutral] .flag .off,html[data-theme=neutral] .flag .rev,html[data-theme=neutral] .flag .fx{color:#704a0d;border-color:#946414}
 html[data-theme=neutral] .flag .rev:hover,html[data-theme=neutral] .flag .fx:hover,html[data-theme=neutral] #compactMonitor .flag .rev:hover,html[data-theme=neutral] #compactMonitor .flag .fx:hover{color:#704a0d;border-color:#946414;background:#f3e7d4}
-html[data-theme=neutral] .flag .yes:hover,html[data-theme=neutral] #compactMonitor .flag .yes:hover{color:#237a43;border-color:#237a43;background:#edf5ef}
-html[data-theme=neutral] .flag .no:hover,html[data-theme=neutral] #compactMonitor .flag .no:hover{color:#b63838;border-color:#b63838;background:#fff0f0}
+html[data-theme=neutral] .flag .yes:not(:disabled):hover,html[data-theme=neutral] #compactMonitor .flag .yes:not(:disabled):hover{color:#237a43;border-color:#237a43;background:#edf5ef}
+html[data-theme=neutral] .flag .no:not(:disabled):hover,html[data-theme=neutral] #compactMonitor .flag .no:not(:disabled):hover{color:#b63838;border-color:#b63838;background:#fff0f0}
 
 /* A request stays with the conversation, immediately above its composer. */
-#responseCard{flex:none;min-height:0;margin:8px 0 2px;border:1px solid #39526b;border-radius:3px;background:#101c2b;color:var(--ink);overflow:hidden}
+#responseCard{flex:none;min-height:0;margin:8px 0 2px;border:1px solid #39526b;border-radius:0;background:#101c2b;color:var(--ink);overflow:hidden}
 #responseCard>header{display:flex;align-items:center;gap:8px;padding:8px 11px}#responseCard>header>div{flex:1;min-width:0;display:flex;align-items:baseline;gap:8px}#responseTitle{font:600 12px/1.4 system-ui}#responseAgent{font:11px/1.4 system-ui;color:var(--mute);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-#responseToggle{flex:none;width:28px;height:28px;border:0;border-radius:3px;background:transparent;color:var(--ink);font-size:18px;cursor:pointer}#responseToggle:focus-visible{outline:2px solid var(--hl);outline-offset:-2px}
+#responseToggle{flex:none;width:28px;height:28px;border:0;border-radius:0;background:transparent;color:var(--ink);font-size:18px;cursor:pointer}#responseToggle:focus-visible{outline:2px solid var(--hl);outline-offset:-2px}
 #responseBody{display:flex;flex-direction:column;max-height:min(260px,36vh);min-height:0;padding:0 11px 9px;gap:7px}#responseEvidence{flex:1 1 auto;min-height:80px;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere;margin:0;font:13px/1.45 system-ui;scrollbar-width:thin;overscroll-behavior:contain}#responseEvidence:focus-visible{outline:1px solid var(--hl);outline-offset:-1px}
-#responseActions{display:flex;align-items:center;flex-wrap:wrap;gap:7px;flex:none}#responseDecisions{display:flex;gap:7px}#responseActions button{min-height:30px;padding:5px 10px;font:600 11px/1.4 system-ui;cursor:pointer;border:1px solid #39526b;border-radius:3px;background:#0d1a2b;color:var(--ink)}#responseActions button:disabled{opacity:.45;cursor:default}#responseActions button:focus-visible{outline:2px solid var(--hl);outline-offset:2px}#responseActions .response-allow{color:var(--add)}#responseActions .response-deny{color:var(--del)}#responseActions .response-allow:not(:disabled):hover{border-color:var(--add);background:#0e2418}#responseActions .response-deny:not(:disabled):hover{border-color:var(--del);background:#2a1214}#responseNote{flex:none;font:11px/1.4 system-ui;color:var(--mute);overflow-wrap:anywhere}#responseNote:empty{display:none}
+#responseActions{display:flex;align-items:center;flex-wrap:wrap;gap:7px;flex:none}#responseDecisions{display:flex;gap:7px}#responseActions button{min-height:30px;padding:5px 10px;font:600 11px/1.4 system-ui;cursor:pointer;border:1px solid #39526b;border-radius:0;background:#0d1a2b;color:var(--ink)}#responseActions button:disabled{opacity:.45;cursor:default}#responseActions button:focus-visible{outline:2px solid var(--hl);outline-offset:2px}#responseActions .response-allow{color:var(--add)}#responseActions .response-deny{color:var(--del)}#responseActions .response-allow:not(:disabled):hover{border-color:var(--add);background:#0e2418}#responseActions .response-deny:not(:disabled):hover{border-color:var(--del);background:#2a1214}#responseNote{flex:none;font:11px/1.4 system-ui;color:var(--mute);overflow-wrap:anywhere}#responseNote:empty{display:none}
 #compactDesk #compactMonitor .flag.w{display:none!important}
-html[data-theme=neutral] #responseCard{background:#f7f7f7;border-color:#d5d5d5;border-radius:12px;color:#303030}html[data-theme=neutral] #responseToggle{background:transparent;color:#555}html[data-theme=neutral] #responseActions button{background:#fff;border-color:#ccc;color:#444;border-radius:6px}html[data-theme=neutral] #responseActions .response-allow{color:#237a43}html[data-theme=neutral] #responseActions .response-deny{color:#b63838}html[data-theme=neutral] #responseActions .response-allow:not(:disabled):hover{background:#edf5ef;border-color:#237a43}html[data-theme=neutral] #responseActions .response-deny:not(:disabled):hover{background:#fff0f0;border-color:#b63838}
+html[data-theme=neutral] #responseCard{background:#f7f7f7;border-color:#d5d5d5;border-radius:0;color:#303030}html[data-theme=neutral] #responseToggle{background:transparent;color:#555}html[data-theme=neutral] #responseActions button{background:#fff;border-color:#ccc;color:#444;border-radius:0}html[data-theme=neutral] #responseActions .response-allow{color:#237a43}html[data-theme=neutral] #responseActions .response-deny{color:#b63838}html[data-theme=neutral] #responseActions .response-allow:not(:disabled):hover{background:#edf5ef;border-color:#237a43}html[data-theme=neutral] #responseActions .response-deny:not(:disabled):hover{background:#fff0f0;border-color:#b63838}
 @media(max-width:580px){#responseCard>header{padding:6px 9px}#responseBody{padding:0 9px 7px;max-height:min(230px,33vh)}#responseActions button{min-height:32px}#responseEvidence{font-size:12px}}
 
 @media(max-height:700px){#compactDesk:has(#responseCard:not([hidden]) #responseBody:not([hidden])) #deskConversation{overflow-y:auto}#compactDesk:has(#responseCard:not([hidden]) #responseBody:not([hidden])) #officer.docked,#compactDesk:has(#responseCard:not([hidden]) #responseBody:not([hidden])) #officer.docked>.in{height:auto;min-height:100%;overflow:visible}#compactDesk:has(#responseCard:not([hidden]) #responseBody:not([hidden])) #ofBody{flex:1 0 auto;min-height:min-content}#compactDesk:has(#responseCard:not([hidden]) #responseBody:not([hidden])) #officer.docked #ofLog{flex:1 0 72px;min-height:72px;max-height:160px}#responseBody{max-height:none;gap:4px;padding-bottom:6px}#responseEvidence{flex:none;height:80px}#responseCard{margin-top:4px}#responseCard>header{padding-top:2px;padding-bottom:2px}#responseToggle{height:24px}#compactDesk:has(#responseCard:not([hidden]) #responseBody:not([hidden])) #ofIn{min-height:42px;height:42px}#compactDesk:has(#responseCard:not([hidden]) #responseBody:not([hidden])) #ofRow{padding:5px 0}#compactDesk:has(#responseCard:not([hidden]) #responseBody:not([hidden])) #recipient{padding-top:5px}#compactDesk:has(#responseCard:not([hidden]) #responseBody:not([hidden])) #ofContext{padding:3px 0;min-height:24px}#compactDesk:has(#responseCard:not([hidden]) #responseBody:not([hidden])) #sendHint{padding-bottom:5px}}
+
+/* Action hierarchy: existing buttons keep their hit areas, keyboard behavior and state hooks. */
+:root{--action-hover:rgba(57,200,255,.08);--action-frame:#39526b;--action-fill:#0d1a2b}
+html[data-theme=neutral]{--action-hover:#ededed;--action-frame:#b5b5b5;--action-fill:#f2f2f2}
+/* Navigation reads as navigation, while retaining native button semantics. */
+:is(#deskActions,#deskWorkHead,#hud,#responseActions) :is(#deskOpenApp,#deskCloseWork,#back,#responseOpenApp),#room .st .go{background:transparent;border-color:transparent;color:var(--ink);text-decoration:underline;text-decoration-thickness:1px;text-underline-offset:3px}
+:is(#deskActions,#deskWorkHead,#hud,#responseActions) :is(#deskOpenApp,#deskCloseWork,#back,#responseOpenApp):not(:disabled):hover,#room .st .go:not(:disabled):hover{background:var(--action-hover);color:var(--hl);border-color:transparent}
+/* Utility actions stay quiet. Pin's reserved mark changes without moving its label. */
+:is(#compactDesk,#officer,#hud) :is(#deskPin,#deskDismiss,#responseDismiss,#responseToggle,#deskExpand,.desk-rail-close,#clearQ,#bringB,#help),#room .st :is(.pinb,.x){background:transparent;border-color:transparent;color:var(--mute);box-shadow:none}
+:is(#compactDesk,#officer,#hud) :is(#deskPin,#deskDismiss,#responseDismiss,#responseToggle,#deskExpand,.desk-rail-close,#clearQ,#bringB,#help):not(:disabled):hover,#room .st :is(.pinb,.x):not(:disabled):hover{background:var(--action-hover);border-color:transparent;color:var(--ink)}
+#deskActions #deskPin::before,#room .st .pinb::before{content:'';display:inline-block;width:9px;height:9px;margin-right:6px;border:1px solid currentColor;vertical-align:0}
+#deskActions #deskPin[aria-pressed=true],#room .st.pinned .pinb{background:transparent;color:var(--hl);border-color:transparent}
+#deskActions #deskPin[aria-pressed=true]::before,#room .st.pinned .pinb::before{background:currentColor;box-shadow:inset 0 0 0 2px var(--panel)}
+#deskActions #deskDismiss:not(:disabled):hover,#responseActions #responseDismiss:not(:disabled):hover,#room .st .x:not(:disabled):hover{color:var(--del)}
+/* Work remains the one framed panel control in the desk header. */
+#deskActions #deskWorkToggle{background:var(--action-fill);border-color:var(--action-frame);color:var(--ink);box-shadow:none}
+#deskActions #deskWorkToggle[aria-expanded=true]{border-color:var(--hl);box-shadow:inset 3px 0 var(--hl);color:var(--hl)}
+#deskActions #deskWorkToggle:not(:disabled):hover{border-color:var(--hl);background:var(--action-hover)}
+/* Tabs share a baseline; the selected underline uses the existing border space. */
+#compactDesk :is(#deskWorkTabs,#deskSignals) button,#compactDesk #deskToolbar .theme-choices button,#officer :is(#recipient,#ofScope) button,#room .views button{background:transparent;border-color:transparent;color:var(--mute);box-shadow:none}
+#compactDesk :is(#deskWorkTabs,#deskSignals) button[aria-pressed=true],#compactDesk #deskToolbar .theme-choices button[aria-pressed=true],#officer :is(#recipient,#ofScope) button[aria-pressed=true],#room .views button.on{background:transparent;border-color:transparent;border-bottom-color:var(--hl);box-shadow:inset 0 -1px var(--hl);color:var(--ink)}
+#compactDesk :is(#deskWorkTabs,#deskSignals) button:not(:disabled):hover,#compactDesk #deskToolbar .theme-choices button:not(:disabled):hover,#officer :is(#recipient,#ofScope) button:not(:disabled):hover,#room .views button:not(:disabled):hover{background:var(--action-hover);color:var(--ink)}
+#room .views button.on i{border-color:currentColor;color:inherit}
+/* Persistent switches keep their lamps; Watch retains its settings affordance. */
+#hud #console,#hud :is(#notify,#appr){background:transparent;border-color:transparent}
+#hud :is(#notify,#appr):not(:disabled):hover{background:var(--action-hover);border-color:transparent}
+#hud :is(#notify,#appr)[aria-pressed=true]{color:var(--ink)}
+#hud #watchB{background:transparent;border-color:transparent;color:var(--ink)}
+#hud #watchB[aria-expanded=true]{border-bottom-color:var(--hl)}
+#hud #watchB:not(:disabled):hover{background:var(--action-hover);border-color:transparent;border-bottom-color:var(--hl)}
+/* Agent rows and breadcrumbs form navigation, not another bank of action tiles. */
+#compactDesk #deskAgentList button,#crumb .pill,#hud #projs button{background:transparent;border-color:transparent;box-shadow:none}
+#compactDesk #deskAgentList button[aria-current=true]{background:var(--action-hover);border-color:transparent;box-shadow:inset 2px 0 var(--hl)}
+#crumb .pill.me,#hud #projs button.on{background:transparent;border-color:transparent;box-shadow:inset 0 -2px var(--hl);color:var(--hl)}
+#compactDesk #deskAgentList button:not(:disabled):hover,#crumb .pill:not(.off):not(.me):hover,#hud #projs button:not(:disabled):hover{background:var(--action-hover);border-color:transparent}
+/* Commit actions have deliberate emphasis; unavailable actions retain their disabled state. */
+#officer #ofSend{background:var(--hl);border-color:var(--hl);color:#04121c}
+#officer #ofSend:not(:disabled):hover{filter:brightness(.94)}
+#officer #responseActions .response-allow{color:var(--add);background:transparent;border-color:var(--add)}
+#officer #responseActions .response-deny{color:var(--del);background:transparent;border-color:var(--del)}
+#officer #responseActions .response-allow:not(:disabled):hover{background:color-mix(in srgb,var(--add) 10%,transparent)}
+#officer #responseActions .response-deny:not(:disabled):hover{background:color-mix(in srgb,var(--del) 10%,transparent)}
+:is(#compactDesk,#officer,#hud) button:disabled{cursor:default}
 
 #back .mobile-label{display:none}
 /* Keep phone navigation compact; measured bar heights still position the desk. */
