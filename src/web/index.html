@@ -567,6 +567,17 @@ html[data-theme=neutral] #compactDesk #deskAgentList button[aria-current=true]{b
   #compactDesk #deskAgentList button[aria-current=true]:focus-visible,#deskActions #deskWorkToggle[aria-expanded=true]:focus-visible,#crumb .pill.me:focus-visible,#hud #projs button.on:focus-visible{outline-style:dashed;outline-offset:2px}
 }
 
+/* The room shares the desk's saved theme, directly in its measured header. */
+#hud #roomTheme{display:inline-flex;align-items:center;gap:4px;flex:none;flex-wrap:nowrap;color:var(--mute)}
+body:not(.stepped) #fleetS{min-width:140px}
+@media(max-width:1600px){body:not(.stepped) #brand{font-size:0}body:not(.stepped) #console b,body:not(.stepped) #hud .sw span{display:none}}
+#roomThemeLabel{font-size:10px;letter-spacing:.02em;white-space:nowrap}
+#hud #roomTheme button{padding:5px 7px;font-size:10px;letter-spacing:.02em;background:transparent;border-color:transparent;color:var(--mute);box-shadow:none}
+#hud #roomTheme button[aria-pressed=true]{border-bottom-color:var(--hl);box-shadow:inset 0 -1px var(--hl);color:var(--ink)}
+#hud #roomTheme button:not(:disabled):hover{background:var(--action-hover);color:var(--ink)}
+#hud #roomTheme button:focus-visible{outline:2px solid var(--hl);outline-offset:-2px}
+body.stepped #hud #roomTheme{display:none}
+@media(pointer:coarse){#hud #roomTheme button{min-width:36px;min-height:36px}}
 #back .mobile-label{display:none}
 /* Keep phone navigation compact; measured bar heights still position the desk. */
 @media(max-width:600px){
@@ -610,6 +621,7 @@ html[data-theme=neutral] #compactDesk #deskAgentList button[aria-current=true]{b
     <button id="appr" class="sw" aria-label="Answer prompts here"><svg viewBox="0 0 24 24"><path d="M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6z"/><path d="M8.5 12l2.5 2.5 4.5-5"/></svg><span>Answer here</span></button>
   </span>
   <span id="acts"><button id="clearQ" class="ic" hidden title="Dismiss every agent that is idle and not waiting on you; pinned ones stay" aria-label="Dismiss idle agents"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="12" rx="1"/><path d="M9 20h6M12 16v4M9 8l6 4M15 8l-6 4"/></svg></button><button id="bringB" class="ic" hidden aria-label="Bring back dismissed agents"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="12" rx="1"/><path d="M9 20h6M12 16v4M12 7v6M9 10h6"/></svg><b></b></button><span id="watchW"><button id="watchB" title="Add or remove what counts as a risk, a check, or probably needing you" aria-expanded="false" aria-controls="watchP">Watch</button><div id="watchP" hidden><div id="watchDraft" hidden><span id="watchDraftT"></span><span class="row"><button type="button" id="watchKeep">Keep this rule</button><button type="button" id="watchDrop">Not now</button></span></div><input id="watchTry" maxlength="80" autocomplete="off" placeholder="a command, or something an agent might say" aria-label="Try a command or a sentence"><div id="watchMiniK" hidden>Preview · what the room would show</div><div id="watchMini" hidden></div><div id="watchAsK" class="wkk" hidden>Show it as</div><div id="watchAs" hidden></div><div id="watchSaved" hidden></div><div class="wkk" id="watchYoursK">Your rules</div><div id="watchYours"></div><details id="watchRules"><summary>Built-in rules</summary><div id="watchList"></div></details></div></span><span id="helpW"><button id="help" title="Gestures and keys" aria-label="Gestures and keys">?</button><span id="hint">pinch out on a screen to step up · two-finger scroll or ← → to turn along the row · pinch to move closer · double-click empty space to reset · hover a screen to lean in · / asks the Officer</span></span></span>
+  <span id="roomTheme" role="group" aria-labelledby="roomThemeLabel"><span id="roomThemeLabel">Theme</span><button type="button" data-theme="original" aria-pressed="true">Original</button><button type="button" data-theme="neutral" aria-pressed="false">Neutral</button></span>
   <button id="back" aria-label="Back to the room" hidden><span class="full-label">← Back to the room</span><span class="mobile-label" aria-hidden="true">← Room</span></button>
 </div>
 <div id="needs"></div>
@@ -1755,8 +1767,9 @@ function deskPaint(){
   $('#bay').hidden=bayPg===0;for(const b of $('#deskSignals').children)b.setAttribute('aria-pressed',String(Number(b.dataset.bay)===bayPg));
   deskSetViewUI();
 }
-function deskTheme(theme){const next=theme==='neutral'?'neutral':'original';document.documentElement.dataset.theme=next;for(const b of document.querySelectorAll('[data-theme]'))b.setAttribute('aria-pressed',String(b.dataset.theme===next));try{store.setItem('liveRoomTheme',next)}catch(err){}if(focus){deskSize();if(A[focus])A[focus].dirty=true;render()}}
-let initialDeskTheme='original';try{initialDeskTheme=store.getItem('liveRoomTheme')||'original'}catch(err){}document.documentElement.dataset.theme=initialDeskTheme==='neutral'?'neutral':'original';for(const b of document.querySelectorAll('[data-theme]'))b.setAttribute('aria-pressed',String(b.dataset.theme===document.documentElement.dataset.theme));
+function deskTheme(theme){const next=theme==='neutral'?'neutral':'original';document.documentElement.dataset.theme=next;for(const b of document.querySelectorAll('#roomTheme button[data-theme], #deskToolbar button[data-theme]'))b.setAttribute('aria-pressed',String(b.dataset.theme===next));try{store.setItem('liveRoomTheme',next)}catch(err){}if(focus){deskSize();if(A[focus])A[focus].dirty=true;render()}}
+let initialDeskTheme='original';try{initialDeskTheme=store.getItem('liveRoomTheme')||'original'}catch(err){}document.documentElement.dataset.theme=initialDeskTheme==='neutral'?'neutral':'original';for(const b of document.querySelectorAll('#roomTheme button[data-theme], #deskToolbar button[data-theme]'))b.setAttribute('aria-pressed',String(b.dataset.theme===document.documentElement.dataset.theme));
+$('#roomTheme').onclick=e=>{const b=e.target.closest('button[data-theme]');if(b)deskTheme(b.dataset.theme)};
 $('#deskToolbar').onclick=e=>{const b=e.target.closest('button');if(!b)return;if(b.dataset.theme)deskTheme(b.dataset.theme);else if(b.dataset.drawer)deskToggleDrawer(b.dataset.drawer,b)};
 $('#deskAgentList').onclick=e=>{const b=e.target.closest('[data-agent]');if(b)setFocus(b.dataset.agent)};
 $('#deskSignals').onclick=e=>{const b=e.target.closest('[data-bay]');if(b){bayPg=bayPg===Number(b.dataset.bay)?0:Number(b.dataset.bay);desk()}};
