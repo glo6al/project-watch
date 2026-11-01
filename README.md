@@ -50,7 +50,7 @@ For supported sessions, WATCH brings together the available conversation and wor
 - **The goal:** each monitor carries the first message of the session that was read, as a one-line reminder of what that agent is for.
 - **Who started whom:** a chain of command, marked where it was recorded and where it was inferred. The desk's compact agent tree nests children beneath their parents and labels each agent's provider.
 - **Which project:** the row is seated in bays by folder, with the project's name set into the floor, and you can give a folder a display name.
-- **Alerts** when a command looks like a deploy, a push, a delete or a send, from a small shell-aware parser. The Watch button in the bar lets you add your own words to that list, or switch the built-in ones off.
+- **Alerts** when a command looks like a deploy, a push, a delete or a send, from a small shell-aware parser. The compact notice keeps the full command behind **View details**. **Dismiss alert** clears that event across the room and desk for the current browser session; notices can reappear after a full reload. **Hide agent** is a separate action. The Watch button in the bar lets you add your own words to that list, or switch the built-in ones off.
 - **Readouts** the log states: model, branch, approval setting, context in use, when the session began, when you last spoke to it.
 - **Answers, when you ask:** the Officer of the Watch, available in the room and in the selected station’s conversation, answers plain-English questions from the same logs: what you missed since some minutes ago, what an agent did, whether anything is stuck, who is waiting on you, who changed a file. It keeps each record's own qualifications ("started", "tried to", "probably", "outcome not recorded"), shows the entries it consulted, and can draft a Watch rule for you to keep with one button. It needs an Anthropic API key on this machine; without one it stays off and says why.
 
@@ -70,7 +70,7 @@ Observation does not imply messaging or control support. Codex messaging, contro
 | Send a direct message | Queue to an eligible existing chat | Disabled: exact-chat targeting is unverified | Unavailable | Unavailable |
 | Steer or stop the active turn through WATCH | Supported when the control checks pass | Unavailable | Unavailable | Unavailable |
 | Promote an already queued message with Steer | Unavailable | Unavailable | Unavailable | Unavailable |
-| Read native questions and selected model/effort | Supported, read-only, on the verified build | Unavailable | Unavailable | Unavailable |
+| Read native questions | Supported, read-only, on the verified build | Unavailable | Unavailable | Unavailable |
 | Answer permission prompts in WATCH | Unavailable | Optional permission hooks, with **Answer here** enabled | Unavailable | Unavailable |
 
 You can still open an unsupported desk, inspect the evidence available there, and ask WATCH about it when the Officer is configured. Direct **Send** stays disabled with an explanation. Use the original app for unsupported actions; **Open in…** works only where WATCH has a supported route.
@@ -203,11 +203,11 @@ Control outcomes are shown as historical records and recovered through status po
 
 Control outcomes are kept locally and become eligible for cleanup after one day. After details expire, WATCH retains an ID-only replay guard so an old request identifier cannot dispatch again, including after a restart or timeout. An uncertain outcome stays uncertain; inspect the agent before making a new request. A new explicit interruption is allowed after an uncertain steering attempt. The Officer interprets only your current request, with the same model-interpretation limitation as messaging; log contents cannot invoke these controls.
 
-### Native questions and model information
+### Native questions
 
-An unlocked, visible agent desk makes one bounded native read, then offers **Refresh** to check again. On the verified Codex desktop build above, WATCH can show supported ordinary questions and their choices directly from the desktop bridge, along with the model and effort **selected for the next turn**. The model recorded in the transcript remains a separate readout in Details. Native observations expire; an ended observation is not evidence that a question was answered.
+An unlocked, visible agent desk makes one bounded native read. On the verified Codex desktop build above, WATCH shows a **Questions from app** panel only when it has readable ordinary questions and their choices. Use **Check for questions** in Session to read again, including after an empty or failed read; a visible question panel also offers **Refresh**. The model recorded in the transcript remains in Session details. Native observations expire, and stale questions are labelled **Last observed**; an ended observation does not confirm that a question was answered.
 
-This is read-only. Answering native questions and changing model or effort in WATCH are not enabled. Secret, unsupported and approval requests show metadata only; use the native app for their details. Existing optional Claude permission hooks retain their separate Allow/Deny flow. Claude native question and model reads are not connected yet.
+Questions are read-only here; use **Answer in app** to respond. Secret, unsupported and approval requests do not appear in this panel; use the native app for their details. Changing model or effort in WATCH is not enabled. Existing optional Claude permission hooks retain their separate Allow/Deny flow. Claude native question and model reads are not connected yet.
 
 The new `/native/v1/read` and `/native/v1/agents/<agent-id>` routes require the owner key in a header and return private, non-cacheable snapshots. They do not accept answers or arbitrary native commands. Native snapshots stay out of the general event stream, Officer context and peer bridge; this does not change what existing transcript readers may independently record. The browser clears native information when it leaves the selected desk or becomes hidden. Already-started bounded server reads finish, and their in-memory cache expires.
 
