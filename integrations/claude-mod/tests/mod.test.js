@@ -1,7 +1,7 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {register} from '../hooks/register.js';
-import {matchingAnswer, pairing} from '../hooks/protocol.js';
+import {matchingPrompt, matchingAnswer, pairing} from '../hooks/protocol.js';
 
 const NATIVE='11111111-1111-4111-8111-111111111111', GENERATION='22222222-2222-4222-8222-222222222222';
 const REQUEST='33333333-3333-4333-8333-333333333333', ATTEMPT='44444444-4444-4444-8444-444444444444';
@@ -277,4 +277,39 @@ test('lost answer acknowledgment retries identical completion and admits a disti
   assert.equal(completions.length,2);
   assert.deepEqual(completions[0],completions[1]);
   assert.deepEqual(h.submissions,[{text:ENVELOPE,asUser:false},{text:ENVELOPE.replaceAll(REQUEST,second),asUser:false}]);
+});
+
+
+const wrappedPrompt=envelope=>'The watch-owner plugin sent a message:\n'+envelope+
+  "\n\nThis is how Claude Code surfaces a prompt a plugin submits between turns — it starts this turn in the user's place. Address the message above.";
+
+test('prompt correlation accepts only raw envelope or exact official watch-owner attribution',()=>{
+  const wrapped=wrappedPrompt(ENVELOPE);
+  assert.equal(matchingPrompt(ENVELOPE,ENVELOPE),true);
+  assert.equal(matchingPrompt(wrapped,ENVELOPE),true);
+  for(const text of [
+    wrapped.replace('The watch-owner','The another-plugin'),
+    wrapped.replace('sent a message:', 'sent a message :'),
+    wrapped.replace('Address the message above.', 'Address this message.'),
+    wrapped.replace('Report progress.', 'Report different progress.'),
+    'extra\n'+wrapped,wrapped+'\nextra',wrapped+'\n',wrappedPrompt(wrapped),
+    wrapped.replace('between turns', 'mid-turn'),null
+  ])assert.equal(matchingPrompt(text,ENVELOPE),false);
+  assert.equal(matchingPrompt(wrapped,null),false);
+});
+
+test('exact wrapped native main input binds to its marked same-turn answer without resubmission',async()=>{
+  const h=await harness();await h.enroll();await h.tick();
+  for(const text of [wrappedPrompt(ENVELOPE).replace('watch-owner','other-plugin'),wrappedPrompt(ENVELOPE)+'\nextra']) {
+    await h.call('turn.start',{text,turnId:'unrelated'});
+    await h.call('turn.complete',{turnId:'unrelated',answer:ANSWER,isAborted:false,reason:'answer'});
+  }
+  assert(!h.events().some(e=>['started','answered'].includes(e.kind)));
+  await h.call('turn.start',{text:wrappedPrompt(ENVELOPE),turnId:'wrapped-main'});
+  await h.call('turn.complete',{turnId:'wrapped-main',answer:ANSWER,isAborted:false,reason:'answer'});
+  await drain();
+  assert.deepEqual(h.events().filter(e=>['started','answered'].includes(e.kind)).map(e=>[e.kind,e.turn_id]),
+    [['started','wrapped-main'],['answered','wrapped-main']]);
+  assert.equal(h.submissions.length,1);
+  assert.deepEqual(h.submissions[0],{text:ENVELOPE,asUser:false});
 });

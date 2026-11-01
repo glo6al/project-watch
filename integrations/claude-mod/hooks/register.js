@@ -1,4 +1,4 @@
-import {UUID, LIMITATION, TRANSITIONS, pairing, sessionResponse, validClaim, matchingAnswer, publicStatus} from './protocol.js';
+import {UUID, LIMITATION, TRANSITIONS, pairing, sessionResponse, validClaim, matchingPrompt, matchingAnswer, publicStatus} from './protocol.js';
 
 const keyFor = id => 'watch-owner-v1:' + id;
 const HISTORY_LIMIT = 32;
@@ -233,7 +233,7 @@ export function register(on) {
   on('turn.start', async ($, e, next) => {
     try {
       const request = state.flight;
-      if (request && !request.turn_id && e.agentId === undefined && e.text === state.envelope &&
+      if (request && !request.turn_id && e.agentId === undefined && matchingPrompt(e.text, state.envelope) &&
           await $.session.id() === state.data.native_id) {
         request.turn_id = e.turnId;
         await event($, state, request, 'started', {turn_id:e.turnId});

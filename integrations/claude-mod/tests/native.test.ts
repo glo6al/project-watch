@@ -8,7 +8,7 @@ const ENROLLMENT='55555555-5555-4555-8555-555555555555';
 const ENVELOPE='WATCH_REQUEST '+REQUEST+'\nThe owner asks through the Officer of the Watch:\nSay fictional progress.\nReply with WATCH_REPLY '+REQUEST+' on its own line. Preserve owner scope.';
 const ANSWER='WATCH_REPLY '+REQUEST+'\nFictional progress.';
 
-test('one official mod submits attributed full owner envelope and observes its own main reply',async($,on)=>{
+test('one official mod submits attributed full owner envelope and observes its exactly wrapped main reply',async($,on)=>{
   const clock=mock.clock(on,{now:100000});
   const values=new Map();const submissions=[];const events=[];const heartbeats=[];
   let claim=true;
@@ -36,7 +36,9 @@ test('one official mod submits attributed full owner envelope and observes its o
     submissions.push({text:e.text,origin:e.origin});
     const stored=[...values.values()][0];
     expect(stored.requests[REQUEST].attempted).toBe(true);
-    await $.turn.start({text:e.text,turnId:'offline-main-turn'});
+    const nativeText='The watch-owner plugin sent a message:\n'+e.text+
+      "\n\nThis is how Claude Code surfaces a prompt a plugin submits between turns — it starts this turn in the user's place. Address the message above.";
+    await $.turn.start({text:nativeText,turnId:'offline-main-turn'});
     await $.turn.complete({turnId:'offline-main-turn',agentId:'offline-child',answer:ANSWER,isAborted:false,reason:'answer',durationMs:1});
     await $.turn.complete({turnId:'unrelated-main-turn',answer:ANSWER,isAborted:false,reason:'answer',durationMs:1});
     expect(events.some(event=>event.kind==='answered')).toBe(false);

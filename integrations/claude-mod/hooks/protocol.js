@@ -21,6 +21,14 @@ export function validClaim(value, state, now) {
     Number.isFinite(value.expires_at) && value.expires_at > now / 1000;
 }
 
+// Claude Code 2.1.309 adds this exact attribution around between-turn plugin input.
+// Accept only the complete original envelope or this complete host representation.
+export function matchingPrompt(text, envelope) {
+  if (typeof envelope !== 'string' || typeof text !== 'string') return false;
+  return text === envelope || text === 'The watch-owner plugin sent a message:\n' + envelope +
+    "\n\nThis is how Claude Code surfaces a prompt a plugin submits between turns — it starts this turn in the user's place. Address the message above.";
+}
+
 export function matchingAnswer(answer, id) {
   if (typeof answer !== 'string' || [...answer].length > 16000) return false;
   const markers = answer.split(/\r?\n/).filter(line => /^WATCH_REPLY\s/.test(line));

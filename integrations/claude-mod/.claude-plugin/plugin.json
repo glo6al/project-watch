@@ -1,6 +1,6 @@
 {
   "name": "watch-owner",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Relay authenticated WATCH owner requests into this existing Claude conversation.",
   "author": {"name": "WATCH maintainers"}
 }
