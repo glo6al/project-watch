@@ -6,15 +6,19 @@ It is maintained by WATCH and is not an Anthropic product or endorsement. This i
 
 ## Install in the intended existing project
 
-Keep this repository at a stable local path. In the intended existing Claude conversation, use the supported plugin manager with the absolute path to this directory:
+Keep this repository at a stable local path. Use a Claude Code executable with mod support (tested with **2.1.309**). Your terminal's `claude` can be older than the executable bundled with Desktop; check `claude --version` and use the supported executable before installing.
 
-```text
-/plugin marketplace add /absolute/path/to/agent-watch/integrations/claude-mod
-/plugin install watch-owner@watch-local --scope local
-/reload-plugins
+In a terminal, run these plugin-management commands from the intended existing chat's project folder. They manage the plugin without starting a conversation:
+
+```sh
+cd /absolute/path/to/your/project
+claude plugin marketplace add /absolute/path/to/agent-watch/integrations/claude-mod --scope user
+claude plugin install watch-owner@watch-local --scope local
 ```
 
-Confirm the intended conversation's native UUID with `/status` after reload. Select that exact chat in WATCH, choose **Connect Claude**, and enter the single-use `/watch-connect <port>:<pair-code>` command WATCH displays into that chat. The code expires after five minutes and is pinned to the observed conversation UUID and project. Preserve unrelated plugins and settings through native plugin management. Do not launch another Claude session as an installation substitute.
+Then run `/reload-plugins` in the existing Claude chat and confirm its native UUID with `/status`. These slash commands run in the chat; the installation commands above run in the terminal, since Desktop's `/plugin` screen does not install a local folder from those arguments.
+
+Select that exact chat in WATCH, choose the agent as the message recipient, then choose **Connect Claude**. Enter the single-use `/watch-connect <port>:<pair-code>` command WATCH displays into that chat. The code expires after five minutes and is pinned to the observed conversation UUID and project. Preserve unrelated plugins and settings through native plugin management. Do not launch another Claude session as an installation substitute.
 
 `/watch-status` shows connection state without the service token. `/watch-disconnect` stops polling and revokes readiness. `/watch-connect` without arguments explicitly reconnects the saved enrollment with a fresh connection generation. A plugin reload also reconnects an enrollment that was active, retaining prior receipts without resubmitting any prompt.
 
@@ -44,7 +48,9 @@ The plugin and native fixtures were validated with Claude Code **2.1.309**. Node
 
 Correlation accepts only the entire raw envelope or that envelope inside Claude Code 2.1.309's exact `watch-owner` between-turn attribution wrapper; changed body, attribution or surrounding text does not match.
 
-The native harness mocks Claude's core. It proves official API acceptance and observer routing with the exact Claude Code 2.1.309 attribution wrapper around the full envelope. Node fixtures cover both raw and wrapped event text. These checks do not prove live REPL preprocessing, actual busy queue timing, retained native transcript, or model behavior. A separately authorized check in an already-existing disposable conversation must verify the ordinary WATCH-to-Claude-to-WATCH flow before claiming that live delivery was tested. No live installation, enrollment, configuration changes or model calls are part of the offline checks.
+The native harness mocks Claude's core. It proves official API acceptance and observer routing with the exact Claude Code 2.1.309 attribution wrapper around the full envelope. Node fixtures cover both raw and wrapped event text. These checks do not prove live REPL preprocessing, actual busy queue timing, retained native transcript, or model behavior. No live installation, enrollment, configuration changes or model calls are part of the offline checks.
+
+An ordinary live request and matching reply were also verified through WATCH's direct composer in an existing disposable Desktop 4.29.0 conversation running Claude Code 2.1.309, using a separate WATCH test instance. WATCH displayed the reply without a manual status update or retransmitting the request. Busy waiting, disconnects, duplicate submissions, and restart handling have offline automated coverage; this live check did not exercise actual busy queue timing or Officer intent interpretation.
 
 ## Disconnect, revoke and remove
 
