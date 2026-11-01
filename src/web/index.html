@@ -492,6 +492,8 @@ html[data-theme=neutral] .st .id b,html[data-theme=neutral] .st .id .ctx .pj{col
 html[data-theme=neutral] #room{background:radial-gradient(ellipse at 50% 36%,#fff 0,#f5f5f5 64%,#eee 100%)}html[data-theme=neutral] #floor{filter:grayscale(1);opacity:.16}html[data-theme=neutral] #mark{filter:grayscale(1);opacity:.7}html[data-theme=neutral] #deskToolbar .theme-choices button[aria-pressed=true]{background:#303030;color:#fff;border-color:#303030;box-shadow:none}html[data-theme=neutral] #deskToolbar .theme-choices button[aria-pressed=false]{background:#f5f5f5;color:#5c5c5c;border-color:#d2d2d2}
 #deskCenter{position:relative;z-index:0}#deskConversation{position:relative;z-index:0}#deskWork{z-index:1}#compactDesk.work-compact.work-open #deskConversation{visibility:hidden}#deskWorkInner{background:var(--desk-surface)}
 /* Keep live command alerts visible even when Work is closed. */
+
+.alert-line{display:flex;align-items:center;gap:8px;flex-wrap:wrap;min-width:0}.alert-line>span{flex:1 1 140px;min-width:0;overflow-wrap:anywhere}.alert-line button{flex:none;min-height:32px;font:inherit;color:inherit;background:var(--panel);border:1px solid var(--line);padding:5px 8px;cursor:pointer}.alert-line button:focus-visible,.alert-details summary:focus-visible,.alert-details pre:focus-visible{outline:2px solid var(--hl);outline-offset:2px}.alert-details{flex:0 1 auto;min-width:0;margin:0}.alert-details[open]{flex-basis:100%;order:2}.alert-details summary{cursor:pointer;width:fit-content;min-height:32px;line-height:32px}.alert-details pre{max-height:180px;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere;font:12px/1.45 ui-monospace,Menlo,monospace;margin:4px 0}.alert-notice{min-width:0;max-width:100%;border:1px solid var(--del);background:var(--panel);color:var(--del);padding:6px 8px}#needs .alert-notice{pointer-events:auto;width:min(720px,100%)}#needs .alert-line button,#fleet .alert-line button{display:block;max-width:100%;white-space:normal;overflow-wrap:anywhere;background:var(--panel);color:inherit;border:1px solid var(--line);font:inherit;min-height:32px;padding:5px 8px}#needs .alert-line>span{padding:0;white-space:normal;align-self:auto;flex:1 1 140px}.flag.r{display:block;padding:6px 10px}.flag.r[hidden]{display:none}#fleet .alert-notice{flex:none}#fleet:has(.alert-notice){overflow:auto}
 #deskAlert{flex-basis:100%;min-width:0;font-size:12px;line-height:1.4;color:var(--del);overflow-wrap:anywhere}
 #deskAgentList button[data-state=alarm] i{background:var(--del)}
 /* Keep rail navigation and its selected signal panel in view as the agent list grows. */
@@ -644,7 +646,7 @@ body.stepped #hud #roomTheme{display:none}
 }
 
 
-#nativeCard{flex:0 1 auto;min-height:0;max-height:min(280px,32vh);overflow:auto;overscroll-behavior:contain;scrollbar-width:thin;border:1px solid var(--line);padding:12px;margin:10px 0;min-width:0;font:inherit}#nativeCard header{display:flex;align-items:center;justify-content:space-between;gap:8px}#nativeCard p{margin:8px 0;overflow-wrap:anywhere;white-space:pre-wrap}#nativeCard small{display:block;color:var(--mute)}#nativeCard ol{padding-left:24px}#nativeCard li{margin:8px 0;white-space:pre-wrap;overflow-wrap:anywhere}#nativeCard article{border-top:1px solid var(--line);margin-top:12px;padding-top:8px}#nativeCard article>b{display:block;margin:6px 0}#nativeCard button{min-height:44px;font:inherit;color:var(--ink);background:var(--panel);border:1px solid var(--line);padding:6px 10px;cursor:pointer}#nativeCard button:disabled{opacity:.55;cursor:default}#nativeCard button:focus-visible,#nativeCard:focus-visible{outline:2px solid var(--ink);outline-offset:-2px}#nativeModel{overflow-wrap:anywhere}#nativeCard[hidden]{display:none}
+#nativeCard{flex:0 1 auto;min-height:0;max-height:min(280px,32vh);overflow:auto;overscroll-behavior:contain;scrollbar-width:thin;border:1px solid var(--line);padding:12px;margin:10px 0;min-width:0;font:inherit}#nativeCard header{display:flex;align-items:center;justify-content:space-between;gap:8px}#nativeCard p{margin:8px 0;overflow-wrap:anywhere;white-space:pre-wrap}#nativeCard small{display:block;color:var(--mute)}#nativeCard ol{padding-left:24px}#nativeCard li{margin:8px 0;white-space:pre-wrap;overflow-wrap:anywhere}#nativeCard article{border-top:1px solid var(--line);margin-top:12px;padding-top:8px}#nativeCard article>b{display:block;margin:6px 0}#nativeCard button{min-height:44px;font:inherit;color:var(--ink);background:var(--panel);border:1px solid var(--line);padding:6px 10px;cursor:pointer}#nativeCard button:disabled{opacity:.55;cursor:default}#nativeCard button:focus-visible,#nativeCard:focus-visible{outline:2px solid var(--ink);outline-offset:-2px}#nativeCheckArea{margin-bottom:10px}#nativeCheckStatus{display:block;font:12px/1.4 system-ui;color:var(--mute);margin-top:6px;overflow-wrap:anywhere}#nativeCheckStatus[hidden]{display:none}#nativeCard[hidden]{display:none}
 /* Shared recipient chooser and compact queue evidence. */
 #cuAgentPicker{position:relative;flex:none;padding:0 12px}#officer.docked #cuAgentPicker{padding:0}#cuChooseAgent{font:12px system-ui;border:0;background:transparent;color:var(--mute);padding:6px 0;cursor:pointer}#cuChooseAgent[hidden],#cuAgentChoices[hidden]{display:none}#cuAgentChoices{position:absolute;bottom:100%;left:0;right:0;max-height:240px;overflow:auto;z-index:5;border:1px solid var(--line);background:var(--panel);box-shadow:0 4px 16px #0002;padding:5px;display:flex;flex-direction:column}#officer #cuAgentChoices button{display:block;text-align:left;min-height:40px;white-space:normal;overflow-wrap:anywhere;font:13px/1.4 system-ui;background:transparent;border:0;color:var(--ink);padding:8px}#officer #cuAgentChoices button:hover{background:var(--action-hover)}#cuAgentChoices button:focus-visible,#cuChooseAgent:focus-visible{outline:2px solid var(--hl);outline-offset:-2px}
 #pendingQueue,#compactDesk #pendingQueue{margin:6px 10px -1px;padding:0;border:1px solid var(--line);background:var(--panel);max-height:min(180px,25vh);font:13px/1.5 system-ui}#compactDesk #pendingQueue{margin-left:6px;margin-right:6px}#pendingQueueTitle{font-size:10px;padding:3px 10px 0;margin:0;color:var(--mute)}#pendingQueueList{gap:0}#pendingQueue details+details{border-top:1px solid var(--line)}#pendingQueue summary{padding:8px 10px;min-height:40px;align-items:center;gap:9px;list-style:none}#pendingQueue summary::before,#pendingQueue summary::-webkit-details-marker{display:none}#pendingQueue summary svg{width:17px;height:20px;flex:none;color:var(--mute)}#pendingQueue summary b{font-size:10px;max-width:120px;color:var(--mute)}#pendingQueue summary span{color:var(--ink);font-size:13px}#pendingQueue details[open] summary{align-items:flex-start}#pendingQueue details[open] summary span{white-space:pre-wrap;overflow-wrap:anywhere}#pendingQueue small{font-size:11px;margin:0 10px 8px 36px}#pendingQueue summary:focus-visible{outline:2px solid var(--hl);outline-offset:-2px}#ofLog .watch-reply-link{font:inherit;color:var(--hl);background:transparent;border:0;padding:5px 0;cursor:pointer;text-align:left;text-decoration:underline;text-underline-offset:3px}#ofLog .watch-reply-link:focus-visible{outline:2px solid var(--hl);outline-offset:2px}#recipient{flex-wrap:wrap}#compactDesk #recipient{padding-bottom:5px}#officer #pendingQueue:not([hidden])+#ofRow{padding-top:0}
@@ -672,15 +674,15 @@ body.stepped #hud #roomTheme{display:none}
 <div id="compactDesk" hidden>
   <div id="deskToolbar"><button type="button" data-drawer="agents" aria-controls="deskAgents" aria-expanded="false">Agents</button><button type="button" data-drawer="facts" aria-controls="deskFacts" aria-expanded="false">Details</button><span class="theme-choices" role="group" aria-label="Visual theme"><button type="button" data-theme="original" aria-pressed="true">Original</button><button type="button" data-theme="neutral" aria-pressed="false">Neutral</button></span></div>
   <div id="deskShell"><aside id="deskAgents" aria-label="Agents"><header><h2>Agents</h2><button type="button" class="desk-rail-close" data-close-drawer aria-label="Close agents">×</button></header><ul id="deskAgentList" aria-label="Agents"></ul><div id="deskSignals" role="group" aria-label="Room signals"><button type="button" data-bay="1" aria-pressed="false">Alerts</button><button type="button" data-bay="2" aria-pressed="false">Activity</button></div><div id="deskBaySlot"></div></aside>
-    <main id="deskCenter"><header id="deskHead"><div id="deskIdentity"><h1 id="deskName"></h1><p id="deskStatus"></p><p id="deskGoal"></p></div><div id="deskActions"><button type="button" id="deskOpenApp" class="secondary">Open in app ↗</button><button type="button" id="deskPin" class="secondary">Pin</button><button type="button" id="deskDismiss" class="secondary">Dismiss</button><button type="button" id="deskWorkToggle" aria-expanded="false" aria-controls="deskWork"><svg viewBox="0 0 16 16" aria-hidden="true" focusable="false"><rect x="1.5" y="2.5" width="13" height="11" rx="0"/><path d="M10 3v10"/></svg><span>Work</span></button></div><div id="deskAlert" hidden></div></header>
+    <main id="deskCenter"><header id="deskHead"><div id="deskIdentity"><h1 id="deskName"></h1><p id="deskStatus"></p><p id="deskGoal"></p></div><div id="deskActions"><button type="button" id="deskOpenApp" class="secondary">Open in app ↗</button><button type="button" id="deskPin" class="secondary">Pin</button><button type="button" id="deskDismiss" class="secondary" title="Hide this agent from the room">Hide agent</button><button type="button" id="deskWorkToggle" aria-expanded="false" aria-controls="deskWork"><svg viewBox="0 0 16 16" aria-hidden="true" focusable="false"><rect x="1.5" y="2.5" width="13" height="11" rx="0"/><path d="M10 3v10"/></svg><span>Work</span></button></div><div id="deskAlert" hidden></div></header>
     <div id="deskWorkspace"><section id="deskConversation" aria-label="Conversation"></section><section id="deskWork" aria-label="Work evidence" data-view="doing" hidden inert><div id="deskSizer" role="separator" tabindex="0" aria-label="Resize work panel" aria-orientation="vertical" aria-controls="deskWork" aria-valuemin="320" aria-valuemax="600" aria-valuenow="460" title="Drag to resize; arrow keys adjust; double-click resets"></div><div id="deskWorkInner"><header id="deskWorkHead"><h2>Recorded work</h2><button type="button" id="deskRespond" hidden>Respond</button><button type="button" id="deskExpand" aria-label="Expand work view">⤢</button><button type="button" id="deskCloseWork">← Conversation</button></header><nav id="deskWorkTabs" aria-label="Work views"><button type="button" data-work="seeing" aria-pressed="false">Preview</button><button type="button" data-work="changes" aria-pressed="false">Changes</button><button type="button" data-work="doing" aria-pressed="true">Activity</button></nav><div id="deskWorkContent"><div id="compactMonitor"></div><div id="compactPanels"></div></div></div></section></div></main>
-    <aside id="deskFacts" aria-label="Session details"><header><h2>Session</h2><button type="button" class="desk-rail-close" data-close-drawer aria-label="Close details">×</button></header></aside></div><div id="deskScrim" hidden></div><div id="compactReadout"></div>
+    <aside id="deskFacts" aria-label="Session details"><header><h2>Session</h2><button type="button" class="desk-rail-close" data-close-drawer aria-label="Close details">×</button></header><div id="nativeCheckArea"><button type="button" id="nativeCheck">Check for questions</button><small id="nativeCheckStatus" role="status" hidden></small></div></aside></div><div id="deskScrim" hidden></div><div id="compactReadout"></div>
 </div>
 <div id="subs" hidden></div>
 <div id="deskT" hidden><span class="lbl">Chain of command</span><div id="crumb"></div><div id="deskChainTools"><button type="button" data-drawer="facts" aria-controls="deskFacts" aria-expanded="false">Details</button><span class="theme-choices" role="group" aria-label="Visual theme"><button type="button" data-theme="original" aria-pressed="true">Original</button><button type="button" data-theme="neutral" aria-pressed="false">Neutral</button></span></div></div>
 <div id="deskB" class="hud" hidden><div class="in"><div id="bay"><div id="bayH"><button data-pg="-1" aria-label="Previous panel">‹</button><span id="bayT"></span><button id="bayN" hidden></button><span id="bayD"></span><button data-pg="1" aria-label="Next panel">›</button></div><div id="fleet"></div></div><div id="badge"></div></div></div>
 <div id="empty" hidden></div>
-<span id="officerHome" hidden></span><div id="officer" class="hud fold" role="region" aria-label="Officer of the Watch"><div class="in"><button id="ofB" aria-expanded="false" aria-controls="ofBody" title="Officer of the Watch: ask about the room, in plain English"><span class="lamp"></span><b>Officer of the Watch</b><i id="ofSt">listening</i><u id="ofLine"></u><s>▴</s></button><div id="ofBody"><div id="ofContext"><div id="ofScope" role="group" aria-label="Officer question scope"><button type="button" data-scope="station" aria-pressed="false">Station</button><button type="button" data-scope="room" aria-pressed="true" aria-label="Whole room">Room</button></div><div id="ofTarget"><b id="ofSubject">Whole room</b><span id="ofProgress" role="status" hidden>Ready</span></div></div><div id="ofLog" role="log" aria-label="Conversation history"></div><div id="ofQuick"><button data-q="What did I miss?">What did I miss?</button><button data-q="Is anything stuck?">Anything stuck?</button><button data-q="Who is waiting on me?">Who is waiting on me?</button></div><section id="responseCard" aria-label="Agent request" hidden><header><div><b id="responseTitle"></b><small id="responseAgent"></small></div><button type="button" id="responseToggle" aria-expanded="true" aria-controls="responseBody" aria-label="Collapse request">⌄</button></header><div id="responseBody"><pre id="responseEvidence" tabindex="0" aria-label="Request details"></pre><div id="responseActions"><span id="responseDecisions"><button type="button" class="response-allow" disabled>Allow</button><button type="button" class="response-deny" disabled>Deny</button></span><button type="button" id="responseOpenApp">Answer in app ↗</button><button type="button" id="responseDismiss" hidden>Dismiss notice</button></div><small id="responseNote" role="status"></small></div></section><section id="nativeCard" aria-label="Native observations" tabindex="0" hidden><header><b>Native observations</b><button type="button" id="nativeRefresh">Refresh</button></header><p id="nativeStatus" role="status"></p><div id="nativeModel"></div><small id="nativeRequestStatus"></small><div id="nativeQuestions"></div><button type="button" id="nativeOpenApp">Open app ↗</button></section><div id="recipient" role="group" aria-label="Message recipient"><span>TO</span><button type="button" data-recipient="watch" aria-pressed="true">WATCH</button><button type="button" data-recipient="agent" aria-pressed="false">Choose agent</button></div><div id="cuAgentPicker"><button id="cuChooseAgent" type="button" aria-expanded="false" aria-controls="cuAgentChoices">Change agent ▾</button><div id="cuAgentChoices" role="group" aria-label="Choose message recipient agent" hidden></div></div><section id="pendingQueue" aria-label="Pending messages" hidden><div id="pendingQueueTitle" role="status"></div><div id="pendingQueueList"></div></section><div id="ofRow"><textarea id="ofIn" rows="2" placeholder="Ask about the room…" autocomplete="off" maxlength="4000"></textarea><button id="ofSend">Ask WATCH</button></div><div id="sendHint"></div></div></div></div>
+<span id="officerHome" hidden></span><div id="officer" class="hud fold" role="region" aria-label="Officer of the Watch"><div class="in"><button id="ofB" aria-expanded="false" aria-controls="ofBody" title="Officer of the Watch: ask about the room, in plain English"><span class="lamp"></span><b>Officer of the Watch</b><i id="ofSt">listening</i><u id="ofLine"></u><s>▴</s></button><div id="ofBody"><div id="ofContext"><div id="ofScope" role="group" aria-label="Officer question scope"><button type="button" data-scope="station" aria-pressed="false">Station</button><button type="button" data-scope="room" aria-pressed="true" aria-label="Whole room">Room</button></div><div id="ofTarget"><b id="ofSubject">Whole room</b><span id="ofProgress" role="status" hidden>Ready</span></div></div><div id="ofLog" role="log" aria-label="Conversation history"></div><div id="ofQuick"><button data-q="What did I miss?">What did I miss?</button><button data-q="Is anything stuck?">Anything stuck?</button><button data-q="Who is waiting on me?">Who is waiting on me?</button></div><section id="responseCard" aria-label="Agent request" hidden><header><div><b id="responseTitle"></b><small id="responseAgent"></small></div><button type="button" id="responseToggle" aria-expanded="true" aria-controls="responseBody" aria-label="Collapse request">⌄</button></header><div id="responseBody"><pre id="responseEvidence" tabindex="0" aria-label="Request details"></pre><div id="responseActions"><span id="responseDecisions"><button type="button" class="response-allow" disabled>Allow</button><button type="button" class="response-deny" disabled>Deny</button></span><button type="button" id="responseOpenApp">Answer in app ↗</button><button type="button" id="responseDismiss" hidden>Dismiss notice</button></div><small id="responseNote" role="status"></small></div></section><section id="nativeCard" aria-label="Questions from app" tabindex="0" hidden><header><b>Questions from app</b><button type="button" id="nativeRefresh">Refresh</button></header><p id="nativeStatus" role="status"></p><small id="nativeRequestStatus"></small><div id="nativeQuestions"></div><button type="button" id="nativeOpenApp">Answer in app ↗</button></section><div id="recipient" role="group" aria-label="Message recipient"><span>TO</span><button type="button" data-recipient="watch" aria-pressed="true">WATCH</button><button type="button" data-recipient="agent" aria-pressed="false">Choose agent</button></div><div id="cuAgentPicker"><button id="cuChooseAgent" type="button" aria-expanded="false" aria-controls="cuAgentChoices">Change agent ▾</button><div id="cuAgentChoices" role="group" aria-label="Choose message recipient agent" hidden></div></div><section id="pendingQueue" aria-label="Pending messages" hidden><div id="pendingQueueTitle" role="status"></div><div id="pendingQueueList"></div></section><div id="ofRow"><textarea id="ofIn" rows="2" placeholder="Ask about the room…" autocomplete="off" maxlength="4000"></textarea><button id="ofSend">Ask WATCH</button></div><div id="sendHint"></div></div></div></div>
 <div id="lock" hidden><div><img src="/static/icon.svg?v=fleet-3" alt="" style="height:72px;margin-bottom:14px"><h1>W.A.T.C.H. is locked</h1><b style="color:var(--hl);letter-spacing:.06em">Window on Agents, Tools, Changes and Hand-offs.</b><br><br>This window has no key. Press Unlock and the server will open a new tab in your default browser with the room unlocked. The key is kept on this computer in <code>~/.live-room/key</code> and is never sent to a window that merely asks for it.<br><button id="unlock">Unlock</button><br><span id="lockMsg"></span></div></div>
 
 <script>
@@ -765,13 +767,32 @@ function permissionDispatch(a,p,allow){const id=a.id;
 }
 /* end permission dispatch */
 
+/* alert presentation helpers: one event identity across room, station and Work */
+function activeAlert(al,now,lifetime=180){return al&&!al.off&&now-al.ts<lifetime?al:null}
+function dismissAlert(n){
+  const matches=new Set([...ALERTS,...Object.values(A).map(a=>a.alert)].filter(al=>al&&al.n===n));
+  if(!matches.size)return;
+  for(const al of matches){al.off=true;if(A[al.id])A[al.id].dirty=true}
+  render();
+}
+function alertMarkup(al,name='',id=''){
+  return `<div class="alert-line">${name?`<button type="button" data-go="${esc(id)}">${esc(name)}</button>`:''}<span>Looks like ${esc(al.label)}</span><button type="button" data-alert-dismiss="${al.n}">Dismiss alert</button>${al.text&&!STEADY?`<details class="alert-details"><summary>View details</summary><pre tabindex="0">${esc(al.text)}</pre></details>`:''}</div>`;
+}
+function paintAlert(el,al){el.hidden=!al;put(el,al?alertMarkup(al):'')}
+function alertClick(e){
+  const b=e.target.closest('[data-alert-dismiss]');
+  if(b){e.preventDefault();e.stopPropagation();dismissAlert(Number(b.dataset.alertDismiss));return true}
+  return !!e.target.closest('.alert-details');
+}
+/* end alert presentation helpers */
+
 function dismissNotice(a){for(const k in a.asks)if(a.asks[k].maybe)delete a.asks[k];if(a.said)a.saidOff=a.said.ts;a.wait=null;a.dirty=true;render()}
 
 function agent(id){
   if(A[id]) return A[id];
   const el=document.createElement('div'); el.className='st'; el.dataset.id=id;
   const color=`hsl(${(Object.keys(A).length*67+200)%360} 80% 68%)`; el.style.setProperty('--c',color);
-  el.innerHTML=`<div class="flag w" hidden><b class="tag"></b><div class="msg"><span></span></div><span class="off" hidden></span><button class="rev" hidden>Review</button><button class="yes" hidden>Allow</button><button class="no" hidden>Deny</button><button class="fx" hidden title="Dismiss this notice" aria-label="Dismiss this notice">×</button></div><div class="flag r" hidden><b class="tag">Alert</b><div class="msg"><span></span></div></div>
+  el.innerHTML=`<div class="flag w" hidden><b class="tag"></b><div class="msg"><span></span></div><span class="off" hidden></span><button class="rev" hidden>Review</button><button class="yes" hidden>Allow</button><button class="no" hidden>Deny</button><button class="fx" hidden title="Dismiss this notice" aria-label="Dismiss this notice">×</button></div><div class="flag r" hidden></div>
     <div class="pband"></div><header><span class="av">?</span><div class="id"><b></b><span class="doing"></span><span class="ctx"><em class="pj"></em><span class="goal"></span></span><span class="sub"></span><span class="fuel" hidden><i><u></u></i><em></em></span></div><button class="go" title="Open this session in its desktop app"></button><button class="pinb" title="Keep this agent in the room when you dismiss the quiet ones">Pin</button><button class="x" title="Dismiss from the room. It comes back if it does something new." aria-label="Dismiss this agent from the room">×</button></header>
     <div class="mon"><div class="tab"><span class="what"></span><span class="how"></span></div><div class="pin" hidden>Showing an earlier step — click to go back to live. Any rendered page beside it is the file as it is on disk now.</div><div class="plan" hidden></div><div class="split"><pre class="code"></pre><div class="pvw" hidden><iframe sandbox="allow-scripts" title="Rendered preview"></iframe><span class="pvn"></span></div></div></div>
     <div class="views"><button data-side="L" hidden>Log</button><button data-side="R" hidden>Comms</button><span>Screen</span><button data-v="doing"><i>1</i>Doing</button><button data-v="seeing"><i>2</i>Seeing</button><button data-v="changes"><i>3</i>Changing</button></div><div class="lk" hidden></div>`;
@@ -782,7 +803,7 @@ function agent(id){
      tail does not drop the hover, it only delays it until the room has settled under the pointer */
   el.onmouseenter=()=>{clearTimeout(peekT); if(focus||drag) return; const arm=()=>{if(focus||drag||peek===id) return; const still=performance.now()-gT; if(still>250) setPeek(id); else peekT=setTimeout(arm,260-still)}; peekT=setTimeout(arm,HOVER_MS)};
   el.onmouseleave=ev=>{clearTimeout(peekT); if(peek===id&&!inReach(id,ev.clientX,ev.clientY)) setPeek(null)};
-  el.onclick=ev=>{ev.stopPropagation(); if(moved) return; const a=A[id], t=ev.target;
+  el.onclick=ev=>{ev.stopPropagation(); if(moved) return;if(alertClick(ev))return; const a=A[id], t=ev.target;
     const vb=t.closest('[data-v]'); if(vb){if(focus===id)setView(vb.dataset.v);return}
     const sb=t.closest('[data-side]'); if(sb){narrow=narrow===sb.dataset.side?null:sb.dataset.side; desk(); return}
     if(t.closest('.x')){dismiss(id);return}
@@ -802,7 +823,7 @@ function agent(id){
   const q=s=>el.querySelector(s);
   A[id]={id,el,color,name:id.slice(-4),task:'',runtime:'',parent:'',cur:null,said:null,user:null,wait:null,calls:{},perms:{},asks:{},q:[],last:0,turn:'',how:'',dirty:true,
     story:[],msgs:[],edits:[],dropped:0,ticks:[],open:new Set(),tasks:{},taskOrder:[],
-    $:{av:q('.av'),name:q('.id b'),doing:q('.doing'),pj:q('.ctx .pj'),goal:q('.ctx .goal'),fuel:q('.fuel'),fuelBar:q('.fuel u'),fuelTxt:q('.fuel em'),sub:q('.sub'),go:q('.go'),pinb:q('.pinb'),fw:q('.flag.w'),fwt:q('.flag.w .msg span'),fwk:q('.flag.w .tag'),fr:q('.flag.r'),frt:q('.flag.r .msg span'),rev:q('.rev'),yes:q('.yes'),no:q('.no'),fx:q('.fx'),off:q('.flag .off'),what:q('.what'),how:q('.how'),split:q('.split'),code:q('.code'),pvw:q('.pvw'),frame:q('iframe'),pvn:q('.pvn'),plan:q('.plan'),pin:q('.pin'),lk:q('.lk'),sL:q('[data-side="L"]'),sR:q('[data-side="R"]')}};
+    $:{av:q('.av'),name:q('.id b'),doing:q('.doing'),pj:q('.ctx .pj'),goal:q('.ctx .goal'),fuel:q('.fuel'),fuelBar:q('.fuel u'),fuelTxt:q('.fuel em'),sub:q('.sub'),go:q('.go'),pinb:q('.pinb'),fw:q('.flag.w'),fwt:q('.flag.w .msg span'),fwk:q('.flag.w .tag'),fr:q('.flag.r'),rev:q('.rev'),yes:q('.yes'),no:q('.no'),fx:q('.fx'),off:q('.flag .off'),what:q('.what'),how:q('.how'),split:q('.split'),code:q('.code'),pvw:q('.pvw'),frame:q('iframe'),pvn:q('.pvn'),plan:q('.plan'),pin:q('.pin'),lk:q('.lk'),sL:q('[data-side="L"]'),sR:q('[data-side="R"]')}};
   if(GONE[id]){A[id].gone=GONE[id];el.hidden=true}else{order.push(id); layout()}
   return A[id];
 }
@@ -1014,7 +1035,7 @@ function handle(e){
   if(a.gone&&act&&e.ts>a.gone) revive(a.id);
   if(!['agent','link','partial'].includes(e.kind)&&e.ts){a.last=Math.max(a.last,e.ts); if(act){a.ticks.push({t:e.ts,c:TICK[e.kind]||'o'}); if(a.ticks.length>400)a.ticks.shift()}}
   if(a.wait&&(act||e.kind==='turn_end')&&e.kind!=='waiting') a.wait=null;      /* a plain notification clears once the log moves on */
-  if(e.alert&&!(a.alert&&a.alert.label===(LABEL[e.alert]||e.alert)&&Math.abs(e.ts-a.alert.ts)<30)){const al={n:++ALN,id:e.agent,label:LABEL[e.alert]||e.alert,text:e.cmd||e.name||'',ts:e.ts};a.alert=al;ALERTS.unshift(al);ALERTS.length=Math.min(ALERTS.length,8)}
+  if(e.alert&&!(a.alert&&a.alert.label===(LABEL[e.alert]||e.alert)&&Math.abs(e.ts-a.alert.ts)<30&&(!a.alert.off||(a.alert.ts===e.ts&&a.alert.text===(e.cmd||e.name||''))))){const al={n:++ALN,id:e.agent,label:LABEL[e.alert]||e.alert,text:e.cmd||e.name||'',ts:e.ts};a.alert=al;ALERTS.unshift(al);ALERTS.length=Math.min(ALERTS.length,8)}
   switch(e.kind){
     case 'agent':
       for(const k of ['name','task','runtime','spawn','model','effort','perm','branch','cwd','goal','observed']) if(typeof e[k]==='string'&&e[k]) a[k]=e[k];     /* log data: a string or nothing */
@@ -1448,7 +1469,7 @@ function render(){
     const a=A[id], S=stateOf(a,now), N=S.need, c=a.pin||a.cur||S.pend[0];
     if(!a.dirty&&a.sec===sec) continue;
     a.sec=sec; a.dirty=false;
-    const at=focus===id, w=N?N.text:'', al=a.alert&&now-a.alert.ts<180?a.alert:null, cl=a.el.classList;
+    const at=focus===id, w=N?N.text:'', al=activeAlert(a.alert,now), cl=a.el.classList;
     cl.toggle('busy',S.busy&&!w); cl.toggle('idle',!S.busy&&!w&&!at);
     cl.toggle('wait',!!w&&N.sure); cl.toggle('maybe',!!w&&!N.sure); cl.toggle('alarm',!!al&&!w); cl.toggle('pinned',!!PINS[id]);
     hid(a.$.fw,!w); if(!w) a.permScreen=null;
@@ -1468,7 +1489,7 @@ function render(){
     }
     hid(a.$.fx,!(w&&!N.sure)&&!(w&&N.kind==='Needs you'));
     if(!w||!N.perm) hid(a.$.off,true);
-    hid(a.$.fr,!al); if(al)txt(a.$.frt,'Looks like '+al.label+' · '+one(al.text).slice(0,300));
+    paintAlert(a.$.fr,al);
     txt(a.$.pinb,PINS[id]?'Pinned':'Pin');
     {const {n:pn,how}=projInfo(id), pc=pn?projColour(pn):'', pt=pn?'Project: '+projLabel(pn)+(pn!==projLabel(pn)?' (folder '+pn+')':'')+(how==='inherited'?' (its parent\'s folder; none recorded for it)':how==='named'?' (a temporary folder named for it; grouped by name, which proves nothing)':''):'';
       if(a.el._pc!==pc+'|'+pt){a.el._pc=pc+'|'+pt; a.el.style.setProperty('--pc',pc||'transparent'); a.el.title=pt}}
@@ -1511,7 +1532,7 @@ function render(){
   }catch(err){const a=A[id]; if(a){a.dirty=true; txt(a.$.doing,'this monitor could not be drawn: '+str(err&&err.message||err).slice(0,120)); console.error('station',id,err)}}}      /* contained: the next monitor still paints */
   desk();
   {const hh=$('#hud').offsetHeight+'|'+$('#deskT').offsetHeight; if(hh!==render._hh){render._hh=hh; apply()}}      /* the top bars wrapped or unwrapped: lay the desk out again */
-  put($('#needs'),focus?'':ALERTS.filter(x=>A[x.id]&&!x.off&&now-x.ts<600).slice(0,4).map(x=>`<button class="r" data-go="${esc(x.id)}" title="Go to this agent"><b>Alert</b><span>${esc(A[x.id].name)} issued what looks like ${x.label}</span><code>${esc(one(x.text).slice(0,160))}</code><small>${ago(now-x.ts)}</small><u data-x="${x.n}" title="Dismiss this alert">×</u></button>`).join(''));
+  put($('#needs'),focus?'':ALERTS.filter(x=>A[x.id]&&activeAlert(x,now,600)).slice(0,4).map(x=>`<div class="alert-notice">${alertMarkup(x,A[x.id].name,x.id)}</div>`).join(''));
   {const n=$('#needs'), t=$('#hud').offsetHeight+2+'px'; if(n.style.top!==t) n.style.top=t}      /* always directly under the top bar, however it wraps */
   attention(now); subs(now);
   hid($('#needN'),true);      /* the "N may need you" button is hidden at the owner's request (2026-10-06); the tab title count and the monitors' own flags carry this */
@@ -1519,7 +1540,7 @@ function render(){
   const all=Object.keys(A).length, goneN=all-order.length;
   hid($('#bringB'),!goneN||!!focus); txt($('#bringB b'),String(goneN)); $('#bringB').title='Bring back '+goneN+' dismissed agent'+(goneN===1?'':'s'); hid($('#clearQ'),!!focus||order.length<2);
   /* the fleet: an "All" chip, then one chip per project carrying that project's agents as lit cells */
-  {const st=k=>{const S=stateOf(A[k],now), a=A[k]; return S.need&&S.need.sure?'need':a.alert&&now-a.alert.ts<180?'alarm':S.busy?'busy':'idle'};
+  {const st=k=>{const S=stateOf(A[k],now), a=A[k]; return S.need&&S.need.sure?'need':activeAlert(a.alert,now)?'alarm':S.busy?'busy':'idle'};
     const groups=Object.create(null); for(const k of order){const pn=proj(k)||'—'; (groups[pn]=groups[pn]||[]).push(k)}      /* project names are log data: no prototype to collide with */
     const names=Object.keys(groups).sort((x,y)=>x==='—'?1:y==='—'?-1:x.localeCompare(y));
     const cells=ks=>`<span class="cells">${ks.map(k=>`<i class="${st(k)}" data-go="${esc(k)}" tabindex="0" role="button" title="${esc(A[k].name+' · '+stateOf(A[k],now).label)}" aria-label="${esc(A[k].name)}"></i>`).join('')}</span>`;
@@ -1830,11 +1851,11 @@ addEventListener('visibilitychange',()=>{responseInvalidate();if(focus)render()}
 /* end desk response card */
 
 function deskPaint(){
-  if(!focus||!A[focus])return;const a=A[focus],now=Date.now()/1000,S=stateOf(a,now),request=S.need,alert=a.alert&&now-a.alert.ts<180?a.alert:null;
+  if(!focus||!A[focus])return;const a=A[focus],now=Date.now()/1000,S=stateOf(a,now),request=S.need,alert=activeAlert(a.alert,now);
   txt($('#deskName'),a.name);txt($('#deskStatus'),S.label);txt($('#deskGoal'),STEADY?(a.goal?'(goal hidden in steady mode)':''):a.goal||a.task||'No first message read');$('#deskGoal').title=$('#deskGoal').textContent;
   txt($('#deskOpenApp'),a.observed?'Lives in ChatGPT':'Open in '+(a.runtime||'app')+' ↗');txt($('#deskPin'),PINS[focus]?'Unpin':'Pin');$('#deskPin').setAttribute('aria-pressed',String(!!PINS[focus]));
   responsePaint(a,request);$('#deskRespond').hidden=!request;
-  $('#deskAlert').hidden=!alert;txt($('#deskAlert'),alert?'Looks like '+alert.label+' · '+(STEADY?'(text hidden in steady mode)':one(alert.text).slice(0,300)):'');
+  paintAlert($('#deskAlert'),alert);
   const list=$('#deskAgentList'),forest=deskAgentForest(order,A),keep=new Set(forest.map(n=>n.id)),active=document.activeElement,cursors=new Map();
   for(const n of forest){
     const id=n.id,agent=A[id];let b=DESK.agents.get(id),row=DESK.agentRows.get(id);
@@ -1843,7 +1864,7 @@ function deskPaint(){
       b.innerHTML='<i aria-hidden="true"></i><span><strong></strong><span class="agent-provider"></span><span class="agent-meta"><span class="agent-status"></span></span><small class="agent-relation"></small></span>';
       const li=document.createElement('li'),group=document.createElement('ul');li.append(b,group);row={li,group};DESK.agents.set(id,b);DESK.agentRows.set(id,row);
     }
-    const state=stateOf(agent,now),alarm=agent.alert&&now-agent.alert.ts<180?agent.alert:null;
+    const state=stateOf(agent,now),alarm=activeAlert(agent.alert,now);
     b.dataset.state=state.need?'need':alarm?'alarm':state.busy?'busy':'idle';b.setAttribute('aria-current',String(id===focus));txt(b.querySelector('strong'),agent.name);
     txt(b.querySelector('.agent-provider'),n.provider);txt(b.querySelector('.agent-status'),state.need?state.need.kind+(state.need.sure?'':' · possible'):alarm?'Looks like '+alarm.label:state.label);
     txt(b.querySelector('.agent-relation'),n.caption);b.querySelector('.agent-relation').hidden=!n.caption;
@@ -1982,7 +2003,8 @@ function setFocus(id){
   if(was&&was!==id&&A[was]&&A[was].forgetLater) forget(was);
 }
 $('#back').onclick=()=>setFocus(null);
-$('#needs').onclick=e=>{const x=e.target.closest('[data-x]'); if(x){for(const al of ALERTS) if(al.n===+x.dataset.x) al.off=true; render(); return} const b=e.target.closest('[data-go]');if(b)setFocus(b.dataset.go)};
+$('#needs').onclick=e=>{if(alertClick(e))return;const b=e.target.closest('[data-go]');if(b)setFocus(b.dataset.go)};
+$('#deskAlert').onclick=alertClick;
 /* the gesture hint shows once, the first time this browser opens the room; afterwards it lives behind the ? */
 try{if(!DEMO&&!localStorage.getItem('liveRoomHinted')){localStorage.setItem('liveRoomHinted','1'); $('#hint').classList.add('show'); setTimeout(()=>$('#hint').classList.remove('show'),9000)}}catch(err){}      /* the demo shows no hint and touches no flag */
 $('#help').onclick=()=>$('#hint').classList.toggle('show');          /* a click shows the hint too, for keyboards and touch, not only hover */
@@ -2082,7 +2104,7 @@ function glide(el,to){
   requestAnimationFrame(step);
 }
 storyEl.addEventListener('wheel',()=>{glideN++},{passive:true});      /* your own scrolling always wins */
-$('#fleet').onclick=ev=>{const b=ev.target.closest('[data-go]'); if(b) setFocus(b.dataset.go)};
+$('#fleet').onclick=ev=>{if(alertClick(ev))return;const b=ev.target.closest('[data-go]'); if(b) setFocus(b.dataset.go)};
 $('#crumb').onclick=ev=>{const u=ev.target.closest('[data-unlink]'); if(u){if(DEMO) return; post('/unlink',{child:u.dataset.unlink}).catch(()=>{}); return} const b=ev.target.closest('[data-go]'); if(b&&b.dataset.go!==focus) setFocus(b.dataset.go)};
 function lineage(a){const up=[], seen=new Set([a.id]); let p=a.parent; while(p&&!seen.has(p)){seen.add(p); up.unshift(p); p=A[p]&&A[p].parent} return up}
 function desk(){
@@ -2111,7 +2133,7 @@ function desk(){
   hid($('#bayN'),!needy||bayPg===0); txt($('#bayN'),'▲ '+needy+' may need you');
   let bay='';
   if(bayPg===0) bay='<div class="row">'+(others.map(({k,o,n,busy,unknown})=>`<button data-go="${esc(k)}" class="${n?'n':busy?'b':''}" title="${n?esc(n.kind):busy?'active':unknown?(o.over?'observation ended':'process list not readable now'):'not active'}"><i></i>${esc(o.name.slice(0,22))}${n?' <small>'+n.kind.toLowerCase()+(n.sure?'':'?')+'</small>':''}</button>`).join('')||'<span class="cap2">No other agents in the room.</span>')+'</div>';
-  else if(bayPg===1) bay=ALERTS.filter(x=>A[x.id]&&!x.off&&now-x.ts<1800).slice(0,3).map(x=>`<button class="al" data-go="${esc(x.id)}">⚠ ${esc(A[x.id].name.slice(0,16))} issued what looks like ${x.label} <small>${ago(now-x.ts)}</small> — ${esc(one(x.text).slice(0,80))}</button>`).join('')||'<span class="cap2">No alert to show. Only the latest 8 are kept, for agents still in the room, and pattern matching can miss things.</span>';
+  else if(bayPg===1) bay=ALERTS.filter(x=>A[x.id]&&activeAlert(x,now,1800)).slice(0,3).map(x=>`<div class="alert-notice">${alertMarkup(x,A[x.id].name,x.id)}</div>`).join('')||'<span class="cap2">No alert to show. Only the latest 8 are kept, for agents still in the room, and pattern matching can miss things.</span>';
   else{
     const B=30,Wd=10,bk=Array.from({length:B},()=>({n:0})); for(const k of a.ticks){const i=B-1-Math.floor((now-k.t)/Wd); if(i>=0&&i<B){bk[i].n++; bk[i][k.c]=(bk[i][k.c]||0)+1}}
     const mx=Math.max(3,...bk.map(b=>b.n)), tot=bk.reduce((x,b)=>x+b.n,0);
@@ -2259,38 +2281,38 @@ function createNativeReader({request,paint,clock=()=>Date.now()/1000,later=setTi
 
 const NATIVE=createNativeReader({request:(...args)=>fetch(...args),paint:nativePaint});
 const NATIVE_VISIT={agent:null,key:null,read:false};
+const NATIVE_CHECK={agent:null,key:null};
 function nativePaint(s){
-  const card=$('#nativeCard');card.hidden=!s.agent;if(!s.agent){$('#nativeModel').replaceChildren();$('#nativeQuestions').replaceChildren();$('#nativeModel')._nativeSignature=null;$('#nativeQuestions')._nativeSignature=null;txt($('#nativeStatus'),'');txt($('#nativeRequestStatus'),'');return}
-  $('#nativeRefresh').disabled=s.busy;txt($('#nativeStatus'),s.note||'Read-only observations. Answers and model selection are not enabled here.');
-  const snapshot=s.snapshot,m=snapshot?.model_settings,i=snapshot?.inputs;
+  const card=$('#nativeCard'),snapshot=s.snapshot,i=snapshot?.inputs;
+  const requests=(i?.requests||[]).filter(r=>r.presentation?.questions.some(q=>q.question.trim()));
+  $('#nativeCheck').disabled=!s.agent||s.busy;
+  const checked=NATIVE_CHECK.agent===s.agent&&NATIVE_CHECK.key===s.key&&!!s.agent,status=$('#nativeCheckStatus');status.hidden=!checked;
+  txt(status,checked?(s.busy?'Checking for questions…':!snapshot?'Could not check for questions. Try again.':i.stale?'Last check ended. Check again for current questions.':requests.length?'Questions found. Read them in the conversation.':'No readable questions found. Check the app for other requests.'):'');
+  card.hidden=!s.agent||!requests.length;
+  const questions=$('#nativeQuestions');
+  if(card.hidden){questions.replaceChildren();questions._nativeSignature=null;txt($('#nativeStatus'),'');txt($('#nativeRequestStatus'),'');return}
+  $('#nativeRefresh').disabled=s.busy;
+  txt($('#nativeStatus'),s.note==='Opened the native app.'?'Opened the app. Answer there.':s.note==='Open this session in its native app to answer.'?'Could not open the app. Open this session there to answer.':'Read-only. Answer these questions in the app.');
+  txt($('#nativeRequestStatus'),i.stale?'Last observed questions. Check the app for the current request.':'');
   const make=(tag,value)=>{const el=document.createElement(tag);el.textContent=value;return el};
-  const model=$('#nativeModel'),questions=$('#nativeQuestions');
-  const modelSignature=JSON.stringify([m?.settings?.model,m?.settings?.effort,m?.settings?.mode,m?.stale,!!m?.settings,!m?.settings&&s.busy]);
-  if(model._nativeSignature!==modelSignature){model._nativeSignature=modelSignature;model.replaceChildren();
-  if(m?.settings){const v=m.settings;model.append(make('p',(m.stale?'Last observed selection for next turn: ':'Selected for next turn: ')+v.model+' · Effort: '+(v.effort===null?'Default (unspecified)':v.effort)));model.append(make('small','Mode: '+(v.mode===null?'Unknown':v.mode)+'. Model selection unavailable: native model list is not connected.'))}
-  else model.append(make('p',s.busy?'Native model settings: reading…':'Native model settings unavailable. Recorded model information remains in Details.'));}
-  txt($('#nativeRequestStatus'),i?(i.stale?'Last observed requests; live observation ended or expired.':i.read_active?'Observing native requests…':'Native request observations unavailable.'):'');
-  const questionSignature=JSON.stringify([snapshot?.provider,i?.requests.map(r=>[r.handle,r.revision,r.presentation]),i?.requests.length?null:i?.state]);
+  const questionSignature=JSON.stringify([snapshot.provider,requests.map(r=>[r.handle,r.revision,r.presentation])]);
   if(questions._nativeSignature!==questionSignature){questions._nativeSignature=questionSignature;questions.replaceChildren();
-  if(i){
-    if(i.requests.length)questions.append(make('p',i.requests.length+' native request observation'+(i.requests.length===1?'':'s')));
-    for(const [index,r] of i.requests.entries()){const article=document.createElement('article');article.append(make('b','Native request '+(index+1)+' of '+i.requests.length));
-      if(r.presentation===null)article.append(make('p','Request details are available only in the native app.'));
-      else for(const q of r.presentation.questions){if(q.header)article.append(make('b',q.header));article.append(make('p',q.question));if(q.options?.length){const list=document.createElement('ol');for(const o of q.options)list.append(make('li',o.label+(o.description?' — '+o.description:'')));article.append(list)}if(q.options===null)article.append(make('small','This native question accepts a written response.'));else if(q.isOther)article.append(make('small','The native question also accepts a custom response.'));if(typeof q.multiSelect==='boolean')article.append(make('small',q.multiSelect?'Multiple selections allowed in the native app.':'Single selection in the native app.'))}
-      article.append(make('small','Answer in '+(snapshot.provider==='codex'?'Codex':'Claude')+'. Answering this request in WATCH is not enabled yet.'));questions.append(article)
+    for(const r of requests){const article=document.createElement('article');
+      for(const q of r.presentation.questions){if(!q.question.trim())continue;if(q.header)article.append(make('b',q.header));article.append(make('p',q.question));if(q.options?.length){const list=document.createElement('ol');for(const o of q.options)list.append(make('li',o.label+(o.description?' — '+o.description:'')));article.append(list)}if(q.options===null)article.append(make('small','Answer with a written response in the app.'));else if(q.isOther)article.append(make('small','You can also write a custom response in the app.'));if(typeof q.multiSelect==='boolean')article.append(make('small',q.multiSelect?'Multiple selections allowed in the app.':'Choose one option in the app.'))}
+      questions.append(article);
     }
-    if(!i.requests.length)questions.append(make('p',i.state==='observed'?'No requests in this observed snapshot.':'No native request observation available.'));
-  }}
+  }
   const a=A[s.agent];$('#nativeOpenApp').disabled=!a||!!responseOpenReason(a);
 }
 function nativeSync(){
   const agent=focus&&A[focus]?focus:null;
-  if(NATIVE_VISIT.agent!==agent||NATIVE_VISIT.key!==KEY){NATIVE_VISIT.agent=agent;NATIVE_VISIT.key=KEY;NATIVE_VISIT.read=false}
+  if(NATIVE_VISIT.agent!==agent||NATIVE_VISIT.key!==KEY){NATIVE_VISIT.agent=agent;NATIVE_VISIT.key=KEY;NATIVE_VISIT.read=false;NATIVE_CHECK.agent=null;NATIVE_CHECK.key=null}
   const eligible=!DEMO&&KEY&&!claiming&&!locked&&connected&&!document.hidden&&agent&&!STEADY;
   if(!eligible){NATIVE.sync(null,null);return}
   const auto=!NATIVE_VISIT.read;NATIVE_VISIT.read=true;NATIVE.sync(agent,KEY,{auto});
 }
-$('#nativeRefresh').onclick=()=>NATIVE.refresh();
+function nativeCheckQuestions(){const s=NATIVE.state;if(!s.agent||s.busy)return;NATIVE_CHECK.agent=s.agent;NATIVE_CHECK.key=s.key;NATIVE.refresh()}
+$('#nativeRefresh').onclick=$('#nativeCheck').onclick=nativeCheckQuestions;
 $('#nativeOpenApp').onclick=async()=>{const id=NATIVE.state.agent,epoch=NATIVE.state.epoch;if(!id||!A[id]||responseOpenReason(A[id]))return;try{const r=await post('/open',{agent:id});if(epoch===NATIVE.state.epoch){NATIVE.state.note=r.ok?'Opened the native app.':'Open this session in its native app to answer.';nativePaint(NATIVE.state)}}catch(e){if(epoch===NATIVE.state.epoch){NATIVE.state.note='Open this session in its native app to answer.';nativePaint(NATIVE.state)}}};
 addEventListener('visibilitychange',nativeSync);
 /* end native observation presentation */

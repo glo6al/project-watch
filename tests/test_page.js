@@ -556,16 +556,19 @@ function deskForestChecks(code=deskHelpers){
 deskForestChecks();for(const mutation of [c=>c.replace("/^related/.test(a.via||'')","false"),c=>c.replace("if(a.soft)n.caption='Parent inferred'","if(false)n.caption='Parent inferred'")]){let caught=false;try{deskForestChecks(mutation(deskHelpers))}catch(e){caught=true}assert.ok(caught,'relationship truth mutation must fail')}
 console.log('ok agent forest: relationship truth, cycles, missing/dismissed parents, input ordering, unique rows, provider source, 12000-level iterative chain; mutations detected');
 
+const alertHelpers=html.slice(html.indexOf('function activeAlert('),html.indexOf('/* end alert presentation helpers */'));
+const alertEscape=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+
 /* Agent rail signals preserve their existing alternate views without duplicate lists. */
 function deskSignalsChecks(mutate=false){
   const nodes=new Map(),node=id=>{if(!nodes.has(id))nodes.set(id,{hidden:false,textContent:'',firstElementChild:null,children:[],setAttribute(k,v){this[k]=v}});return nodes.get(id)};
   const requests=[];
-  const ctx={focus:'A',A:{A:{name:'Ada',runtime:'Codex'}},DESK:{open:false,agents:new Map(),agentRows:new Map()},bayPg:0,PINS:{},STEADY:false,order:[],document:{activeElement:null},$:node,txt:(el,text)=>el.textContent=text,one:String,stateOf:a=>({label:'Waiting',need:a.request}),responsePaint:(a,n)=>requests.push(n),deskSetViewUI(){},deskFocus(){},render(){}};
+  const ctx={focus:'A',A:{A:{name:'Ada',runtime:'Codex'}},DESK:{open:false,agents:new Map(),agentRows:new Map()},bayPg:0,PINS:{},STEADY:false,order:[],document:{activeElement:null},$:node,txt:(el,text)=>el.textContent=text,one:String,stateOf:a=>({label:'Waiting',need:a.request}),responsePaint:(a,n)=>requests.push(n),deskSetViewUI(){},deskFocus(){},render(){},esc:alertEscape,put:(n,v)=>n.html=v};
   let code=html.slice(html.indexOf('function deskPaint('),html.indexOf('function deskTheme('));
   if(mutate)code=code.replace("$('#bay').hidden=bayPg===0;","$('#bay').hidden=false;");
   const signals=[1,2].map(page=>({dataset:{bay:String(page)},setAttribute(k,v){this[k]=v}}));node('#deskSignals').children=signals;
   code+='\n'+html.split('\n').find(x=>x.startsWith("$('#deskSignals').onclick="));
-  vm.createContext(ctx);const paint=vm.runInContext(deskHelpers+'\n'+code+';deskPaint',ctx);ctx.desk=paint;
+  vm.createContext(ctx);const paint=vm.runInContext(alertHelpers+'\n'+deskHelpers+'\n'+code+';deskPaint',ctx);ctx.desk=paint;
   paint();assert.equal(node('#bay').hidden,true);assert.equal(node('#deskAgentList').hidden,false);assert.equal(node('#deskRespond').hidden,true);
   for(const signal of signals){node('#deskSignals').onclick({target:{closest:()=>signal}});assert.equal(ctx.bayPg,Number(signal.dataset.bay));assert.equal(node('#bay').hidden,false);assert.equal(signal['aria-pressed'],'true');node('#deskSignals').onclick({target:{closest:()=>signal}});assert.equal(ctx.bayPg,0);assert.equal(node('#bay').hidden,true);assert.equal(signal['aria-pressed'],'false')}
   ctx.A.A.request={kind:'Approve',perm:{pid:'p1'}};paint();assert.equal(requests.at(-1),ctx.A.A.request);assert.equal(node('#deskRespond').hidden,false);assert.equal(ctx.DESK.open,false);
@@ -578,33 +581,33 @@ function deskAlertChecks(mutation=''){
   assert.ok(headStart>=0&&alertAt>headStart&&alertAt<headEnd,'alert belongs to the persistent desk header');
   assert.ok(headEnd<html.indexOf('id="deskWork"',headEnd),'alert is outside the closable Work area');
   const {node,doc,events}=railDOM(),list=node('#deskAgentList'),agents=new Map();
-  const ctx={focus:'A',A:{A:{name:'Ada',runtime:'Codex'},B:{name:'Bram',runtime:'Claude'}},DESK:{open:false,agents,agentRows:new Map()},bayPg:0,PINS:{},STEADY:false,order:['A','B'],document:doc,Date:{now:()=>1000*1000},$:node,one:t=>String(t||'').replace(/\s+/g,' '),stateOf:a=>({label:'between actions',need:a.request,busy:!!a.busy}),responsePaint:(a,n)=>ctx.cardRequest=n,deskSetViewUI(){},deskFocus:el=>el.focus({preventScroll:true}),post(){throw Error('Painting alerts must not submit')},cuSend(){throw Error('Painting alerts must not send')}};
+  const ctx={focus:'A',A:{A:{name:'Ada',runtime:'Codex'},B:{name:'Bram',runtime:'Claude'}},DESK:{open:false,agents,agentRows:new Map()},bayPg:0,PINS:{},STEADY:false,order:['A','B'],document:doc,Date:{now:()=>1000*1000},$:node,one:t=>String(t||'').replace(/\s+/g,' '),stateOf:a=>({label:'between actions',need:a.request,busy:!!a.busy}),responsePaint:(a,n)=>ctx.cardRequest=n,deskSetViewUI(){},deskFocus:el=>el.focus({preventScroll:true}),post(){throw Error('Painting alerts must not submit')},cuSend(){throw Error('Painting alerts must not send')},esc:alertEscape,put:(n,v)=>n.html=v};
   let code=html.slice(html.indexOf('function deskPaint('),html.indexOf('function deskTheme('));
   const mutations={
-    hide:c=>c.replace("$('#deskAlert').hidden=!alert;","$('#deskAlert').hidden=true;"),
-    expiry:c=>c.replace('now-a.alert.ts<180','now-a.alert.ts<=180'),
-    railExpiry:c=>c.replace('now-agent.alert.ts<180','now-agent.alert.ts<=180'),
+    hide:c=>c.replace("paintAlert($('#deskAlert'),alert);","paintAlert($('#deskAlert'),null);"),
+    expiry:c=>c.replace('activeAlert(a.alert,now)','activeAlert(a.alert,now,181)'),
+    railExpiry:c=>c.replace('activeAlert(agent.alert,now)','activeAlert(agent.alert,now,181)'),
     rail:c=>c.replace("alarm?'alarm':",''),
-    priority:c=>c.replace("state.need?'need':alarm?'alarm':state.busy?'busy':'idle'","alarm?'alarm':state.need?'need':state.busy?'busy':'idle'"),
-    steady:c=>c.replace("STEADY?'(text hidden in steady mode)':one(alert.text).slice(0,300)",'one(alert.text).slice(0,300)')
+    priority:c=>c.replace("state.need?'need':alarm?'alarm':state.busy?'busy':'idle'","alarm?'alarm':state.need?'need':state.busy?'busy':'idle'")
   };
   if(mutation){const altered=mutations[mutation](code);assert.notEqual(altered,code,'mutation must change extracted behavior');code=altered}
-  const realTxt=html.split('\n').find(line=>line.startsWith('const txt='));const paint=vm.runInNewContext(realTxt+'\n'+deskHelpers+'\n'+code+';deskPaint',ctx);
-  paint();assert.equal(node('#deskAlert').hidden,true);assert.equal(node('#deskAlert').textContent,'');assert.equal(agents.get('A').dataset.state,'idle');
-  const command='git push origin main <img src=x onerror=bad()>',alert={ts:990,label:'a push',text:command};ctx.A.A.alert=alert;paint();
-  assert.equal(ctx.DESK.open,false);assert.equal(node('#deskAlert').hidden,false);assert.equal(node('#deskAlert').textContent,'Looks like a push · '+command);assert.equal(agents.get('A').dataset.state,'alarm');assert.equal(agents.get('A').querySelector('.agent-status').textContent,'Looks like a push','rail alarm remains compact');assert.equal(agents.get('A').title,undefined,'rail has no raw-command tooltip');
+  const realTxt=html.split('\n').find(line=>line.startsWith('const txt='));const paint=vm.runInNewContext(realTxt+'\n'+alertHelpers+'\n'+deskHelpers+'\n'+code+';deskPaint',ctx);
+  paint();assert.equal(node('#deskAlert').hidden,true);assert.equal(node('#deskAlert').html,'');assert.equal(agents.get('A').dataset.state,'idle');
+  const command='git push origin main <img src=x onerror=bad()>',alert={n:1,id:'A',ts:990,label:'a push',text:command};ctx.A.A.alert=alert;paint();
+  assert.equal(ctx.DESK.open,false);assert.equal(node('#deskAlert').hidden,false);assert.match(node('#deskAlert').html,/Looks like a push/);assert.match(node('#deskAlert').html,/<details class="alert-details"><summary>View details<\/summary><pre tabindex="0">git push origin main &lt;img/);assert.equal(agents.get('A').dataset.state,'alarm');assert.equal(agents.get('A').querySelector('.agent-status').textContent,'Looks like a push','rail alarm remains compact');assert.equal(agents.get('A').title,undefined,'rail has no raw-command tooltip');
   assert.equal(ctx.DESK.agents.get('A'),list.children[0].children[0],'keyed agent identity survives the alert repaint');
   ctx.A.A.request={kind:'Approve',text:'Inspect a different command',sure:true,perm:{pid:'p1',sent:false}};paint();
   assert.equal(node('#deskAlert').hidden,false);assert.equal(ctx.cardRequest,ctx.A.A.request,'independent response card receives the concurrent request');assert.equal(node('#deskRespond').hidden,false);assert.equal(agents.get('A').dataset.state,'need');assert.equal(agents.get('A').querySelector('.agent-status').textContent,'Approve','pending request keeps rail priority');
   ctx.A.A.request.sure=false;paint();assert.equal(agents.get('A').querySelector('.agent-status').textContent,'Approve · possible');assert.equal(node('#deskAlert').hidden,false);
-  delete ctx.A.A.request;ctx.focus='B';paint();assert.equal(node('#deskAlert').hidden,true);assert.equal(node('#deskAlert').textContent,'','station switch clears previous alert');assert.equal(agents.get('A').dataset.state,'alarm','other agent still carries its live rail alarm');
-  ctx.A.B.alert={ts:995,label:'a delete',text:'remove generated files'};paint();assert.equal(node('#deskAlert').textContent,'Looks like a delete · remove generated files');delete ctx.A.B.alert;paint();assert.equal(node('#deskAlert').hidden,true);assert.equal(node('#deskAlert').textContent,'');
+  delete ctx.A.A.request;ctx.focus='B';paint();assert.equal(node('#deskAlert').hidden,true);assert.equal(node('#deskAlert').html,'','station switch clears previous alert');assert.equal(agents.get('A').dataset.state,'alarm','other agent still carries its live rail alarm');
+  ctx.A.B.alert={n:2,id:'B',ts:995,label:'a delete',text:'remove generated files'};paint();assert.match(node('#deskAlert').html,/Looks like a delete/);delete ctx.A.B.alert;paint();assert.equal(node('#deskAlert').hidden,true);assert.equal(node('#deskAlert').html,'');
   ctx.focus='A';ctx.A.A.alert.ts=821;paint();assert.equal(node('#deskAlert').hidden,false,'179 seconds is still live');assert.equal(agents.get('A').dataset.state,'alarm');
-  ctx.A.A.alert.ts=820;paint();assert.equal(node('#deskAlert').hidden,true,'180 seconds expires');assert.equal(node('#deskAlert').textContent,'');assert.equal(agents.get('A').dataset.state,'idle','rail uses the same expiry');assert.equal(agents.get('A').querySelector('.agent-status').textContent,'between actions');
+  ctx.A.A.alert.ts=820;paint();assert.equal(node('#deskAlert').hidden,true,'180 seconds expires');assert.equal(node('#deskAlert').html,'');assert.equal(agents.get('A').dataset.state,'idle','rail uses the same expiry');assert.equal(agents.get('A').querySelector('.agent-status').textContent,'between actions');
   ctx.A.A.alert.ts=819;paint();assert.equal(node('#deskAlert').hidden,true);
-  ctx.A.A.alert.ts=990;ctx.STEADY=true;paint();assert.equal(node('#deskAlert').textContent,'Looks like a push · (text hidden in steady mode)');assert.equal(agents.get('A').querySelector('.agent-status').textContent,'Looks like a push');assert.equal(agents.get('A').title,undefined,'steady rail has no raw-command tooltip');assert.equal(node('#deskAlert').textContent.includes(command),false);
-  ctx.STEADY=false;ctx.A.A.alert.text='x'.repeat(350);paint();assert.equal(node('#deskAlert').textContent,'Looks like a push · '+'x'.repeat(300));
-  delete ctx.A.A.alert;paint();assert.equal(node('#deskAlert').hidden,true);assert.equal(node('#deskAlert').textContent,'');assert.equal(agents.get('A').dataset.state,'idle');assert.equal(ctx.DESK.open,false);
+  ctx.A.A.alert.ts=990;ctx.STEADY=true;paint();assert.match(node('#deskAlert').html,/Looks like a push/);assert.equal(node('#deskAlert').html.includes(command),false);assert.equal(node('#deskAlert').html.includes('<details'),false);
+  ctx.STEADY=false;ctx.A.A.alert.text='x'.repeat(350);paint();assert.equal(node('#deskAlert').html.includes('x'.repeat(350)),true,'full command is available in explicit details');
+  ctx.A.A.alert.off=true;paint();assert.equal(node('#deskAlert').hidden,true);assert.equal(agents.get('A').dataset.state,'idle');ctx.A.A.alert.off=false;
+  delete ctx.A.A.alert;paint();assert.equal(node('#deskAlert').hidden,true);assert.equal(node('#deskAlert').html,'');assert.equal(agents.get('A').dataset.state,'idle');assert.equal(ctx.DESK.open,false);
   const oldA=agents.get('A'),oldB=agents.get('B'),rowA=ctx.DESK.agentRows.get('A'),rowB=ctx.DESK.agentRows.get('B');
   doc.activeElement=oldB;const moves=events.moves;paint();assert.equal(events.moves,moves,'ordinary paint does not move nodes');assert.equal(events.focus.length,0,'ordinary paint does not steal focus');
   ctx.A.B.parent='A';paint();assert.equal(agents.get('B'),oldB);assert.equal(ctx.DESK.agentRows.get('B'),rowB);assert.equal(rowB.li.parentElement,rowA.group);assert.equal(doc.activeElement,oldB);assert.equal(events.focus.at(-1).options.preventScroll,true);
@@ -619,8 +622,47 @@ function deskAlertChecks(mutation=''){
   ctx.A.A.via='related, not launched by it: files';paint();assert.equal(rowA.li.parentElement,list);assert.match(oldA.querySelector('.agent-relation').textContent,/not a parent/);
   doc.activeElement=oldB;ctx.order=['A'];paint();assert.equal(agents.has('B'),false);assert.equal(doc.activeElement,oldA,'removed focused row falls back to selected agent');assert.equal(agents.get('A'),oldA);
 }
-deskAlertChecks();for(const mutation of ['hide','expiry','railExpiry','rail','priority','steady']){let caught=false;try{deskAlertChecks(mutation)}catch(e){caught=true}assert.ok(caught,'live-alert mutation '+mutation+' must fail')}
-console.log('ok live desk alerts: closed Work, expiry boundaries, station changes, concurrent requests, keyed rail priority, safe text and steady masking; six mutations detected');
+deskAlertChecks();for(const mutation of ['hide','expiry','railExpiry','rail','priority']){let caught=false;try{deskAlertChecks(mutation)}catch(e){caught=true}assert.ok(caught,'live-alert mutation '+mutation+' must fail')}
+console.log('ok live desk alerts: closed Work, expiry boundaries, station changes, concurrent requests, keyed rail priority, safe details and steady masking; five mutations detected');
+
+/* Exact alert identity, shared surfaces and actual delegated handlers. */
+function alertBehaviorChecks(source=alertHelpers,ingestion=html.split('\n').find(l=>l.trim().startsWith('if(e.alert&&'))){
+  const els=new Map(),node=id=>{if(!els.has(id))els.set(id,{hidden:false,html:''});return els.get(id)};
+  const ctx={A:{},ALERTS:[],ALN:0,LABEL:{push:'a push'},STEADY:false,focus:null,$:node,esc:alertEscape,put:(n,v)=>{if(n.html!==v){n.html=v;n.paints=(n.paints||0)+1}},render:()=>ctx.renders++,renders:0,setFocus:id=>ctx.focus=id};
+  const wired=html.split('\n').filter(l=>["$('#needs').onclick=","$('#deskAlert').onclick=","$('#fleet').onclick="].some(prefix=>l.startsWith(prefix))).join('\n');
+  const workPaint=html.split('\n').find(l=>l.trim().startsWith('paintAlert(a.$.fr,al);'));
+  const roomPaint=html.split('\n').find(l=>l.trim().startsWith("put($('#needs'),focus?"));
+  const bayPaint=html.split('\n').find(l=>l.trim().startsWith('else if(bayPg===1) bay=')).replace('else if(bayPg===1) ','');
+  const agentStart=html.indexOf('  el.onclick=ev=>'),agentEnd=html.indexOf('  world.append(el);',agentStart);
+  const api=vm.runInNewContext(source+'\n'+wired+'\n'+`function ingest(e){const a=A[e.agent];${ingestion}};function surfaces(now){focus=null;${roomPaint}let bay;${bayPaint}return bay};function work(a,al){${workPaint}};function agentHandler(el){${html.slice(agentStart,agentEnd)}};({activeAlert,dismissAlert,alertMarkup,paintAlert,alertClick,ingest,surfaces,work,agentHandler})`,ctx);
+  const command='git push /fictional/project <img src=x onerror=bad()>',old={n:1,id:'A',ts:990,label:'a push',text:command};
+  const request={kind:'Approve',sure:true,perm:{pid:'approval',sent:false}};ctx.A.A={name:'Ada',alert:old,request,dirty:false,$:{fr:node('work')}};ctx.ALERTS.push(old);ctx.ALN=1;
+  for(const lifetime of [180,600,1800]){assert.equal(api.activeAlert(old,990+lifetime-1,lifetime),old);assert.equal(api.activeAlert(old,990+lifetime,lifetime),null,'exact lifetime expires');}
+  const markup=api.alertMarkup(old,'Ada','A');assert.match(markup,/Looks like a push/);assert.match(markup,/data-alert-dismiss="1">Dismiss alert/);assert.equal(markup.slice(0,markup.indexOf('<details')).includes(command),false,'raw command only behind disclosure');assert.match(markup,/<details class="alert-details"><summary>View details<\/summary><pre tabindex="0">git push \/fictional\/project &lt;img/);assert.equal(markup.includes('<details open'),false);
+  assert.equal(api.alertMarkup({...old,label:'<img src=x onerror=bad()>'}).includes('<img'),false,'arbitrary alert label is escaped');
+  api.paintAlert(node('header'),old);api.work(ctx.A.A,old);assert.equal(node('header').html,node('work').html,'header and Work use identical presentation');api.paintAlert(node('header'),old);assert.equal(node('header').paints,1,'unchanged repaint preserves disclosure DOM');
+  const bay=api.surfaces(1000);assert.ok(node('#needs').html.includes(markup));assert.ok(bay.includes(markup),'bay and room share presentation');api.surfaces(1590);assert.equal(node('#needs').html,'','room lifetime is 600s');assert.ok(api.surfaces(2789).includes('Looks like'));assert.ok(!api.surfaces(2790).includes('Looks like'),'bay lifetime is 1800s');
+  const event=n=>({preventDefault(){this.prevented=true},stopPropagation(){this.stopped=true},target:{closest:selector=>selector==='[data-alert-dismiss]'?{dataset:{alertDismiss:String(n)}}:null}});
+  for(const surface of ['#deskAlert','#needs','#fleet']){old.off=false;ctx.A.A.dirty=false;const e=event(1);node(surface).onclick(e);assert.equal(old.off,true,surface+' dismisses exact event');assert.equal(ctx.A.A.dirty,true,'same-second station paint invalidated');assert.equal(ctx.A.A.request,request);assert.equal(request.perm.sent,false,'pending permission remains unanswered');assert.equal(e.prevented,true);assert.equal(e.stopped,true);for(const lifetime of [180,600,1800])assert.equal(api.activeAlert(old,1000,lifetime),null,'dismissal applies at every lifetime');api.paintAlert(node('header'),api.activeAlert(old,1000));api.work(ctx.A.A,api.activeAlert(old,1000));assert.equal(node('header').hidden,true);assert.equal(node('work').hidden,true);assert.equal(api.surfaces(1000).includes('Looks like'),false);assert.equal(node('#needs').html,'');}
+  const replacement={...old,n:2,ts:995,off:false};ctx.A.A.alert=replacement;ctx.ALERTS.unshift(replacement);node('#deskAlert').onclick(event(1));assert.equal(replacement.off,false,'old captured control cannot dismiss newer alert');assert.equal(api.activeAlert(replacement,1000),replacement);
+  ctx.moved=false;const el={};api.agentHandler(el);const detailEvent={stopPropagation(){},target:{closest:s=>s==='.alert-details'?{}:null}};ctx.focus=null;el.onclick(detailEvent);assert.equal(ctx.focus,null,'room details never navigate to station');old.off=false;el.onclick(event(1));assert.equal(old.off,true,'room monitor uses actual dismiss handler');
+  ctx.ALERTS.length=0;for(let k=0;k<9;k++){const al={n:10+k,id:'agent'+k,ts:990,label:'a push',text:'command'};ctx.A[al.id]={alert:al,dirty:false};ctx.ALERTS.unshift(al)}ctx.ALERTS.length=8;api.dismissAlert(10);assert.equal(ctx.A.agent0.alert.off,true,'active agent alert remains dismissible after retained list truncation');assert.equal(ctx.A.agent0.dirty,true);
+  ctx.A.A.alert=old;ctx.ALERTS.length=0;ctx.ALERTS.push(old);old.off=true;api.ingest({agent:'A',alert:'push',ts:990,cmd:command});assert.equal(ctx.A.A.alert,old,'same event replay stays dismissed');api.ingest({agent:'A',alert:'push',ts:991,cmd:command+' --new'});assert.notEqual(ctx.A.A.alert,old,'new event after dismissal appears within grouping interval');assert.equal(api.activeAlert(ctx.A.A.alert,1000),ctx.A.A.alert);const current=ctx.A.A.alert;api.ingest({agent:'A',alert:'push',ts:992,cmd:'paired observation'});assert.equal(ctx.A.A.alert,current,'visible-alert grouping is preserved');
+  ctx.STEADY=true;assert.equal(api.alertMarkup(current).includes('<details'),false,'steady mode never reveals command details');
+}
+alertBehaviorChecks();
+for(const [name,from,to] of [
+  ['dismissed visibility','al&&!al.off&&','al&&'],
+  ['exact identity','al.n===n','true'],
+  ['same-second repaint','A[al.id].dirty=true','A[al.id].dirty=false'],
+  ['truncated list','...Object.values(A).map(a=>a.alert)','...[]'],
+  ['escaped label','esc(al.label)','al.label'],
+  ['steady details',"al.text&&!STEADY?","al.text?"],
+]){let caught=false;const changed=alertHelpers.replace(from,to);assert.notEqual(changed,alertHelpers);try{alertBehaviorChecks(changed)}catch(e){caught=true}assert.ok(caught,name+' mutation detected')}
+{
+  const ingest=html.split('\n').find(l=>l.trim().startsWith('if(e.alert&&'));let caught=false;try{alertBehaviorChecks(alertHelpers,ingest.replace("&&(!a.alert.off||(a.alert.ts===e.ts&&a.alert.text===(e.cmd||e.name||'')))",''))}catch(e){caught=true}assert.ok(caught,'new event after dismissal regression detected');
+}
+console.log('ok shared alerts: exact identity across four handlers, three expiry windows, permission independence, safe disclosure, nine-agent truncation, replay/new-event grouping; seven mutations detected');
 
 /* Dispatch actual capture/bubble handlers in browser order, including existing Officer/Watch handlers. */
 function deskKeyboardChecks(mutate=false){
@@ -1007,12 +1049,21 @@ async function nativeBehaviorChecks(source=nativeReaderSource){
 function nativeRenderChecks(source=html.slice(html.indexOf('function nativePaint(s){'),html.indexOf('function nativeSync(){'))){
   class Node{constructor(tag){this.tag=tag;this.children=[];this.textContent='';this.hidden=false;this.disabled=false}append(...nodes){this.children.push(...nodes)}replaceChildren(...nodes){this.children=nodes}set innerHTML(value){throw Error('native text must never use HTML')}}
   const nodes=new Map(),node=id=>{if(!nodes.has(id))nodes.set(id,new Node(id));return nodes.get(id)};
-  const paint=vm.runInNewContext(source+';nativePaint',{$:node,txt:(n,v)=>n.textContent=v,document:{createElement:tag=>new Node(tag)},A:{[nativeAgent]:{runtime:'Codex'}},responseOpenReason:()=>''});
-  const snap=nativeSnapshot();paint({agent:nativeAgent,snapshot:snap,busy:false,note:''});
-  const all=n=>[n,...n.children.flatMap(all)],text=[...nodes.values()].flatMap(all).map(n=>n.textContent).join('\n');
-  assert.ok(text.includes('<img src=x onerror=alert(1)> **plain**'));assert.ok(text.includes('[link](https://example.test)'));assert.ok(text.includes('Default (unspecified)'));assert.ok(text.includes('Mode: Unknown'));assert.equal([...nodes.values()].flatMap(all).some(n=>['input','select','textarea','a'].includes(n.tag)),false);
-  const retained=node('#nativeQuestions').children[1],retainedModel=node('#nativeModel').children[0];node('#nativeQuestions').scrollTop=83;paint({agent:nativeAgent,snapshot:snap,busy:true,note:'Checking'});assert.equal(node('#nativeQuestions').children[1],retained,'unchanged poll retains selected question DOM');assert.equal(node('#nativeModel').children[0],retainedModel);assert.equal(node('#nativeQuestions').scrollTop,83);snap.inputs.requests[0].observed_at=1001;paint({agent:nativeAgent,snapshot:snap,busy:false,note:''});assert.equal(node('#nativeQuestions').children[1],retained,'observation timestamp alone does not replace text');
-  snap.inputs.requests[0].presentation=null;paint({agent:nativeAgent,snapshot:snap,busy:false,note:''});assert.ok(all(node('#nativeQuestions')).map(n=>n.textContent).join('\n').includes('only in the native app'));assert.ok(!all(node('#nativeQuestions')).some(n=>n.textContent.includes('<img')));
+  const manual={agent:null,key:null};
+  const paint=vm.runInNewContext(source+';nativePaint',{$:node,txt:(n,v)=>n.textContent=v,document:{createElement:tag=>new Node(tag)},A:{[nativeAgent]:{runtime:'Codex'}},NATIVE_CHECK:manual,responseOpenReason:()=>''});
+  const all=n=>[n,...n.children.flatMap(all)],text=()=>[...nodes.values()].flatMap(all).map(n=>n.textContent).join('\n');
+  paint({agent:nativeAgent,snapshot:null,busy:true,note:'Reading'});assert.equal(node('#nativeCard').hidden,true,'loading without a question has no card');assert.equal(node('#nativeCheckStatus').hidden,true,'automatic read has no diagnostic status');assert.equal(node('#nativeCheck').disabled,true);
+  const snap=nativeSnapshot();snap.inputs.requests=[];paint({agent:nativeAgent,snapshot:snap,busy:false,note:''});assert.equal(node('#nativeCard').hidden,true,'empty request observation has no card');
+  snap.inputs.requests=nativeSnapshot().inputs.requests;paint({agent:nativeAgent,snapshot:snap,busy:false,note:''});assert.equal(node('#nativeCard').hidden,false);assert.match(node('#nativeStatus').textContent,/Read-only.*Answer/);
+  assert.ok(text().includes('<img src=x onerror=alert(1)> **plain**'));assert.ok(text().includes('[link](https://example.test)'));assert.equal(nodes.has('#nativeModel'),false,'native model diagnostics do not enter conversation');assert.equal([...nodes.values()].flatMap(all).some(n=>['input','select','textarea','a'].includes(n.tag)),false);
+  const retained=node('#nativeQuestions').children[0];node('#nativeQuestions').scrollTop=83;paint({agent:nativeAgent,snapshot:snap,busy:true,note:'Checking'});assert.equal(node('#nativeQuestions').children[0],retained,'unchanged poll retains selected question DOM');assert.equal(node('#nativeQuestions').scrollTop,83);snap.inputs.requests[0].observed_at=1001;paint({agent:nativeAgent,snapshot:snap,busy:false,note:''});assert.equal(node('#nativeQuestions').children[0],retained,'observation timestamp alone does not replace text');
+  paint({agent:nativeAgent,snapshot:snap,busy:false,note:'Native observations unavailable or stale. Refresh to check again.'});assert.equal(text().includes('Native observations'),false,'reader diagnostics never echo into question card');
+  snap.inputs.stale=true;paint({agent:nativeAgent,snapshot:snap,busy:false,note:''});assert.equal(node('#nativeCard').hidden,false);assert.match(node('#nativeRequestStatus').textContent,/Last observed questions.*Check the app/,'stale readable questions are explicitly historical');
+  snap.inputs.requests[0].presentation=null;paint({agent:nativeAgent,snapshot:snap,busy:false,note:''});assert.equal(node('#nativeCard').hidden,true,'opaque requests do not create an empty question panel');assert.equal(node('#nativeQuestions').children.length,0,'previous question is cleared');
+  snap.inputs.requests=nativeSnapshot().inputs.requests;snap.inputs.requests[0].presentation.questions[0].question='  ';paint({agent:nativeAgent,snapshot:snap,busy:false,note:''});assert.equal(node('#nativeCard').hidden,true,'blank questions are not useful');
+  manual.agent=nativeAgent;manual.key='key';paint({agent:nativeAgent,key:'key',snapshot:null,busy:true,note:'Reading native settings and requests…'});assert.equal(node('#nativeCheckStatus').hidden,false);assert.equal(node('#nativeCheckStatus').textContent,'Checking for questions…');paint({agent:nativeAgent,key:'key',snapshot:null,busy:false,note:'Native observations unavailable or stale.'});assert.equal(node('#nativeCheckStatus').textContent,'Could not check for questions. Try again.');assert.equal(node('#nativeCheck').disabled,false);
+  paint({agent:nativeAgent,key:'rotated',snapshot:null,busy:false,note:''});assert.equal(node('#nativeCheckStatus').hidden,true,'previous authorization status cleared');
+  paint({agent:null,snapshot:nativeSnapshot(),busy:false,note:''});assert.equal(node('#nativeCard').hidden,true,'no target cannot expose questions');assert.equal(node('#nativeQuestions').children.length,0);
 }
 (async()=>{await nativeBehaviorChecks();nativeRenderChecks();for(const [name,before,after] of [
  ['target correlation','v.agent_id!==state.agent','false'],
@@ -1021,11 +1072,28 @@ function nativeRenderChecks(source=html.slice(html.indexOf('function nativePaint
  ['active polling','parts.some(p=>p.read_active)','false'],
  ['focus epoch','if(epoch!==state.epoch)return;','if(false)return;'],
 ]){const changed=nativeReaderSource.replaceAll(before,after);assert.notEqual(changed,nativeReaderSource);let caught=false;try{await nativeBehaviorChecks(changed)}catch(e){caught=true}assert.ok(caught,name+' mutation must fail')}
-const renderSource=html.slice(html.indexOf('function nativePaint(s){'),html.indexOf('function nativeSync(){'));let cacheCaught=false;try{nativeRenderChecks(renderSource.replace('questions._nativeSignature!==questionSignature','true'))}catch(e){cacheCaught=true}assert.ok(cacheCaught,'question DOM cache removal must fail');
+const renderSource=html.slice(html.indexOf('function nativePaint(s){'),html.indexOf('function nativeSync(){'));
+for(const [name,from,to] of [
+  ['question DOM cache','questions._nativeSignature!==questionSignature','true'],
+  ['empty card','card.hidden=!s.agent||!requests.length','card.hidden=!s.agent'],
+  ['stale question label',"i.stale?'Last observed questions. Check the app for the current request.':''","''"],
+  ['manual status authorization','NATIVE_CHECK.key===s.key','true'],
+  ['reader diagnostic echo',"'Read-only. Answer these questions in the app.'","s.note||'Read-only. Answer these questions in the app.'"],
+]){let caught=false;const changed=renderSource.replace(from,to);assert.notEqual(changed,renderSource);try{nativeRenderChecks(changed)}catch(e){caught=true}assert.ok(caught,name+' mutation must fail')}
 console.log('ok native observation reader: exact target/epoch, active polling, expiry, failure, readonly text, secret refusal; five guard mutations detected')})().catch(e=>{console.error(e);process.exitCode=1});
 
+async function nativeManualChecks(code=html.slice(html.indexOf('function nativeCheckQuestions(){'),html.indexOf("$('#nativeOpenApp').onclick"))){
+  const f=nativeFixture(),nodes=new Map(),node=id=>{if(!nodes.has(id))nodes.set(id,{});return nodes.get(id)},manual={agent:null,key:null};
+  vm.runInNewContext(code,{NATIVE:f.api,NATIVE_CHECK:manual,$:node});
+  node('#nativeCheck').onclick();assert.equal(f.requests.length,0,'check without eligible selected agent is inert');
+  f.api.sync(nativeAgent,'key');node('#nativeCheck').onclick();assert.equal(f.requests.length,1,'check during automatic read cannot duplicate it');f.requests[0].reject(Error('offline'));await nativeFlush();
+  node('#nativeCheck').onclick();assert.equal(f.requests.length,2,'quiet Session control retries after initial failed read');assert.equal(manual.agent,nativeAgent);assert.equal(manual.key,'key');assert.equal(node('#nativeCheck').onclick,node('#nativeRefresh').onclick,'card and Session action share manual path');node('#nativeRefresh').onclick();assert.equal(f.requests.length,2,'busy manual read remains singleflight');
+  f.answer(f.requests[1],nativeSnapshot());await nativeFlush();assert.equal(f.api.state.snapshot.inputs.requests[0].presentation.questions.length,1,'manual retry obtains real question');
+}
+(async()=>{await nativeManualChecks();const source=html.slice(html.indexOf('function nativeCheckQuestions(){'),html.indexOf("$('#nativeOpenApp').onclick"));for(const [from,to] of [['NATIVE.refresh()','void 0'],['NATIVE_CHECK.agent=s.agent','NATIVE_CHECK.agent=null']]){let caught=false;try{await nativeManualChecks(source.replace(from,to))}catch(e){caught=true}assert.ok(caught,'manual native check mutation detected')}console.log('ok quiet native retry: actual Session/card handlers, no-target/busy guard, failed initial read recovery and private-reader question result; two mutations detected')})().catch(e=>{console.error(e);process.exitCode=1});
+
 function nativeVisitChecks(wrapper=html.slice(html.indexOf('function nativeSync(){'),html.indexOf("$('#nativeRefresh').onclick"))){
-  const f=nativeFixture(),context={NATIVE:f.api,NATIVE_VISIT:{agent:null,key:null,read:false},focus:nativeAgent,A:{[nativeAgent]:{},[nativeOther]:{}},KEY:'key',DEMO:false,claiming:false,locked:false,connected:true,document:{hidden:false},STEADY:false};
+  const f=nativeFixture(),context={NATIVE:f.api,NATIVE_VISIT:{agent:null,key:null,read:false},NATIVE_CHECK:{agent:null,key:null},focus:nativeAgent,A:{[nativeAgent]:{},[nativeOther]:{}},KEY:'key',DEMO:false,claiming:false,locked:false,connected:true,document:{hidden:false},STEADY:false};
   const sync=vm.runInNewContext(wrapper+';nativeSync',context);
   sync();assert.equal(f.requests.length,1,'first selected desk read');const first=f.requests[0];
   context.connected=false;sync();assert.equal(first.opts.signal.aborted,true);assert.equal(f.api.state.snapshot,null);assert.equal(f.api.state.agent,null);
