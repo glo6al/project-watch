@@ -165,7 +165,7 @@ async function controlChecks(code=messageCode){
   const cachedPrivate=new Map([['liveRoomControls',JSON.stringify([malicious])]]),privateReload=messaging(code,cachedPrivate);privateReload.ctx.connected=false;privateReload.ofMessageLoad();assert.equal(privateReload.OFM.controls.size,1);assert.doesNotMatch(cachedPrivate.get('liveRoomControls'),/private_path|expected_turn_id|transcript/);
   const warningReload=messaging(code,c.storage);warningReload.ctx.connected=false;warningReload.ofMessageLoad();assert.match(warningReload.OFM.records.get(request.request_id).el.innerHTML,/Older &lt;img&gt;/);
   const showCode=html.slice(html.indexOf('function ofShow('),html.indexOf('function ofDemoAnswer('));
-  const shown=messaging(code);Object.assign(shown.ctx,{OFUI:{epoch:1,tab:'officer',recipient:'watch'},focus:null,ofEl:{classList:{contains:()=>false}},ofMayAct:()=>true,ofAttributed:(c,h)=>h});shown.ctx.ofAdd=()=>({querySelectorAll:()=>[]});shown.ctx.ofCite=()=>'';shown.ctx.ofAct=()=>[false,''];shown.ctx.OF={};vm.runInContext(showCode+';ofShow({text:"recorded",controls:['+JSON.stringify(control)+']})',shown.ctx);assert.equal(shown.OFM.controls.size,1,'Officer response merges control even without polling');
+  const shown=messaging(code);Object.assign(shown.ctx,{OFUI:{epoch:1,tab:'officer',recipient:'watch'},focus:null,ofEl:{classList:{contains:()=>false}},ofMayAct:()=>true,ofAttributed:(c,h)=>h});shown.ctx.ofAdd=()=>({querySelectorAll:()=>[]});shown.ctx.ofCite=()=>'';shown.ctx.ofReplyNotice=()=>{};shown.ctx.ofAct=()=>[false,''];shown.ctx.OF={};vm.runInContext(showCode+';ofShow({text:"recorded",controls:['+JSON.stringify(control)+']})',shown.ctx);assert.equal(shown.OFM.controls.size,1,'Officer response merges control even without polling');
 }
 (async()=>{
   await controlChecks();console.log('ok controls: lost response recovery, outcomes, reload uncertainty, stale races, retention and privacy');
@@ -196,7 +196,7 @@ async function officerSubmitChecks(mutate=false){
   if(mutate) sendCode=sendCode.replace('...(request_id?{request_id}:{})','...{}');
   const bodies=[],shown=[],button={disabled:false},status={textContent:''};let ids=0;
   const ctx={OF:{turns:[],busy:false},ofIn:{value:'Ask Aster for progress',focus(){}},ofSt:status,DEMO:false,
-    crypto:{randomUUID:()=>`uuid-${++ids}`},cuTurnMeta:()=>({id:'turn:1',ts:1}),cuDraftSave(){},ofContextPaint(){},ofHistory:t=>t.map(({role,content,context})=>({role,content,context})),ofDay(){},ofAdd:(c,t)=>shown.push(t),ofStatus:t=>status.textContent=t,
+    crypto:{randomUUID:()=>`uuid-${++ids}`},cuVisible:(c,id)=>id?c?.scope==='station'&&c.agent===id:!c||c.scope==='room',cuTurnMeta:()=>({id:'turn:1',ts:1}),cuDraftSave(){},ofContextPaint(){},ofReplyNotice(){},ofHistory:t=>t.map(({role,content,context})=>({role,content,context})),ofDay(){},ofAdd:(c,t)=>shown.push(t),ofStatus:t=>status.textContent=t,
     $:()=>button,ofSave(){},ofShow(){},esc:String,ofCurrent:()=>({context:{scope:'room'},history:{scope:'room'},epoch:0}),ofAttributed:(c,h)=>h,ofOwnsFocus:()=>false,
     post:async(route,body)=>{bodies.push({route,body});return {ok:true,json:async()=>({text:'Question queued',messages:[]})}}};
   vm.createContext(ctx);const send=vm.runInContext(sendCode+';ofSend',ctx);
@@ -233,7 +233,7 @@ async function officerLateChecks(){
   let release,epoch=1,selected='Birch',focuses=0,posted;const shown=[],responses=[];
   const ctx={OF:{turns:[],busy:false},ofIn:{value:'Why did it stop?',focus(){focuses++}},ofSt:{textContent:''},DEMO:false,
     ofCurrent:()=>({context:{scope:'station',agent:'x:12345678'},history:{scope:'station',agent:'x:12345678',name:selected},epoch}),
-    cuTurnMeta:()=>({id:'turn:1',ts:1}),cuDraftSave(){},ofContextPaint(){},ofHistory:t=>t.map(({role,content,context})=>({role,content,context})),ofDay(){},ofAdd:(c,t)=>shown.push(t),ofAttributed:(c,h)=>c.name+' '+h,esc:String,ofStatus(t){ctx.ofSt.textContent=t},$:()=>({disabled:false}),ofSave(){},ofShow:(r,q)=>responses.push(q),ofOwnsFocus:q=>q.epoch===epoch,
+    cuVisible:(c,id)=>id?c?.scope==='station'&&c.agent===id:!c||c.scope==='room',cuTurnMeta:()=>({id:'turn:1',ts:1}),cuDraftSave(){},ofContextPaint(){},ofReplyNotice(){},ofHistory:t=>t.map(({role,content,context})=>({role,content,context})),ofDay(){},ofAdd:(c,t)=>shown.push(t),ofAttributed:(c,h)=>c.name+' '+h,esc:String,ofStatus(t){ctx.ofSt.textContent=t},$:()=>({disabled:false}),ofSave(){},ofShow:(r,q)=>responses.push(q),ofOwnsFocus:q=>q.epoch===epoch,
     post:async(p,b)=>{posted=b;await new Promise(r=>release=r);return {ok:true,json:async()=>({text:'Stopped'})}}};
   vm.createContext(ctx);const send=vm.runInContext(code+';ofSend',ctx);const pending=send();selected='Aster';epoch++;release();await pending;
   assert.equal(posted.context.agent,'x:12345678');assert.equal(responses[0].history.name,'Birch');assert.equal(ctx.OF.turns[1].context.name,'Birch');assert.equal(focuses,0);
@@ -245,7 +245,7 @@ officerLateChecks().catch(e=>{console.error(e);process.exitCode=1});
 /* Explicit suggestion clicks run the real action boundary once, never on arrival. */
 {
   const code=html.slice(html.indexOf('function ofSuggestion('),html.indexOf('function ofShow('));let calls=0;const buttons=[],lines=[];
-  const ctx={A:{},focus:'x:12345678',ofAdd:(c,h)=>{lines.push(h);const b={};buttons.push(b);return {querySelector:()=>b}},esc:String,ofAct:()=>{calls++;return [true,'applied']},ofToggle(){throw Error('unexpected fold')},$:()=>({focus(){}})};
+  const ctx={A:{},focus:'x:12345678',ofAdd:(c,h)=>{lines.push(h);const b={};buttons.push(b);return {querySelector:()=>b}},esc:String,ofReplyNotice(){},ofAct:()=>{calls++;return [true,'applied']},ofToggle(){throw Error('unexpected fold')},$:()=>({focus(){}})};
   const suggest=vm.runInNewContext(code+';ofSuggestion',ctx);suggest({do:'watch_draft',words:'test'});assert.equal(calls,0);buttons[0].onclick();buttons[0].onclick();assert.equal(calls,1);assert.equal(buttons[0].disabled,true);assert.match(lines.at(-1),/^Done/);console.log('ok deferred suggestion: explicit single use, truthful outcome');
 }
 
@@ -254,17 +254,18 @@ function citationChecks(mutate=false){
   let jumpCode=html.slice(html.indexOf('function ofJump('),html.indexOf('/* agent message helpers:'));
   let revealCode=html.slice(html.indexOf('function cuRevealEvent('),html.indexOf('function cuCard('));
   if(mutate===true){jumpCode=jumpCode.replace('x.dataset.sourceAgent===aid&&','');revealCode=revealCode.replace('x.dataset.sourceAgent===id&&','')}
+  if(mutate==='recipient'){jumpCode=jumpCode.replace("cuSelectRecipient('agent')",'void 0');revealCode=revealCode.replace("cuSelectRecipient('agent')",'void 0')}
   if(mutate==='collapsed'){jumpCode=jumpCode.replace('if(detail)detail.open=true','if(false)detail.open=true');revealCode=revealCode.replace('if(detail)detail.open=true','if(false)detail.open=true')}
   for(const t of ['you','say']){
-    let scrolled=0,notices=[],reveals=[];const entry={t,seq:7,n:17,key:'message'},detail={open:false},el={dataset:{sourceN:'17',sourceAgent:'id'},querySelector:()=>detail,getClientRects:()=>[{}],scrollIntoView(){scrolled++},classList:{add(){},remove(){}}},wrong={...el,dataset:{sourceN:'17',sourceAgent:'other'},getClientRects:()=>[],scrollIntoView(){throw Error('wrong station')}};
-    const env={A:{id:{name:'Birch',story:[entry],open:new Set()}},focus:'id',setFocus(){},deskReveal:view=>reveals.push(view),ofTab(){},capAdd:(s,k)=>s.add(k),STATION:{compact:true},render(){},performance:{now:()=>0},STEPPING:false,ofLog:{dataset:{a:'id'},querySelectorAll:()=>[wrong,el]},storyEl:{},setTimeout(){},cuNotice:text=>notices.push(text),cuSources(){},cuPaint(){},esc:String};
+    let scrolled=0,notices=[],reveals=[],recipient='watch';const entry={t,seq:7,n:17,key:'message'},detail={open:false},el={dataset:{sourceN:'17',sourceAgent:'id'},querySelector:()=>detail,getClientRects:()=>[{}],scrollIntoView(){assert.equal(recipient,'agent','speech evidence explicitly selects the agent lane');scrolled++},classList:{add(){},remove(){}}},wrong={...el,dataset:{sourceN:'17',sourceAgent:'other'},getClientRects:()=>[],scrollIntoView(){throw Error('wrong station')}};
+    const env={A:{id:{name:'Birch',story:[entry],open:new Set()}},focus:'id',setFocus(){},cuSelectRecipient:r=>{recipient=r},deskReveal:view=>reveals.push(view),ofTab(){},capAdd:(s,k)=>s.add(k),STATION:{compact:true},render(){},performance:{now:()=>0},STEPPING:false,ofLog:{dataset:{a:'id'},querySelectorAll:()=>[wrong,el]},storyEl:{},setTimeout(){},cuNotice:text=>notices.push(text),cuSources(){},cuPaint(){},esc:String};
     vm.runInNewContext(jumpCode+';ofJump("id",7)',env);assert.equal(scrolled,1);assert.equal(detail.open,true);assert.equal(env.deskView,undefined);
-    detail.open=false;vm.runInNewContext(revealCode+';cuRevealEvent("id",17)',env);assert.equal(scrolled,2);assert.equal(detail.open,true);assert.deepEqual(reveals,['conversation','conversation'],'speech reveals the conversation, never work');
+    detail.open=false;recipient='watch';vm.runInNewContext(revealCode+';cuRevealEvent("id",17)',env);assert.equal(scrolled,2);assert.equal(detail.open,true);assert.deepEqual(reveals,['conversation','conversation'],'speech reveals the conversation, never work');
     vm.runInNewContext(jumpCode+';ofJump("id",404);ofJump("missing",7)',env);assert.equal(notices.length,2);assert.match(notices[0],/no longer/);assert.match(notices[1],/no longer/);
   }
   assert.doesNotMatch(html,/data-v="said"|deskView='said'/);
 }
-citationChecks();let collisionCaught=false;try{citationChecks(true)}catch(e){collisionCaught=true}assert.ok(collisionCaught);let collapseCaught=false;try{citationChecks('collapsed')}catch(e){collapseCaught=true}assert.ok(collapseCaught);console.log('ok conversation navigation: two stations with same local n, collapsed speech, absent citations; collision and collapsed-target mutations detected');
+citationChecks();let laneCaught=false;try{citationChecks('recipient')}catch(e){laneCaught=true}assert.ok(laneCaught,'same-focused WATCH citation must switch recipient');let collisionCaught=false;try{citationChecks(true)}catch(e){collisionCaught=true}assert.ok(collisionCaught);let collapseCaught=false;try{citationChecks('collapsed')}catch(e){collapseCaught=true}assert.ok(collapseCaught);console.log('ok conversation navigation: two stations with same local n, collapsed speech, absent citations; collision and collapsed-target mutations detected');
 {
   const nodes=new Map(),ctx={CU:{serial:0,nodes},ofAdd:(c,h,m)=>{const el={text:h};nodes.set(m.id,{el});return el},cuPaint(){}};
   const noticeCode=html.slice(html.indexOf('function cuNotice('),html.indexOf('function cuRevealEvent('));vm.runInNewContext(noticeCode+';cuNotice("Unavailable citation")',ctx);assert.equal([...nodes.values()][0].global,true,'navigation failure remains visible regardless of selected context');
@@ -283,7 +284,7 @@ visibilityChecks();let clippingFailed=false;try{visibilityChecks(true)}catch(e){
 /* A still-visible dock is not ownership: another focused control defers navigation actions. */
 function responseFocusChecks(mutate=false){
   let code=html.slice(html.indexOf('function ofShow('),html.indexOf('function ofDemoAnswer('));if(mutate)code=code.replace('&&(!request||ofOwnsFocus(request))','');
-  let acts=0,suggestions=0;const ctx={OFUI:{epoch:1,tab:'officer',recipient:'watch'},focus:'station',ofEl:{classList:{contains:()=>false}},ofOwnsFocus:()=>false,ofMayAct:(q,e,a)=>q.epoch===e&&a,ofAttributed:(c,h)=>h,ofParas:String,ofAdd:()=>({querySelectorAll:()=>[]}),ofSuggestion:()=>suggestions++,ofAct:()=>{acts++;return [false,'']},esc:String};
+  let acts=0,suggestions=0;const ctx={OFUI:{epoch:1,tab:'officer',recipient:'watch'},focus:'station',ofEl:{classList:{contains:()=>false}},ofOwnsFocus:()=>false,ofMayAct:(q,e,a)=>q.epoch===e&&a,ofAttributed:(c,h)=>h,ofParas:String,ofAdd:()=>({querySelectorAll:()=>[]}),ofSuggestion:()=>suggestions++,ofReplyNotice(){},ofAct:()=>{acts++;return [false,'']},esc:String};
   const show=vm.runInNewContext(code+';ofShow',ctx);show({text:'Draft',actions:[{do:'watch_draft'}]},{epoch:1});assert.equal(acts,0);assert.equal(suggestions,1);
   ctx.ofOwnsFocus=()=>true;show({text:'Draft',actions:[{do:'watch_draft'}]},{epoch:1});assert.equal(acts,1);
 }
@@ -342,7 +343,7 @@ function unifiedChecks(code=unifiedCode){
   const reply={t:'say',text:'WATCH_REPLY '+id+'\nDone'};assert.equal(api.cuEnvelopeMatch(reply,'x:agent-a',records),true);assert.equal(api.cuEnvelopeMatch(reply,'x:agent-b',records),false);assert.equal(api.cuEnvelopeMatch({...reply,text:reply.text+' extra'},'x:agent-a',records),false);assert.equal(api.cuEnvelopeMatch({...reply,text:'WATCH_REPLY '+id},'x:agent-a',records),false);assert.equal(api.cuEnvelopeMatch(reply,'x:agent-a',new Map()),false);
   const requestText='WATCH_REQUEST '+id+'\nThe owner asks through the Officer of the Watch:\nHello\nReply in your final answer with WATCH_REPLY '+id+' on its own line, followed by your answer. This is a question, not permission to change files or send messages. For a progress question, inspect your own current state.';
   assert.equal(api.cuEnvelopeMatch({t:'you',text:requestText},record.agent,records),true);assert.equal(api.cuEnvelopeMatch({t:'you',text:requestText.slice(0,-1)},record.agent,records),false);assert.equal(api.cuEnvelopeMatch({t:'you',text:requestText.replace('Hello','Different')},record.agent,records),false);
-  assert.equal(api.cuVisible({scope:'room'},'A'),true);assert.equal(api.cuVisible({scope:'station',agent:'A'},'A'),true);assert.equal(api.cuVisible({scope:'station',agent:'A'},'B'),false);assert.equal(api.cuVisible(null,'A'),false);assert.equal(api.cuVisible(null,null),true);
+  assert.equal(api.cuVisible({scope:'room'},'A'),false);assert.equal(api.cuVisible({scope:'station',agent:'A'},'A'),true);assert.equal(api.cuVisible({scope:'station',agent:'A'},'B'),false);assert.equal(api.cuVisible(null,'A'),false);assert.equal(api.cuVisible(null,null),true);
   assert.equal(api.cuMeta(null),null);assert.equal(api.cuMeta({id:'turn:old'}),null);assert.equal(api.cuMeta({id:'turn:x',ts:NaN}),null);assert.equal(api.cuMeta({id:'turn:x',ts:4}).ts,4);
   const keys=[api.cuDraftKey('A','agent','station'),api.cuDraftKey('A','watch','station'),api.cuDraftKey('A','watch','room'),api.cuDraftKey('B','agent','station')];assert.equal(new Set(keys).size,4);
 }
@@ -390,8 +391,8 @@ function pendingPaintChecks(code=html.slice(html.indexOf('function cuPendingPain
   }
   doc.body=new PendingNode();doc.activeElement=doc.body;doc.createElement=()=>new PendingNode();
   const els=Object.fromEntries(['#pendingQueue','#pendingQueueList','#pendingQueueTitle'].map(id=>[id,new PendingNode()])),r={request_id:'first',agent:'A',state:'queued',question:'<img src=x onerror=bad()>'.repeat(30)},ctx={focus:'A',A:{A:{name:'Ada',q:[]},B:{name:'Bram',q:[]}},OFM:{records:new Map([['first',r]]),controls:new Map()},$:s=>els[s],txt:(el,text)=>{el.textContent=text},document:doc,ofIn:new PendingNode()};
-  const paint=vm.runInNewContext(unifiedCode+'\n'+code+';cuPendingPaint',ctx);
-  paint();const list=els['#pendingQueueList'],row=list.children[0];assert.equal(row.querySelector('pre').textContent,r.question);assert.doesNotMatch(row.template,/<img/,'untrusted text never becomes markup');row.open=true;paint();assert.equal(list.children[0],row);assert.equal(row.open,true,'ordinary polling preserves expansion');assert.equal(els['#pendingQueueTitle'].textContent,'Pending · 1 · Ada');
+  ctx.cuTarget=()=>ctx.focus;ctx.OFUI={recipient:'agent'};const paint=vm.runInNewContext(unifiedCode+'\n'+code+';cuPendingPaint',ctx);
+  paint();const list=els['#pendingQueueList'],row=list.children[0];assert.equal(row.querySelector('span').textContent,r.question);assert.doesNotMatch(row.template,/<img/,'untrusted text never becomes markup');row.open=true;paint();assert.equal(list.children[0],row);assert.equal(row.open,true,'ordinary polling preserves expansion');assert.equal(els['#pendingQueueTitle'].textContent,'Pending · 1 · Ada');
   r.state='unknown';paint();assert.equal(list.children[0],row);assert.match(row.querySelector('b').textContent,/unknown/);assert.equal(els['#pendingQueueTitle'].textContent,'Unresolved · 1 · Ada','unknown-only title never counts as pending');
   const second={request_id:'second',agent:'A',state:'queued',question:'Second request'};ctx.OFM.records.set('second',second);paint();const secondRow=list.children[1],secondSummary=secondRow.querySelector('summary');secondRow.open=true;secondSummary.focus();assert.equal(els['#pendingQueueTitle'].textContent,'Pending · 1 · Unresolved · 1 · Ada');
   const movesBefore=moves;r.state='answered';paint();assert.equal(list.children[0],secondRow);assert.equal(doc.activeElement,secondSummary,'clearing earlier sibling preserves focused summary');assert.equal(moves,movesBefore,'clearing earlier row does not move survivor');assert.equal(secondRow.open,true);
@@ -412,7 +413,7 @@ console.log('ok pending strip: identity/source isolation, observed queue, truthf
 {
   const code=html.slice(html.indexOf('function cuDraftSave('),html.indexOf('function cuTurnMeta('));
   const key=vm.runInNewContext(unifiedCode+';cuDraftKey');const ctx={focus:'A',OFUI:{recipient:'agent',scope:'station'},CU:{drafts:new Map()},ofIn:{value:'Agent A draft'},cuDraftKey:key};
-  const api=vm.runInNewContext(code+';({cuDraftSave,cuDraftRestore})',ctx);api.cuDraftSave();ctx.OFUI.recipient='watch';api.cuDraftRestore();assert.equal(ctx.ofIn.value,'');ctx.ofIn.value='WATCH A draft';api.cuDraftSave();ctx.OFUI.scope='room';api.cuDraftRestore();assert.equal(ctx.ofIn.value,'');ctx.ofIn.value='Room draft';api.cuDraftSave();ctx.focus='B';api.cuDraftRestore();assert.equal(ctx.ofIn.value,'');ctx.focus='A';api.cuDraftRestore();assert.equal(ctx.ofIn.value,'Room draft');ctx.OFUI.recipient='agent';api.cuDraftRestore();assert.equal(ctx.ofIn.value,'Agent A draft');
+  ctx.cuTarget=()=>ctx.focus||ctx.OFUI.target;const api=vm.runInNewContext(code+';({cuDraftSave,cuDraftRestore})',ctx);api.cuDraftSave();ctx.OFUI.recipient='watch';api.cuDraftRestore();assert.equal(ctx.ofIn.value,'');ctx.ofIn.value='WATCH A draft';api.cuDraftSave();ctx.OFUI.scope='room';api.cuDraftRestore();assert.equal(ctx.ofIn.value,'');ctx.ofIn.value='Room draft';api.cuDraftSave();ctx.focus='B';api.cuDraftRestore();assert.equal(ctx.ofIn.value,'Room draft','WATCH room draft is shared across surfaces');ctx.focus='A';api.cuDraftRestore();assert.equal(ctx.ofIn.value,'Room draft');ctx.OFUI.recipient='agent';api.cuDraftRestore();assert.equal(ctx.ofIn.value,'Agent A draft');
   console.log('ok drafts: agent, WATCH station, WATCH room and station switches');
 }
 
@@ -422,7 +423,7 @@ function directHarness(code=directCode){
   const posts=[],lines=[],painted=[];let ids=0;
   const ctx={focus:'x:A',A:{'x:A':{name:'Ada',runtime:'Codex'},'x:B':{name:'Bram',runtime:'Codex'}},OFUI:{recipient:'agent'},CU:{busy:new Set()},OFM:{records:new Map()},ofIn:{value:'Please inspect'},DEMO:false,KEY:'key',claiming:false,locked:false,connected:true,
     crypto:{randomUUID:()=>`12345678-1234-4123-8123-${String(++ids).padStart(12,'0')}`},ofSend:()=>{ctx.watchCalls++;},watchCalls:0,esc:String,ofAdd:(c,h,m)=>lines.push({h,m}),ofMessagePaint:r=>painted.push({...r}),ofMessageSave(){},cuDraftSave(){},ofContextPaint(){},ofMessageMerge:rows=>{for(const v of rows)Object.assign(ctx.OFM.records.get(v.request_id),v)},post:async(p,b)=>{posts.push({p,b});return {ok:true,json:async()=>({...b,state:'queued'})}}};
-  ctx.cuDirectReason=vm.runInNewContext(unifiedCode+';cuDirectReason');ctx.OF=Object.freeze({turns:Object.freeze([])});vm.createContext(ctx);const send=vm.runInContext(code+';cuSend',ctx);return {ctx,send,posts,lines,painted};
+  ctx.cuTarget=()=>ctx.focus||ctx.OFUI.target;ctx.cuDirectReason=vm.runInNewContext(unifiedCode+';cuDirectReason');ctx.cuSendReason=id=>ctx.cuDirectReason(id,ctx.A[id]);ctx.OF=Object.freeze({turns:Object.freeze([])});vm.createContext(ctx);const send=vm.runInContext(code+';cuSend',ctx);return {ctx,send,posts,lines,painted};
 }
 async function directChecks(code=directCode){
   const h=directHarness(code);let release;h.ctx.post=async(p,b)=>{h.posts.push({p,b});await new Promise(r=>release=r);return {ok:true,json:async()=>({...b,state:'queued'})}};
@@ -470,7 +471,7 @@ sourceChecks();let reconciliationCaught=false;try{sourceChecks(true)}catch(e){re
 /* Use the real navigation boundary while a direct request resolves on a different desk. */
 async function navigationDraftChecks(mutate=false){
   const h=directHarness(),{ctx}=h;ctx.OFUI.scope='station';ctx.OFUI.epoch=1;ctx.CU.drafts=new Map();
-  Object.assign(ctx,{cuDraftKey:vm.runInNewContext(unifiedCode+';cuDraftKey'),PROJ:null,order:['x:A','x:B'],pos:{},STATION:{compact:false},peekT:null,peek:null,clearTimeout(){},screenPose:()=>null,glideN:0,fly(){},apply(){},render(){},ofPlace(){},forget(){throw Error('unexpected forget')}});
+  Object.assign(ctx,{cuDraftKey:vm.runInNewContext(unifiedCode+';cuDraftKey'),PROJ:null,order:['x:A','x:B'],pos:{},STATION:{compact:false},peekT:null,peek:null,clearTimeout(){},screenPose:()=>null,glideN:0,fly(){},apply(){},render(){},ofPlace(){},cuChooserClose(){},forget(){throw Error('unexpected forget')}});
   for(const a of Object.values(ctx.A)){a.$={split:{style:{setProperty(){}}}};a.el={}}
   const drafts=html.slice(html.indexOf('function cuDraftSave('),html.indexOf('function cuTurnMeta('));
   let navigation=html.slice(html.indexOf('function setFocus('),html.indexOf("$('#back').onclick"));
@@ -478,12 +479,12 @@ async function navigationDraftChecks(mutate=false){
   const api=vm.runInContext(drafts+'\n'+navigation+';({cuDraftSave,cuDraftRestore,setFocus})',ctx);
   ctx.ofIn.value='A agent draft\nsecond line';api.setFocus('x:B');assert.equal(ctx.ofIn.value,'');ctx.ofIn.value='B agent draft';api.setFocus('x:A');assert.equal(ctx.ofIn.value,'A agent draft\nsecond line');
   api.cuDraftSave();ctx.OFUI.recipient='watch';api.cuDraftRestore();ctx.ofIn.value='A WATCH station draft';api.cuDraftSave();ctx.OFUI.scope='room';api.cuDraftRestore();ctx.ofIn.value='A WATCH room draft';api.cuDraftSave();
-  api.setFocus(null);assert.equal(ctx.ofIn.value,'');ctx.ofIn.value='Room WATCH draft';api.setFocus('x:A');assert.equal(ctx.ofIn.value,'A agent draft\nsecond line');
+  api.setFocus(null);assert.equal(ctx.ofIn.value,'A WATCH room draft','room draft follows context rather than desk');ctx.ofIn.value='Room WATCH draft';api.setFocus('x:A');assert.equal(ctx.ofIn.value,'A agent draft\nsecond line');
   let release;ctx.post=async(p,b)=>{h.posts.push({p,b});await new Promise(done=>release=done);return {ok:true,json:async()=>({...b,state:'queued'})}};
   const pending=h.send();assert.equal(h.posts.length,1);const submitted=h.posts[0].b;api.setFocus('x:B');assert.equal(ctx.ofIn.value,'B agent draft');ctx.ofIn.value='B new multiline\ndraft';ctx.A['x:A'].name='Changed after submission';release();await pending;
   assert.equal(ctx.ofIn.value,'B new multiline\ndraft');assert.equal(h.posts.length,1,'navigation and completing the old send never submits or replays');
   const record=ctx.OFM.records.get(submitted.request_id);assert.equal(record.agent,'x:A');assert.equal(record.name,'Ada');assert.equal(record.question,'A agent draft\nsecond line');
-  api.setFocus('x:A');assert.equal(ctx.ofIn.value,'','submitted draft stays cleared');api.cuDraftSave();ctx.OFUI.recipient='watch';api.cuDraftRestore();assert.equal(ctx.ofIn.value,'A WATCH station draft');ctx.OFUI.scope='room';api.cuDraftRestore();assert.equal(ctx.ofIn.value,'A WATCH room draft');
+  api.setFocus('x:A');assert.equal(ctx.ofIn.value,'','submitted draft stays cleared');api.cuDraftSave();ctx.OFUI.recipient='watch';api.cuDraftRestore();assert.equal(ctx.ofIn.value,'A WATCH station draft');ctx.OFUI.scope='room';api.cuDraftRestore();assert.equal(ctx.ofIn.value,'Room WATCH draft');
   api.setFocus(null);assert.equal(ctx.ofIn.value,'Room WATCH draft');assert.equal(h.posts.length,1);
   console.log('ok actual navigation: per-address multiline drafts, room roundtrip and late request identity without resend');
 }
@@ -675,7 +676,7 @@ workTransitionChecks();let closingCaught=false;try{workTransitionChecks(true)}ca
 {
   const evidence={seq:42,cmd:'inspect evidence'},entry={t:'did',n:8,e:evidence},reveals=[];let scrolled=0;
   const row={getClientRects:()=>[{}],querySelector:()=>null,scrollIntoView:()=>scrolled++,classList:{add(){},remove(){}}};
-  const ctx={focus:'A',A:{A:{name:'Ada',story:[entry],open:new Set()}},setFocus:id=>{ctx.focus=id},deskReveal:v=>reveals.push(v),capAdd:(set,key)=>set.add(key),STATION:{compact:true},render(){},performance:{now:()=>0},STEPPING:false,storyEl:{dataset:{a:'A'},querySelector:selector=>selector==='[data-s="8"]'?row:null},setTimeout(){},cuNotice(){throw Error('known work evidence should be revealed')},esc:String};
+  const ctx={focus:'A',A:{A:{name:'Ada',story:[entry],open:new Set()}},setFocus:id=>{ctx.focus=id},cuSelectRecipient(){throw Error('work evidence must preserve recipient')},deskReveal:v=>reveals.push(v),capAdd:(set,key)=>set.add(key),STATION:{compact:true},render(){},performance:{now:()=>0},STEPPING:false,storyEl:{dataset:{a:'A'},querySelector:selector=>selector==='[data-s="8"]'?row:null},setTimeout(){},cuNotice(){throw Error('known work evidence should be revealed')},esc:String};
   const code=html.slice(html.indexOf('function ofJump('),html.indexOf('/* agent message helpers:'));vm.runInNewContext(code+';ofJump("A",42)',ctx);
   assert.deepEqual(reveals,['doing']);assert.equal(ctx.A.A.pin,evidence);assert.equal(ctx.deskView,'doing');assert.equal(scrolled,1);
   console.log('ok work citation: Activity revealed, exact historical pin and entry preserved');
@@ -1042,3 +1043,142 @@ nativeVisitChecks();
   let caught=false;try{nativeVisitChecks(source.replace('const auto=!NATIVE_VISIT.read','const auto=true'))}catch(e){caught=true}assert.ok(caught,'same-visit autoread guard mutation must fail');
 }
 console.log('ok native desk visits: SSE/visibility/lock purge without automatic retry; explicit refresh/focus/key transitions; autoread mutation detected');
+
+/* Shared messaging: recipient lanes and request histories have the same exact context boundary. */
+function sharedLaneChecks(code=unifiedCode){
+  const {cuLaneVisible:visible,cuDraftKey:key}=vm.runInNewContext(code+';({cuLaneVisible,cuDraftKey})');
+  const room={scope:'room'},a={scope:'station',agent:'A'},b={scope:'station',agent:'B'};
+  for(const kind of ['source','message','agent']){
+    assert.equal(visible({kind,context:a},'agent','A','room'),true);
+    assert.equal(visible({kind,context:a},'agent','B','station'),false);
+    assert.equal(visible({kind,context:a},'watch','A','station'),false);
+  }
+  for(const context of [room,a,b,null]){
+    assert.equal(visible({kind:'watch',context},'agent','A','station'),false);
+    assert.equal(visible({kind:'watch',context},'watch','A','station'),context===a);
+    assert.equal(visible({kind:'watch',context},'watch','A','room'),context===room||context===null);
+  }
+  assert.equal(visible({kind:'control',context:b},'watch','A','room'),true);
+  assert.equal(visible({kind:'control',context:b},'watch','A','station'),false);
+  assert.equal(visible({kind:'control',context:a},'watch','A','station'),true);
+  assert.equal(visible({kind:'control',context:a},'agent','A','station'),false);
+  assert.equal(visible({kind:'watch',global:true},'agent',null,'room'),true);
+  assert.equal(key('A','watch','room'),key('B','watch','room'));
+  assert.equal(key('A','agent','room'),key('A','agent','station'));
+  assert.notEqual(key('A','watch','station'),key('A','agent','station'));
+}
+sharedLaneChecks();
+for(const [label,from,to] of [['lane leak',"if(recipient!=='watch')return false",'if(false)return false'],['control context leak',"return scope==='room'||row.context?.agent===target","return true"],['WATCH room context leak',"return station?context?.scope==='station'&&context.agent===station:!context||context.scope==='room'","return true"]]){let caught=false;try{sharedLaneChecks(unifiedCode.replace(from,to))}catch(e){caught=true}assert.ok(caught,label+' mutation detected')}
+
+function roomSourceChecks(mutate=false){
+  const deskCode=html.slice(html.indexOf('function desk(){'),html.indexOf('  const request=need(a);',html.indexOf('function desk(){')))+'}';
+  const placeCode=html.slice(html.indexOf('function ofPlace(){'),html.indexOf('function ofReveal(){'));
+  let contextCode=html.slice(html.indexOf('function ofContextPaint(){'),html.indexOf('function cuSelectRecipient('));
+  if(mutate)contextCode=contextCode.replace('if(!focus&&A[id])cuSources(A[id])','if(false)cuSources(A[id])');
+  const seen=[],node={classList:{toggle(){}},querySelectorAll:()=>[],setAttribute(){}},ctx={focus:null,A:{A:{id:'A',story:['first']}},portrait:()=>false,STATION:{compact:true},$:()=>node,hid(){},responsePaint(){},cuTarget:()=> 'A',cuSources:a=>seen.push([...a.story]),paints:0,cuPaint:()=>ctx.paints++,cuCapabilityRefresh(){},cuSendReason:()=>'',ofCurrent:()=>({history:{scope:'room'}}),OFUI:{docked:false,recipient:'watch'},OF:{busy:false},CU:{busy:new Set()},ofIn:{setAttribute(){}},txt(){},ofTab(){},cuChooserPaint(){},ofProgressPaint(){}};
+  const api=vm.runInNewContext(contextCode+placeCode+deskCode+';({desk,ofContextPaint})',ctx);api.desk();assert.deepEqual(seen,[['first']],'unvisited explicit room agent is reconciled once');assert.equal(ctx.paints,1,'one paint per room render');ctx.A.A.story.push('new SSE event');api.desk();assert.deepEqual(seen[1],['first','new SSE event']);assert.equal(seen.length,2);assert.equal(ctx.paints,2);delete ctx.A.A;api.desk();assert.equal(seen.length,2,'removed target does not redirect');assert.equal(ctx.paints,3);ctx.A.A={id:'A',story:['reconnected']};api.ofContextPaint();assert.deepEqual(seen[2],['reconnected'],'selection/context refresh works without a desk tick');assert.equal(ctx.paints,4);
+}
+roomSourceChecks();let missingRoom=false;try{roomSourceChecks(true)}catch(e){missingRoom=true}assert.ok(missingRoom,'room source omission mutation detected');
+console.log('ok shared lanes, canonical drafts, control context and unvisited room source refresh; four mutations detected');
+
+async function sharedSendChecks(){
+  const h=directHarness();h.ctx.focus=null;h.ctx.OFUI.target='x:B';await h.send();assert.equal(h.posts[0].b.agent,'x:B');assert.equal(h.ctx.watchCalls,0,'room explicit agent never falls through to WATCH');
+  const absent=directHarness();absent.ctx.focus=null;absent.ctx.OFUI.target=null;await absent.send();assert.equal(absent.posts.length,0);assert.equal(absent.ctx.watchCalls,0,'no target cannot become a WATCH request');assert.match(absent.lines[0].h,/no longer/);
+  const ctx={OF:{turns:[{role:'user',content:'Room history',context:{scope:'room'}},{role:'assistant',content:'Legacy history'},{role:'user',content:'Other history',context:{scope:'station',agent:'B'}},{role:'user',content:'Same history',context:{scope:'station',agent:'A'}}],busy:false},ofIn:{value:'New request'},ofSt:{textContent:''},DEMO:false,cuTurnMeta:()=>({}),cuDraftSave(){},ofContextPaint(){},ofReplyNotice(){},ofHistory:t=>t,ofDay(){},ofAdd(){},ofStatus(){},ofSave(){},ofShow(){},esc:String,ofAttributed:(c,h)=>h,ofCurrent:()=>({context:{scope:'station',agent:'A'},history:{scope:'station',agent:'A'}}),cuVisible:vm.runInNewContext(unifiedCode+';cuVisible')};
+  let body;ctx.post=async(p,b)=>{body=b;return {ok:true,json:async()=>({text:'Answer'})}};
+  const code=html.slice(html.indexOf('async function ofSend(){'),html.indexOf('/* response actions preserve'));const send=vm.runInNewContext(code+';ofSend',ctx);await send();assert.deepEqual(Array.from(body.turns,t=>t.content),['Same history','New request']);
+  ctx.ofCurrent=()=>({context:{scope:'room'},history:{scope:'room'}});ctx.ofIn.value='Room request';await send();assert.deepEqual(Array.from(body.turns,t=>t.content),['Room history','Legacy history','Room request']);
+}
+
+async function capabilityChecks(code=html.slice(html.indexOf('function cuCapabilityRefresh(){'),html.indexOf('function ofContextPaint(){'))){
+  let now=100,requests=[],paints=0;const ctx={DEMO:false,KEY:'owner',claiming:false,locked:false,connected:true,OFUI:{recipient:'agent',epoch:1},CU:{capability:null},A:{A:{runtime:'Codex'},B:{runtime:'Codex'}},target:'A',Date:{now:()=>now},AbortSignal:{timeout:()=>null},encodeURIComponent,cuTarget:()=>ctx.target,cuDirectReason:()=>'',ofContextPaint:()=>paints++,cuQueueReady:vm.runInNewContext(unifiedCode+';cuQueueReady'),fetch:(url,opts)=>new Promise((resolve,reject)=>requests.push({url,opts,resolve,reject}))};
+  const api=vm.runInNewContext(code+';({cuCapabilityRefresh,cuSendReason})',ctx),flush=()=>new Promise(resolve=>setImmediate(resolve)),reply=(index,agent,available=true)=>requests[index].resolve({ok:true,json:async()=>({agent,actions:{queue:{available,reason:available?'':'Target messaging unavailable',mode:'queue'}}})});
+  assert.match(api.cuSendReason('A'),/Checking/);api.cuCapabilityRefresh();assert.equal(requests.length,1);assert.match(requests[0].url,/agent=A/);assert.equal(requests[0].opts.headers['X-Live-Room-Key'],'owner');assert.match(api.cuSendReason('A'),/Checking/);
+  reply(0,'A');await flush();assert.equal(api.cuSendReason('A'),'');assert.equal(paints,1);
+  now=13200;api.cuCapabilityRefresh();assert.equal(requests.length,2);assert.equal(api.cuSendReason('A'),'','early renewal preserves still-valid same-target proof');api.cuCapabilityRefresh();assert.equal(requests.length,2,'only one renewal in flight');now=16000;api.cuCapabilityRefresh();assert.equal(requests.length,2,'hard expiry does not duplicate the in-flight request');assert.match(api.cuSendReason('A'),/Checking/,'hard expiry blocks even while early renewal remains in flight');requests[1].reject(Error('offline'));await flush();assert.match(api.cuSendReason('A'),/could not be checked/);assert.equal(ctx.CU.capability.queue,null,'failed refresh erases readiness');
+  ctx.OFUI.epoch++;api.cuCapabilityRefresh();assert.equal(requests.length,3);ctx.target='B';ctx.OFUI.epoch++;api.cuCapabilityRefresh();const current=ctx.CU.capability;reply(2,'A');await flush();assert.equal(ctx.CU.capability,current);assert.equal(current.status,'loading','late old target cannot enable current target');reply(3,'B');await flush();assert.equal(api.cuSendReason('B'),'');
+  ctx.OFUI.epoch++;api.cuCapabilityRefresh();ctx.KEY='new-owner';reply(4,'B');await flush();assert.match(api.cuSendReason('B'),/Checking/,'late previous room key cannot authorize send');api.cuCapabilityRefresh();reply(5,'B',false);await flush();assert.match(api.cuSendReason('B'),/Target messaging unavailable/);
+  ctx.connected=false;api.cuCapabilityRefresh();assert.equal(ctx.CU.capability,null);assert.match(api.cuSendReason('B'),/offline/);ctx.connected=true;api.cuCapabilityRefresh();requests[6].resolve({ok:true,json:async()=>({agent:'A',actions:{queue:{available:true,mode:'queue'}}})});await flush();assert.match(api.cuSendReason('B'),/could not be checked/,'misattributed capability response fails closed');
+  ctx.OFUI.epoch++;api.cuCapabilityRefresh();reply(7,'B');await flush();now+=13001;api.cuCapabilityRefresh();assert.equal(api.cuSendReason('B'),'');requests[8].reject(Error('refresh failed'));await flush();assert.match(api.cuSendReason('B'),/could not be checked/,'failed early renewal revokes even an otherwise unexpired proof');
+  ctx.OFUI.epoch++;api.cuCapabilityRefresh();ctx.connected=false;reply(9,'B');await flush();assert.equal(ctx.CU.capability,null,'successful response received while offline releases its current in-flight slot');ctx.connected=true;api.cuCapabilityRefresh();assert.equal(requests.length,11,'reconnect without an intervening paint can start a new request');reply(10,'B');await flush();assert.equal(api.cuSendReason('B'),'');
+}
+(async()=>{
+  await sharedSendChecks();await capabilityChecks();
+  const code=html.slice(html.indexOf('function cuCapabilityRefresh(){'),html.indexOf('function ofContextPaint(){'));
+  for(const [name,from,to] of [['stale refresh readiness','CU.capability=cap;','CU.capability=old||cap;'],['wrong capability target',"value.agent!==agent||",''],['refresh flicker',"status:retain?'ready':'loading'","status:'loading'"],['duplicate refresh','old.refreshing||','false||'],['stranded refresh','if(!connected||locked||claiming){CU.capability=null;return}','if(!connected||locked||claiming)return;']]){let caught=false;try{await capabilityChecks(code.replace(from,to))}catch(e){caught=true}assert.ok(caught,name+' mutation detected')}
+  console.log('ok shared direct send: explicit room target, no missing-target WATCH fallback, exact outgoing WATCH context; capabilities: load/expiry/failure, late target/key response, reconnect, malformed target, early renewal, singleflight and reconnect without paint; five mutations detected');
+})().catch(e=>{console.error(e);process.exitCode=1});
+
+async function handlerCapabilityChecks(code=directCode){
+  const h=directHarness(code),reason=html.slice(html.indexOf('function cuSendReason(id){'),html.indexOf('function ofContextPaint(){'));
+  h.ctx.OFUI.epoch=4;h.ctx.cuQueueReady=vm.runInNewContext(unifiedCode+';cuQueueReady');h.ctx.cuSendReason=vm.runInNewContext(reason+';cuSendReason',h.ctx);
+  let enter;h.ctx.ofIn.addEventListener=(type,fn)=>enter=fn;h.ctx.deskSubmitKey=vm.runInNewContext(deskHelpers+';deskSubmitKey');vm.runInContext(html.split('\n').find(line=>line.startsWith("ofIn.addEventListener('keydown'")),h.ctx);enter({key:'Enter',preventDefault(){}});await h.send();assert.equal(h.posts.length,0,'actual Enter and handler both block unverified availability');assert.equal(h.lines.length,0,'checking does not add a failure row');assert.equal(h.ctx.ofIn.value,'Please inspect','checking preserves the draft');
+  h.ctx.CU.capability={agent:'x:A',key:'key',epoch:4,status:'ready',queue:{available:true},expires:Date.now()+10000};await h.send();assert.equal(h.posts.length,1);
+  h.ctx.ofIn.value='Do not silently send after readiness expires';h.ctx.CU.capability.expires=0;await h.send();assert.equal(h.posts.length,1);
+}
+(async()=>{await handlerCapabilityChecks();let caught=false;try{await handlerCapabilityChecks(directCode.replace('const unavailable=cuSendReason(id);',"const unavailable='';"))}catch(e){caught=true}assert.ok(caught,'removing dispatch capability guard must fail');console.log('ok actual send handler fails closed before capability proof and after expiry; dispatch-guard mutation detected')})().catch(e=>{console.error(e);process.exitCode=1});
+
+/* WATCH navigation retains its conversation; late replies offer an explicit return without stealing drafts. */
+function watchNavigationChecks(mutate=false){
+  const h=directHarness(),ctx=h.ctx;Object.assign(ctx,{focus:null,OFUI:{recipient:'watch',scope:'room',target:null,epoch:1},CU:{drafts:new Map(),nodes:new Map(),serial:0},PROJ:null,order:['x:A','x:B'],pos:{},STATION:{compact:false},peekT:null,peek:null,clearTimeout(){},screenPose:()=>null,glideN:0,fly(){},apply(){},render(){},ofPlace(){},forget(){},cuChooserClose(){},ofEl:{classList:{contains:()=>false}},ofParas:String,ofAttributed:(c,h)=>h,ofCite:()=>'',ofOwnsFocus:()=>true,ofMayAct:(r,e,active)=>!r||r.epoch===e&&active,ofLabel:c=>c.scope==='room'?'Whole room':c.agent,ofToggle(){ctx.focusedInput=true}});
+  Object.assign(ctx,vm.runInNewContext(unifiedCode+';({cuDraftKey,cuLaneVisible})'));
+  for(const a of Object.values(ctx.A)){a.$={split:{style:{setProperty(){}}}};a.el={}}
+  ctx.ofCurrent=()=>({context:{scope:ctx.OFUI.scope},history:{scope:ctx.OFUI.scope}});
+  ctx.cuPaint=()=>{for(const r of ctx.CU.nodes.values())r.el.hidden=!ctx.cuLaneVisible(r,ctx.OFUI.recipient,ctx.cuTarget(),ctx.OFUI.scope)};
+  ctx.ofContextPaint=ctx.cuPaint;
+  ctx.ofAdd=(cls,markup,meta={})=>{const el={markup,button:{},querySelectorAll:()=>[],querySelector(){return this.button},remove(){this.removed=true}};ctx.CU.nodes.set(meta.id||'row:'+ ++ctx.CU.serial,{el,context:meta.context,kind:meta.kind||'watch',global:meta.global});ctx.cuPaint();return el};
+  const drafts=html.slice(html.indexOf('function cuDraftSave('),html.indexOf('function cuTurnMeta('));
+  const nav=html.slice(html.indexOf('function setFocus('),html.indexOf("$('#back').onclick"));
+  let act=html.slice(html.indexOf('function ofAct('),html.indexOf('/* Direct sending'));
+  if(mutate===true)act=act.replace("cuDraftSave();OFUI.recipient='watch';OFUI.scope=request?.history?.scope||'station';OFUI.epoch++;cuDraftRestore();ofContextPaint();",'');
+  let replies=html.slice(html.indexOf('function ofOpenContext('),html.indexOf('function ofLabel('));
+  if(mutate==='late')replies=replies.replace('if(!request?.history||','if(true||!request?.history||');
+  const show=html.slice(html.indexOf('function ofSuggestion('),html.indexOf('function ofDemoAnswer('));
+  vm.runInContext(drafts+nav+act+replies+show,ctx);
+  ctx.ofIn.value='room WATCH draft';const request={epoch:1,history:{scope:'room'}};
+  vm.runInContext('ofShow({text:"Room answer",actions:[{do:"go_to",agent:"x:A"}]},'+JSON.stringify(request)+')',ctx);
+  assert.equal(ctx.focus,'x:A');assert.equal(ctx.OFUI.recipient,'watch');assert.equal(ctx.OFUI.scope,'room');assert.equal(ctx.ofIn.value,'room WATCH draft');
+  assert.equal([...ctx.CU.nodes.values()].filter(r=>!r.el.hidden).length,2,'answer and Done receipt remain visible');
+  vm.runInContext('ofSuggestion({do:"go_to",agent:"x:B"},'+JSON.stringify(request)+')',ctx);[...ctx.CU.nodes.values()].at(-1).el.button.onclick();
+  assert.equal(ctx.focus,'x:B');assert.equal(ctx.OFUI.recipient,'watch');assert.equal(ctx.OFUI.scope,'room');assert.equal(ctx.ofIn.value,'room WATCH draft');assert.ok([...ctx.CU.nodes.values()].filter(r=>!r.el.hidden).some(r=>r.el.markup.startsWith('Done')));
+  vm.runInContext('setFocus("x:A")',ctx);ctx.ofIn.value='new agent A draft';ctx.focusedInput=false;
+  vm.runInContext('ofShow({text:"Late room reply"},'+JSON.stringify(request)+')',ctx);
+  assert.equal(ctx.OFUI.recipient,'agent');assert.equal(ctx.ofIn.value,'new agent A draft');assert.equal(ctx.focusedInput,false,'late answer does not move keyboard focus');
+  const notice=[...ctx.CU.nodes.values()].find(r=>r.global);assert.ok(notice&&!notice.el.hidden);assert.match(notice.el.markup,/View WATCH update/);notice.el.button.onclick();
+  assert.equal(ctx.OFUI.recipient,'watch');assert.equal(ctx.OFUI.scope,'room');assert.equal(ctx.ofIn.value,'room WATCH draft');assert.equal(ctx.CU.drafts.get(ctx.cuDraftKey('x:A','agent','station')),'new agent A draft');assert.ok([...ctx.CU.nodes.values()].some(r=>r.el.markup.includes('Late room reply')&&!r.el.hidden));
+  const station={epoch:ctx.OFUI.epoch,history:{scope:'station',agent:'x:A'}};ctx.OFUI.scope='station';ctx.ofIn.value='WATCH A draft';
+  vm.runInContext('ofShow({text:"A station answer",actions:[{do:"go_to",agent:"x:B"}]},'+JSON.stringify(station)+')',ctx);
+  const returnA=[...ctx.CU.nodes.values()].find(r=>r.global);assert.ok(returnA&&!returnA.el.hidden,'cross-station navigation offers exact origin return');returnA.el.button.onclick();assert.equal(ctx.focus,'x:A');assert.equal(ctx.OFUI.recipient,'watch');assert.equal(ctx.ofIn.value,'WATCH A draft');
+}
+watchNavigationChecks();for(const mutation of [true,'late']){let caught=false;try{watchNavigationChecks(mutation)}catch(e){caught=true}assert.ok(caught,'WATCH navigation/reply notice mutation detected')}
+console.log('ok real WATCH actions: automatic/deferred room navigation retains answers/receipts, late replies preserve agent draft/focus, explicit exact-context return; two mutations detected');
+
+function chooserFocusChecks(mutate=false){
+  let code=html.slice(html.indexOf('function cuChooserClose('),html.indexOf('function ofTab('));
+  if(mutate===true)code=code.replace('if(held){','if(false){');
+  if(mutate==='selection')code=code.replace('ofContextPaint();ofIn.focus()','ofContextPaint()');
+  const doc={activeElement:null};class Node{constructor(){this.children=[];this.dataset={};this.hidden=false}setAttribute(){}focus(){doc.activeElement=this}contains(el){return this===el||this.children.includes(el)}replaceChildren(){if(this.contains(doc.activeElement))doc.activeElement=doc.body;this.children=[]}appendChild(el){this.children.push(el)}querySelector(){return this.children.find(n=>n.type==='button')}}doc.body=new Node();doc.createElement=()=>new Node();
+  const list=new Node(),trigger=new Node(),input=new Node(),ctx={document:doc,order:['A','B'],A:{A:{name:'Ada',runtime:'Codex'},B:{name:'Bram',runtime:'Codex'}},OFUI:{epoch:0},$:s=>s==='#cuAgentChoices'?list:trigger,cuDraftSave(){},cuDraftRestore(){},ofContextPaint(){},ofIn:input};
+  const api=vm.runInNewContext(code+';({cuChooserPaint,cuChooserClose})',ctx);api.cuChooserPaint();list.children[1].focus();ctx.A.B.name='New name';api.cuChooserPaint();assert.equal(doc.activeElement.dataset.target,'B','rename keeps focus on chosen target');delete ctx.A.B;api.cuChooserPaint();assert.equal(doc.activeElement.dataset.target,'A','removed focused target falls back to first option');list.children[0].onclick();assert.equal(doc.activeElement,input,'selection focuses composer');assert.equal(ctx.OFUI.target,'A');assert.equal(list.hidden,true);list.hidden=false;api.cuChooserClose();assert.equal(doc.activeElement,trigger,'Escape/cancel returns to trigger');list.hidden=false;api.cuChooserPaint();list.children[0].focus();delete ctx.A.A;api.cuChooserPaint();assert.equal(doc.activeElement,trigger,'empty chooser retains useful keyboard focus');
+}
+chooserFocusChecks();for(const mutation of [true,'selection']){let caught=false;try{chooserFocusChecks(mutation)}catch(e){caught=true}assert.ok(caught,'chooser focus mutation detected')}
+console.log('ok chooser focus: repaint/rename/removal, empty fallback, selection composer and cancel trigger; two mutations detected');
+
+async function watchTerminalNoticeChecks(mutate=false){
+  let send=html.slice(html.indexOf('async function ofSend(){'),html.indexOf('/* response actions preserve'));
+  if(mutate)send=send.replace('ofContextPaint();ofReplyNotice(request);if(ofSt','ofContextPaint();if(ofSt');
+  const notice=html.slice(html.indexOf('function ofOpenContext('),html.indexOf('function ofLabel(')),drafts=html.slice(html.indexOf('function cuDraftSave('),html.indexOf('function cuTurnMeta('));
+  for(const outcome of ['http','json','network']){
+    let finish;const ctx={focus:null,A:{A:{name:'Ada'}},OFUI:{recipient:'watch',scope:'room',epoch:1},CU:{nodes:new Map(),drafts:new Map(),serial:0},OF:{turns:[],busy:false},DEMO:false,ofIn:{value:'Room question'},ofSt:{textContent:''},ofDay(){},ofHistory:t=>t,cuTurnMeta:()=>({}),esc:String,ofAttributed:(c,h)=>h,ofStatus:t=>ctx.ofSt.textContent=t,ofLabel:c=>c.scope==='room'?'Whole room':c.agent,ofSave(){},ofShow(){throw Error('failure must not render a success')},ofToggle(){ctx.focusMoves++},focusMoves:0};
+    Object.assign(ctx,vm.runInNewContext(unifiedCode+';({cuVisible,cuLaneVisible,cuDraftKey})'));
+    ctx.cuTarget=()=>ctx.focus;ctx.ofCurrent=()=>({context:{scope:ctx.OFUI.scope},history:{scope:ctx.OFUI.scope},epoch:ctx.OFUI.epoch});
+    ctx.ofContextPaint=()=>{for(const r of ctx.CU.nodes.values())r.el.hidden=!ctx.cuLaneVisible(r,ctx.OFUI.recipient,ctx.focus,ctx.OFUI.scope)};
+    ctx.ofAdd=(c,h,m={})=>{const el={html:h,button:{},querySelector(){return this.button},remove(){this.removed=true}};ctx.CU.nodes.set(m.id||'row:'+ ++ctx.CU.serial,{el,kind:'watch',context:m.context,global:m.global});ctx.ofContextPaint();return el};
+    ctx.post=()=>new Promise(resolve=>{finish=()=>resolve(outcome==='http'?{ok:false,status:503,text:async()=> 'Officer unavailable'}:outcome==='json'?{ok:true,json:async()=>({error:'Service error'})}:Promise.reject(Error('transport failed')))});
+    const api=vm.runInNewContext(drafts+notice+send+';({ofSend,ofReplyNotice})',ctx);const pending=api.ofSend(),request=ctx.OF.pending;ctx.focus='A';ctx.OFUI.recipient='agent';ctx.OFUI.scope='station';ctx.OFUI.epoch++;ctx.ofIn.value='Unsent agent draft';finish();await pending;
+    assert.equal(ctx.OFUI.recipient,'agent');assert.equal(ctx.ofIn.value,'Unsent agent draft');assert.equal(ctx.focusMoves,0,'late '+outcome+' failure cannot steal focus');
+    assert.equal([...ctx.CU.nodes.values()].filter(r=>r.global).length,1,'terminal completion produces notice');api.ofReplyNotice(request);assert.equal([...ctx.CU.nodes.values()].filter(r=>r.global).length,1,'one notice per completed request');const rows=[...ctx.CU.nodes.values()],link=rows.find(r=>r.global);assert.ok(link&&!link.el.hidden,outcome+' outcome offers visible exact-context return');assert.match(link.el.html,/View WATCH update/);assert.ok(rows.some(r=>r.el.hidden&&r.el.html.includes(outcome==='http'?'Officer unavailable':outcome==='json'?'Service error':'Do not repeat')),'actual failure text stays in its original WATCH context');
+    link.el.button.onclick();assert.equal(ctx.OFUI.recipient,'watch');assert.equal(ctx.OFUI.scope,'room');assert.equal(ctx.CU.drafts.get(ctx.cuDraftKey('A','agent','station')),'Unsent agent draft');assert.ok([...ctx.CU.nodes.values()].some(r=>!r.el.hidden&&r.el.html.includes(outcome==='http'?'Officer unavailable':outcome==='json'?'Service error':'Do not repeat')));
+  }
+}
+(async()=>{await watchTerminalNoticeChecks();let caught=false;try{await watchTerminalNoticeChecks(true)}catch(e){caught=true}assert.ok(caught,'missing terminal WATCH notice mutation detected');console.log('ok actual WATCH HTTP503, JSON error and transport rejection notify after navigation; no focus/draft theft, exact context return; terminal notice mutation detected')})().catch(e=>{console.error(e);process.exitCode=1});
