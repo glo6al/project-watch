@@ -1,83 +1,106 @@
 # Roadmap
 
-W.A.T.C.H. is a working study. This lists what exists, what has not been proven, where it is going, and what comes next. Nothing here is a commitment.
+**One workspace for your AI conversations—across Claude, Codex, Cursor, and more.**
 
-## Built
+WATCH brings supported sessions, their context, and their available capabilities into one interface. The room provides an overview; the desk brings a conversation and its work together. Multi-agent supervision is one use of that workspace. The broader goal is to help you find, understand, and continue a conversation without having to remember which tool holds it.
 
-- A room of monitors, one per Claude Code, Codex or Cursor agent, grouped by family: an agent, the agents it is recorded or inferred to have started, and runs that are only related to it by working in the same folder. Each kind is labelled.
-- One curved row, however many agents there are. The camera stands where it would for five, so the monitors in front of you keep about that size however many there are (measured in a browser for up to twelve, not beyond); the rest of the row curves round out of frame, and you turn to it (two-finger scroll, drag, or the arrow keys). The fleet strip at the top is the map: one chip per project, one lit cell per agent.
-- Per agent: what it has open, edits as diffs, commands and their output, what it said, your messages, and a rendered preview of HTML it writes.
-- A desk view for one agent: a timeline of what it did and said grouped under each of your messages, your messages (click one to scroll the timeline to that point), chain of command (marked where it is inferred), four screens (Saying / Doing / Seeing / Changing), and recorded facts such as model, branch and approval setting.
-- Notices when an agent is waiting on you, alerts when a command looks like a deploy, push, delete or send, and a five-minute activity strip coloured by kind of action.
-- Optional: answering Claude Code permission prompts from the desk (off by default), and opening a session in its desktop app.
-- Shared recipient choices in the room and desk: direct agent messages queue, while requests to WATCH use the Officer. Drafts and histories retain their recipient and context.
-- Officer requests to steer or interrupt an existing local Codex desktop conversation on the verified macOS build. Live bridge tests confirmed receipt of steering during a running turn and interruption of an exact disposable turn. The adapter rejects unverified builds; Claude Code controls remain unresolved.
-- Trackpad gestures in Chrome; a desk layout for tall, narrow screens.
-- The room in a terminal (`src/watch_tty.py`): a read-only board and event tail from the same stream the page reads, with a bell when an agent starts waiting and a one-line count for a status bar. In iTerm2, `--tab` opens the board in a new tab with its own profile, and the board opens one tab per agent with that agent's log (or, with `--split`, one pane per agent in the board's tab); a tab or pane turns amber while its agent waits on you. Not yet reviewed (see below).
+This is a working study. The sections below distinguish shipped behavior, investigated gaps, proposed priorities, and longer-term ideas. Priorities are a direction for planning, not release dates or promises of access to a provider's private interfaces. The [README capability table](../README.md#current-provider-capabilities) is the reference for what users can do today.
 
-Added on 2026-10-05 and reviewed since:
+## Available today
 
-- **Attention outside the page**: a count of waiting agents in the browser tab title, and an optional system notification when an agent starts waiting on you.
-- **Context gauge**: tokens in use per agent, from the counts both tools log. A bar is drawn only against a reference the log gives: the model's window (Codex), or, for Claude, the size at which that session last summarised itself, which is history, not a limit. A count the log does not state is shown as not recorded.
-- **Summarisation marker**: where a session was summarised and continued, with the sizes when recorded.
-- **Step timing**: how long the current step has run, flagged when far beyond what is usual for that agent.
-- **Stop and SubagentStop hooks**: Claude Code tells the room when it is about to stop. That is provisional, so the room marks the end as "reported by its hook" until the log agrees.
+- **Supported local sessions:** observation of Claude Code and Codex session logs and Cursor transcripts. Recently active sessions appear by default; this is not an import of every chat or full account history. Codex cloud work on this computer has command observation only.
+- **A shared conversation interface:** recorded messages with formatted responses, provider labels, project context, and parent–child relationships. The conversation is central at the desk; the composer remains plain text.
+- **Work beside the conversation:** a sliding, resizable panel with Preview, Changes, and Activity. Evidence is limited to what the provider records; Changes shows recorded edits, not the Git working tree. Narrow layouts switch between conversation and work.
+- **Overview and attention:** the room, project filters, compact agent navigation, fixed Alerts/Activity controls, possible-request notices, and optional browser notifications. Relationships and requests are labelled as recorded or inferred.
+- **Original and Neutral themes:** the same interaction model with different palettes. Original remains the default.
+- **Direct messaging where verified:** messages queue to eligible existing local Codex chats. Room and desk share recipient-specific drafts, histories, and delivery records. New messages to named Claude chats are disabled because exact conversation targeting is unverified; recovery of existing requests remains available.
+- **The Officer of the Watch:** questions about recorded context, cited evidence, and explicit supported message/control requests. Local Codex steering and interruption are available through WATCH on the verified macOS desktop build. This sends a new instruction or stops a turn; it does not promote an existing queued message.
+- **Questions and permissions:** optional Claude Code permission hooks support Allow/Deny when Answer here is enabled. Supported native Codex questions and selected model/effort can be observed on the verified build; answering those questions or changing those settings is not enabled.
+- **Optional peer messaging:** the shared MCP bridge allows connected clients to address reachable Codex chats. Claude clients can send through it, but Claude chats cannot currently receive bridge messages. Peer messages confer no new authority and cannot invoke controls.
+- **Recorded session facts:** model, branch, context counts, summarisation markers, step timing, and stop hooks where available. Missing facts are shown as not recorded.
+- **A read-only terminal view:** a board and event tail from the same stream, plus optional iTerm2 tabs or panes. Its validation limitations are listed below.
 
-## Not yet proven
+## Priorities
 
-- Windows: only the automated tests have run there, in CI (the Python suite exercises the key, the preview checks, including a junction inside and in place of a granted folder, and the port directly; the Node test runs the page's path helpers). The application has not been started on Windows, its page has not been opened in a Windows browser, and no real agent logs have been read there. The port had an independent review before it was opened as a pull request (a hard link to the key inside a previewed folder was served, on both systems; Windows opened a file before checking for links) and a second at merge (a folder differing only in case could pass the Windows containment check; the granted folder could be swapped between two checks, and a walk by name cannot be made atomic, so folder grants were withdrawn on Windows; checks that follow links ran before those that do not; macOS path handling had changed); each round was repaired, and the findings are listed in the pull request. Still unverified there: whether a just-stopped server holds its port for a minute or two; 8.3 short names and `subst` drives in a preview path (not tried; a spelling other than the granted one is refused). Alternate data streams are refused by name (a second colon). On every system a grant records a file id, which a filesystem may reuse after the file is deleted.
-- Allow and Deny have each been seen working once on a real Claude Code permission prompt (held in the room, the click reached Claude; Allow ran the command, Deny stopped it). What the Claude app shows while the room holds a prompt has not been recorded. While answering is on, every Claude session's permission requests wait in the room first.
-- Trackpad gestures have only been tested with synthetic events, not on a real trackpad.
-- The "Open in Claude / Codex" links have not been tested end to end, or clicked by the author.
-- Every state that reaches the published repository has been through at least one independent review before publication, read-only: no real server start, unlock, hook install or live permission decision is exercised by those reviews. Anything changed after the latest review has not been independently reviewed. Previews are known not to render inside the Claude desktop app's built-in browser pane, which blocks that frame; they render in Chrome.
-- The terminal view (`src/watch_tty.py`) reads the key and prints log text. It has had one independent review (one HIGH: the key could reach an HTTP proxy; three MEDIUM; ten LOW), and every finding was fixed; the fixes themselves have not been reviewed again. The amber tab and badge have been checked as the codes it writes, not yet seen on a real waiting agent.
-- Rendering performance with many agents and large previews has not been measured.
-- Allow and Deny have been seen end to end on a real prompt once each; what the Claude app shows while the room holds a prompt has not been recorded. The "Open in Claude / Codex" links have not been clicked by the author.
+### 1. Make supported conversations easy to find and return to
+
+The first product priority is dependable access to existing sessions across tools. The current activity window is useful for watching work, but is not a complete conversation library.
+
+- Improve session discovery and navigation across providers and projects, with a clear distinction between a session, its child agents, and other sessions sharing a folder.
+- Make recorded-history coverage and unavailable content understandable before someone mistakes a partial transcript for the full conversation.
+- Design persistent history and search across sessions as an extension of the workspace. WATCH can answer from retained context today; durable searchable history and full-account imports are not shipped.
+
+**Completion criterion:** a user can identify the intended supported session, see where it comes from and how much history is available, and return to it without confusing it with another conversation. Any new storage needs explicit retention and privacy rules.
+
+### 2. Make actions reliable within the conversation
+
+Provider integration work is already under investigation; these are unresolved capabilities, not completed features waiting for a button.
+
+- **Claude messaging:** establish a delivery route bound to the exact selected conversation. A connected process that can switch chats is insufficient. The same targeting proof must apply to owner messages and the peer bridge.
+- **Queued-message steering:** send normally, then offer **Steer** on the queued message when supported. WATCH uses that term across providers. Steering must consume that exact queued message once, without also leaving it to run later. If the run has finished, deliver normally. No provider-specific wording or substitute stop-only action should stand in for this flow.
+- **Native questions and settings:** evaluate supported ways to answer ordinary questions and change selected model/effort, preserving the distinction between a selection for the next turn and the model recorded for past work.
+- **Capability clarity:** keep observation, messaging, steering, interruption, question answering, and permission approval separate. An unavailable action needs an explanation and an appropriate route back to the original tool when available.
+
+**Completion criterion:** each enabled action targets the intended session, exposes pending/confirmed/uncertain outcomes, survives retries without duplicate effects, and passes independent review and provider-specific verification. Direct actions should be available where the user is conversing, without requiring an Ask WATCH detour.
+
+### 3. Broaden provider and conversation coverage
+
+Depth of support matters as much as adding a provider name. Candidates must expose a usable, verifiable source of conversation data or an action interface. No unverified integration is promised.
+
+| Connection | Current boundary | Next support question |
+| --- | --- | --- |
+| Local Codex | Logs, eligible queued messages, verified active-turn controls; native reads only | Can WATCH safely promote the exact queued message and support native replies/settings? |
+| Claude Code | Logs and optional permission hooks; new named-chat messages disabled | Can delivery remain bound to the selected chat across clear, resume, and fork? |
+| Cursor | Transcript observation without tool results or direct messaging | What verified routes exist for session targeting, results, and actions? |
+| Codex cloud on this computer | Local commands only, no conversation | Is there an authorized interface for conversation history and actions? |
+| Ordinary web chats and additional providers | Not imported | What access, permissions, and session identity guarantees are available? |
+
+**Completion criterion:** every added connection has an explicit support matrix, visible limitations, a defined privacy boundary, and tests against real supported behavior. A provider badge must never imply all of its chats or capabilities are available.
+
+### 4. Deepen work context and coordination
+
+Once users can reliably find and interact with existing sessions, extend what they can do across them:
+
+- Git state per coding session: branch, uncommitted files, and attributable changes as a basis for possible editing conflicts.
+- Start a session with a prompt, files, a folder, and a provider where supported.
+- Explicit handoffs and independent review verdicts linked to the relevant conversation and work. The existing peer bridge is a transport foundation, not a complete coordination workflow.
+- Optional holds on deploy, push, and delete, only after the approval interface and provider hook behavior are verified. This expands the permission boundary and remains a later investigation.
+
+**Completion criterion:** coordination preserves the selected session, owner intent, evidence, and delivery state. It must not create implicit authority between agents or silently move work to another provider.
+
+## Validation and platform work
+
+These run alongside the product priorities; broader messaging support does not remove them.
+
+- **Windows:** automated tests run in CI, but the application has not been validated on a Windows desktop with real logs or a browser. Hooks and Officer requests are not available there. Preview assets need a directory-handle-based folder walk; until then previews serve the page alone, with Python 3.12 or later required. File IDs can be reused after deletion; 8.3 names, `subst` drives, and restart/port behavior still need testing. See the [README](../README.md#windows) and [Windows guide](WINDOWS.md) for setup and current restrictions.
+- **Real devices and scale:** measure large session collections and previews; test actual trackpad gestures, physical phones, and short windows. Browser emulation and synthetic gesture events do not establish those results.
+- **Provider operations:** the recorded live checks cover specific Codex steering/interruption cases and one Allow and one Deny on real Claude prompts. Expand coverage of provider updates, unavailable or stale targets, lost replies, and the native app's behavior while a request is held. Open-in-app links still need end-to-end validation.
+- **Preview compatibility:** previews are known not to render in Claude desktop's built-in browser pane; they render in Chrome. This needs continued compatibility testing, not a claim of universal browser support.
+- **Terminal view:** its first independent review findings were repaired, but the repairs have not had a second review. Amber tabs and badges have been checked as output codes, not against a real waiting agent.
+- **Publication:** changes require independent review. Public examples and recordings use fictional data; live conversation text and command output can contain personal paths. Private investigation evidence stays local and ignored.
 
 ## Known limits
 
 - Granularity is whatever the logs record: tool calls, their results, messages and turn boundaries, never keystrokes. For Codex, a step in flight is read from script text and marked unconfirmed until its finished record arrives. Hidden reasoning is not shown, because it is not in the logs.
 - "No log entry for N" means the log is silent; it does not prove an agent is idle.
-- Touching a log whose last timed record is outside the window does not make it active: for Claude Code and Codex the last timed record decides, by the log's own clock, so a log written by a clock more than the window behind this machine's stays out; what touched nine Claude sub-agent logs at once on 2026-10-13 is not known.
+- Touching a log whose last timed record is outside the window does not make it active: for Claude Code and Codex the last timed record decides, by the log's own clock, so a log written by a clock more than the window behind this machine's stays out.
 - Which agent started which is recorded for some cases and inferred for others; inferred links are labelled.
 - Alerts and "probably needs you" notices are heuristics and can be wrong in either direction.
 - Codex: messages between agents can be encrypted in its log, and permission prompts are not visible. WATCH tracks questions it queues itself; this does not expose every queue in Codex.
-- The Officer of the Watch answers only from what the room keeps (the last few thousand steps), so a question about earlier work gets "not in the logs"; its answers are a model's reading of those steps and can be wrong, which is why the entries it consulted are shown beside each answer. Voice is version 2. Not offered on Windows yet (the key file's owner and permissions are not checked there).
-- Codex cloud agents keep no transcript on this computer. Their monitor is read from the process list (the ChatGPT app's `codex exec-server`, which OpenAI marks experimental): commands and folders as they run, never their words, what they read, what they changed, or whether a command succeeded. The list is sampled about once a second, so a shorter command can be missed; of several new commands at once the oldest four are examined first, so a short-lived one among the rest can be missed; a process is told from another by pid and start time to within a few seconds; the monitor says when the list cannot be read. Not on Windows. A Changing screen for such an agent would need an OS file watcher with a trustworthy record of who wrote what; three reviews showed a folder listing cannot give that honestly, so it is not attempted.
+- The Officer of the Watch answers only from what the room keeps (the last few thousand steps), so a question about earlier work gets "not in the logs"; its answers are a model's reading of those steps and can be wrong, which is why the entries it consulted are shown beside each answer. Voice is not available. Not offered on Windows yet (the key file's owner and permissions are not checked there).
+- Codex cloud agents keep no transcript on this computer. Their monitor is read from the process list (the ChatGPT app's `codex exec-server`, which OpenAI marks experimental): commands and folders as they run, never their words, what they read, what they changed, or whether a command succeeded. The list is sampled about once a second, so a shorter command can be missed; of several new commands at once the oldest four are examined first, so a short-lived one among the rest can be missed; a process is told from another by pid and start time to within a few seconds; the monitor says when the list cannot be read. Not on Windows. A Changes view for such a session would need an OS file watcher with a trustworthy record of who wrote what; three reviews showed a folder listing cannot give that honestly, so it is not attempted.
 - Another program running as the same user that can read `~/.live-room/` or drive the browser can do what you can do here. Closing that needs an operating-system boundary this tool does not have.
 - macOS; Windows only in CI's automated tests: the application has not been run on a Windows desktop, and has no hooks (so no Allow / Deny) there yet. Phone-width layouts have been checked in browser emulation; physical phones and very short windows still have limited coverage.
-- Known and left as they are: only the last ~200 KB of a log is replayed on first sight (the log panel says "earlier history not loaded" when steps are missing); the row re-spaces when agents come and go; interrupting a camera move jumps to its target; content shifts when a notice bar appears; a window opened late does not learn of calls, questions, queues or plans already in flight; timeouts are for inactivity, not total time; the installer cannot fully rule out another program saving `settings.json` in the instant it writes; the review history is kept in the project's private archive, not here.
+- Known and left as they are: only the last ~200 KB of a log is replayed on first sight (the log panel says "earlier history not loaded" when steps are missing); the row re-spaces when agents come and go; interrupting a camera move jumps to its target; content shifts when a notice bar appears; partial log replay cannot reconstruct every earlier in-flight call or plan; the installer cannot fully rule out another program saving `settings.json` in the instant it writes; the review history is kept in the project's private archive, not here. WATCH-owned message and control records have separate persisted status recovery.
 
-## Direction
 
-W.A.T.C.H. is becoming a command post: one room where a person can both watch and act. Today it watches, can answer Claude Code permission prompts from an opted-in window, can queue an explicitly requested question to a local Codex session, and can steer or interrupt an existing Codex desktop turn on the verified macOS build. New messages to named Claude chats are disabled because the channel identifies a process that can switch conversations. Existing request recovery remains available. Promoting an existing queued Codex message into the active turn is also unavailable; Officer steering sends a new instruction. The room reads the logs Claude Code and Codex write and shows every agent's work as it happens, labelled by how it was learned. The acting half comes next, and the room's rules carry over to it: the person stays in charge, every action is opt-in, nothing is done on an agent's say-so, and the page never claims more than the log and the tool confirm.
+## Longer-term ideas
 
-Three stages, in order:
+- A visible record of a correction reaching a session and the work that followed it.
+- A rough running cost estimate where usage and pricing inputs are available.
+- A room overview that uses portrait-screen height more effectively.
+- Broader transcript fixtures and provider compatibility checks.
 
-1. **Watch.** One monitor per agent, across tools. This stage exists. It keeps improving, but it is the base the others stand on.
-2. **Act.** From the room: start an agent with a prompt and files, answer what it is waiting on, stop it, and, where a tool offers a way in, speak to one that is already running. Each tool allows a different amount of this; the room shows what is possible for each and never pretends the rest.
-3. **Coordinate.** Many agents, many providers, one interface: Claude, Codex, and whichever others expose a readable log or a way to be driven (Perplexity, Qwen and the like are the obvious next candidates). Hand work from one to another, see one's verdict land on another's monitor, and keep the whole fleet in view.
+## Rules that carry forward
 
-Each action that reaches an agent widens the trust boundary. Permission decisions remain opt-in per window. Officer messages and controls require an explicit current owner request through the authenticated room; log-reading tools cannot invoke them. Changes receive independent review before publication.
-
-## Next
-
-Not started, in this order:
-
-1. **Git state per agent**: branch, uncommitted files, commits made this session; also the honest basis for "two agents are editing the same file".
-2. **Start an agent from the room**: a prompt, files, a folder and a provider; the new session appears on its own monitor with its parent recorded, not inferred. The first action beyond answering a prompt.
-3. **A held hand on deploy, push and delete**: a hook that holds such a command until you confirm. Deliberately held back until the approval interface has passed review, because it widens that surface.
-4. **Saved history**: "what did I miss", rewind the room and play it forward, an end-of-day summary per agent, search across agents.
-5. **More providers**, one at a time, each only as far as its logs and interfaces honestly allow.
-6. **Windows preview assets**: a folder walk pinned through Windows directory handles (ctypes), so a page's styles, scripts and images can be served there with the same guarantee as on macOS. Until then a Windows preview is the page alone.
-
-## Ideas
-
-- Corrections landing: show a correction of yours reaching (or not reaching) each agent, and what each agent did before and after it.
-- Review verdicts: an independent reviewer's pass or blockers appearing on the author's monitor.
-- Rendered Markdown, the way HTML is rendered now.
-- A rough running cost per agent (needs your pricing; the logs give tokens only).
-- A room overview that uses the height of portrait screens.
-- More automated tests for the log readers: the command parser and a Cursor transcript are covered, Claude and Codex logs are not.
-
-Unknown: whether Codex exposes its permission prompts; what each further provider records.
+The person stays in charge. A conversation, log entry, or peer message cannot authorize new actions. Permission decisions remain opt-in per window; messaging and controls require an explicit owner request through an authenticated route. Recorded, inferred, accepted, delivered, answered, and completed are different states. WATCH must preserve those differences as support grows.

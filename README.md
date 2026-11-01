@@ -6,7 +6,7 @@
 </p>
 
 <p align="center">
-  <b>Window on Agents, Tools, Changes and Hand-offs.</b><br> A room of monitors, one per coding agent, showing what each one is doing <i>while</i> it is doing it.
+  <b>One workspace for your AI conversations—across Claude, Codex, Cursor, and more.</b><br> Follow conversations, inspect work, and use each provider’s supported capabilities from one place.
 </p>
 
 <p align="center">
@@ -27,18 +27,24 @@ The recording uses fictional agents and projects. The desk centers the conversat
 
 ## Why this exists
 
-You can run several coding agents at once now. What you cannot easily do is watch them. Each one lives in its own terminal or app window, and the record of what it did is a transcript you read afterwards, once it has finished building the thing. By then the decision you would have questioned is three steps back, and the file it should not have touched has already changed.
+Your AI conversations live in separate tools. A discussion in Claude, a coding session in Codex, and a task in Cursor each have their own window, history, and controls. Returning to the right conversation means remembering where it lives, what you asked, and what happened since you last looked.
 
-W.A.T.C.H. is situational awareness for the time in between. Claude Code, Codex and Cursor each write a session log as they work. W.A.T.C.H. reads those logs as they are written and turns them into a room you can stand in: one monitor per agent, each showing what that agent has open, what it just ran, what it changed, what it said, and whether it is waiting on you. You glance along the row the way you would glance along a row of desks. When one of them needs a look, you step up to it.
+W.A.T.C.H. brings supported sessions into one interface, with their conversations, recorded work, and available actions together. You can move between sessions without losing which provider or project they belong to. When a session has agents working beneath it, their relationships and activity stay visible too. Managing several running agents is one use of that workspace; returning to a conversation and understanding its context is another.
 
-Today it watches, can answer Claude Code permission prompts through optional hooks, and can queue messages to an existing local Codex conversation. Through the Officer of the Watch, it can also steer or interrupt a Codex active turn on a verified desktop build. **A Steer action on an already queued message is not available.** It is the window beside your agents’ windows. (It suits a second screen, left open while you work with the agents on the first.) Where it is going is a command post, one room where you both see your agents and act on them, across providers. The [roadmap](docs/ROADMAP.md) sets that out, and the rules do not change on the way: the person stays in charge, every action is opt-in, and the page never claims more than the log confirms.
+The **room** gives you an overview of sessions and anything that may need your attention. Step up to a **desk** to read a conversation, inspect its work alongside it, and use the actions supported by that connection. **Ask WATCH**, the Officer of the Watch, helps you understand the recorded context and carry out explicit supported requests. The name stands for *Window on Agents, Tools, Changes and Hand-offs*.
+
+### What is supported today
+
+The current release starts with locally recorded coding sessions: **Claude Code, Codex, and Cursor**. It follows recently active sessions by default, not every historical chat in your provider accounts. Codex cloud work running on this computer has limited command observation, without its conversation. Ordinary Claude web chats, ChatGPT chats, and other providers’ full account histories are not imported.
+
+Reading a session does not mean WATCH can send to it or control it. Today, eligible local Codex chats support queued messages and some active-turn controls; Claude Code supports optional permission answering. The [capability table](#current-provider-capabilities) spells out the differences. Broader conversation coverage and provider actions are on the [roadmap](docs/ROADMAP.md), not implied by appearing in the room.
 
 ## What you can see
 
-Everything on screen comes from the tools' own records: their session logs, the messages the optional hooks send, and the apps' metadata files (session titles, settings, when you last focused a session). Rendered previews are read from disk at the moment they are shown. Each item is labelled by how it got there.
+For supported sessions, WATCH brings together the available conversation and work evidence. These views come from session logs, optional hooks, app metadata, and records of your interactions through WATCH. Rendered previews are read from disk when shown. Coverage varies by provider; each item is labelled by how it was learned.
 
-- **Per agent, as it happens:** what it is saying, as the log records each message; the file it has open, edits shown as diffs, commands and their output; your messages to it; and a rendered preview of any HTML it writes. In the room and in hand, a monitor shows the narration with your last message to that agent pinned above it in one line, so you know what you asked without stepping up.
-- **Who is waiting on you**, and for what: a permission prompt, a question, a plan to approve. These are recorded facts, from the log or from a hook message, shown with the request text.
+- **The conversation and its work:** what it is saying, as the log records each message; the file it has open, edits shown as diffs, commands and their output; your messages to it; and a rendered preview of any HTML it writes. In the room and in hand, a monitor shows the narration with your last message to that agent pinned above it in one line, so you know what you asked without stepping up.
+- **What needs your attention:** permission prompts, questions, and plans to review, shown with the recorded text. Confirmed requests are distinguished from notices inferred from a message, which are labelled as possible.
 - **Who is working**, with the step that is open, for as long as the turn runs.
 - **Who stopped, and where:** an idle monitor carries a caption with the agent's last words, a failed last step, or the request it is waiting on.
 - **The goal:** each monitor carries the first message of the session that was read, as a one-line reminder of what that agent is for.
@@ -48,7 +54,7 @@ Everything on screen comes from the tools' own records: their session logs, the 
 - **Readouts** the log states: model, branch, approval setting, context in use, when the session began, when you last spoke to it.
 - **Answers, when you ask:** the Officer of the Watch, available in the room and in the selected station’s conversation, answers plain-English questions from the same logs: what you missed since some minutes ago, what an agent did, whether anything is stuck, who is waiting on you, who changed a file. It keeps each record's own qualifications ("started", "tried to", "probably", "outcome not recorded"), shows the entries it consulted, and can draft a Watch rule for you to keep with one button. It needs an Anthropic API key on this machine; without one it stays off and says why.
 
-The desk puts one conversation in the monitor, with compact agent navigation on the left and recorded session facts on the right. Choose the agent to send a message directly, or Ask WATCH about the station or room. **Work** slides open beside the conversation: **Preview** shows recorded visual evidence, **Changes** shows recorded edits, and **Activity** combines the current step with the full activity log. Drag the divider, or use its arrow keys, to adjust the work area. Preview may read the current file from disk; Changes is log evidence, not a Git working-tree diff.
+The desk puts one conversation in the monitor, with compact agent navigation on the left and recorded session facts on the right. Choose the agent to send a message when that connection supports it, or Ask WATCH about the station or room. **Work** slides open beside the conversation: **Preview** shows recorded visual evidence, **Changes** shows recorded edits, and **Activity** combines the current step with the full activity log. Drag the divider, or use its arrow keys, to adjust the work area. Preview may read the current file from disk; Changes is log evidence, not a Git working-tree diff.
 
 Agent responses support formatted text, including headings, lists, tables, links and code blocks. The composer stays plain text: Enter sends, and Shift+Enter adds a line. The agent list scrolls independently of the **Alerts** and **Activity** controls at its foot.
 
@@ -68,6 +74,10 @@ Observation does not imply messaging or control support. Codex messaging, contro
 | Answer permission prompts in WATCH | Unavailable | Optional permission hooks, with **Answer here** enabled | Unavailable | Unavailable |
 
 You can still open an unsupported desk, inspect the evidence available there, and ask WATCH about it when the Officer is configured. Direct **Send** stays disabled with an explanation. Use the original app for unsupported actions; **Open in…** works only where WATCH has a supported route.
+
+### Where support goes next
+
+The next priorities are easier discovery and return to supported sessions, reliable messaging and steering across providers, and a clearer view of what each connection can do. Claude exact-chat targeting and promoting a queued message with **Steer** need verified delivery routes before they can be enabled. Cursor actions and additional providers remain exploratory. Persistent cross-session history and search are planned; starting sessions and coordinating work across them come later. See the [roadmap](docs/ROADMAP.md#priorities) for scope and completion criteria.
 
 ## What you cannot see
 
@@ -144,8 +154,8 @@ The board and the tail ring the terminal bell when an agent starts waiting on yo
 
 ## How it works
 
-- **A log enters the room** when its file changed within the window and, for Claude Code and Codex logs, the last record that states a time is within the window by the log's own clock, so touching a file whose last timed record is outside the window does not bring it in (it has happened: nine sub-agent logs touched in one second, weeks after their last entry). Only a record's own timestamp counts, never one quoted inside it; a log whose last timed record cannot be found is not admitted until one is written; Cursor's transcripts state no time and are judged by the file alone; a pinned log is followed regardless.
-- **The server** (`src/server.py`, one file, standard library only) follows `~/.claude/projects/**.jsonl`, `~/.codex/sessions/**.jsonl` and `~/.cursor/projects/*/agent-transcripts/*/*.jsonl`, turns each record into an event, and streams events to the page over server-sent events on 127.0.0.1. A Cursor transcript records the request to run a tool, not the tool's result, so those steps are shown as returned when the turn ends, not as done. It records no link that opens the chat. It listens on loopback only, talks to nothing but your browser, and reports nothing anywhere. Rendered previews are the one place agent-written code runs; the trust boundary below says what they can and cannot reach.
+- **A log enters the room** when its file changed within the window and, for Claude Code and Codex logs, the last record that states a time is within the window by the log's own clock, so touching a file whose last timed record is outside the window does not bring it in. Only a record's own timestamp counts, never one quoted inside it; a log whose last timed record cannot be found is not admitted until one is written; Cursor's transcripts state no time and are judged by the file alone; a pinned log is followed regardless.
+- **The server** (`src/server.py` and its provider adapters, standard library only) follows `~/.claude/projects/**.jsonl`, `~/.codex/sessions/**.jsonl` and `~/.cursor/projects/*/agent-transcripts/*/*.jsonl`, turns each record into an event, and streams events to the page over server-sent events on 127.0.0.1. A Cursor transcript records the request to run a tool, not the tool's result, so those steps are shown as returned when the turn ends, not as done. It records no link that opens the chat. Local observation runs without an external service. Optional Officer requests use the Anthropic API, and supported actions use their provider adapters; see the trust boundary below. Rendered previews are the one place agent-written code runs; the trust boundary below says what they can and cannot reach.
 - **The page** (`src/web/index.html`, one file, no build step) draws the room with CSS 3D transforms. The camera stands where it would for five monitors and never backs away, so the monitors in front of you stay readable however many agents there are; the rest of the row curves out of frame and you turn to it. The fleet strip at the top is the map: one chip per project, one lit cell per agent.
 - **The hooks** (`scripts/install_hooks.py`) are small shell commands Claude Code runs at Notification, Stop, SubagentStop and PermissionRequest. They post to the server with the key from a private header file.
 - **Codex cloud agents** are found in the process list (macOS and Linux; `ps` about once a second on its own thread, and `lsof` once per new command for its folder). The list names every process; only this user's are considered, and only an exec server recognised by the text of its executable and subcommand, and its direct children, are kept: their pid, start time, command line and working folder. A folder name lsof had to escape is not trusted and shows as not readable. OpenAI marks that server experimental, so this can change under us.
