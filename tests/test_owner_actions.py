@@ -6,6 +6,7 @@ import json
 import os
 from pathlib import Path
 import sys
+import subprocess
 import tempfile
 import threading
 import unittest
@@ -70,7 +71,7 @@ class OwnerActionsTests(unittest.TestCase):
             self.assertEqual(self.request('GET',path,**headers)[0],403)
         for query in ('','agent=bad','agent='+self.aid+'&agent='+self.aid,'agent='+self.aid+'&available=true','agent=%zz','agent='+'x'*300):
             self.assertEqual(self.request('GET','/agent-capabilities?'+query)[0],400)
-        with patch.object(self.store,'_target_log',side_effect=AssertionError('transcript read')), patch('codex_desktop_control.execute',side_effect=AssertionError('native control')), patch.object(messaging.claude_channel,'discover',side_effect=AssertionError('discovery')):
+        with patch('codex_desktop_control.execute',side_effect=AssertionError('native control')), patch.object(messaging.claude_channel,'discover',side_effect=AssertionError('discovery')):
             status,out,cache = self.request('GET',path)
             self.assertEqual((status,cache),(200,'no-store'))
             self.assertEqual(set(out),{'agent','actions'})
@@ -134,7 +135,7 @@ class OwnerActionsTests(unittest.TestCase):
         p = self.payload(self.cid)
         row = dict(p,name='Mira',state='unknown',reply='',error='',created=1,launched=True,runtime='claude')
         self.store._save(row); server.AGENTS.clear()
-        with patch.object(messaging.claude_channel,'discover',side_effect=AssertionError('discovery')):
+        with patch.object(messaging.claude_channel,'discover',side_effect=AssertionError('discovery')), patch.object(self.store,'owner_capabilities',side_effect=AssertionError('preview on legacy replay')), patch.object(self.store,'_metadata',side_effect=AssertionError('metadata on legacy replay')):
             self.assertEqual(self.request('POST','/agent-message',p)[1]['state'],'unknown')
             row['origin']='peer'; self.store._save(row)
             self.assertEqual(self.request('POST','/agent-message',p)[0],409)
@@ -171,6 +172,54 @@ class OwnerActionsTests(unittest.TestCase):
         self.assertFalse(actions['queue']['available']); self.assertFalse(actions['steer']['supported'])
         server.AGENTS[self.aid].pop('observed'); server.AGENTS[self.aid]['sub'] = True
         self.assertFalse(self.request('GET','/agent-capabilities?agent='+self.aid)[1]['actions']['interrupt']['supported'])
+
+    def test_transcript_eligibility_missing_ambiguous_and_metadata(self):
+        path = next(self.sessions.iterdir()); original = path.read_bytes()
+        def unavailable():
+            status, out, _ = self.request('GET','/agent-capabilities?agent='+self.aid)
+            self.assertEqual(status,200)
+            self.assertFalse(out['actions']['queue']['available'])
+            self.assertTrue(out['actions']['queue']['reason'])
+            self.assertNotIn(self.tmp.name,json.dumps(out))
+        path.unlink(); unavailable(); path.write_bytes(original)
+        second = self.sessions / ('duplicate-'+self.aid[2:]+'.jsonl')
+        second.write_bytes(original); unavailable(); second.unlink()
+        for extra in ({'id':str(uuid.uuid4())},{'source':'exec'},{'originator':'codex_exec'},{'thread_source':'guardian_review'}):
+            meta = {'id':self.aid[2:],**extra}
+            path.write_text(json.dumps({'type':'session_meta','payload':meta})+'\n')
+            unavailable()
+        path.write_bytes(original)
+        self.assertTrue(self.request('GET','/agent-capabilities?agent='+self.aid)[1]['actions']['queue']['available'])
+        path.write_text(json.dumps({'type':'session_meta','payload':{'id':str(uuid.uuid4())}})+'\n')
+        self.assertNotEqual(self.request('POST','/agent-message',self.payload())[0],200)
+        self.assertEqual(self.store._rows(),[])
+
+    def test_symlink_and_fifo_capabilities_fail_without_hanging(self):
+        path = next(self.sessions.iterdir()); original = path.read_bytes()
+        target = self.base / 'ordinary.jsonl'; target.write_bytes(original)
+        path.unlink(); path.symlink_to(target)
+        self.assertFalse(self.request('GET','/agent-capabilities?agent='+self.aid)[1]['actions']['queue']['available'])
+        path.unlink(); os.mkfifo(path)
+        # Separate process deadline makes a blocking open a deterministic regression,
+        # without leaving the test server/thread or suite hung on the FIFO.
+        code = """import sys
+from officer_messaging import MessagingStore
+store = MessagingStore(sys.argv[1], sys.argv[2])
+store.available = True
+try:
+    result = store.owner_capabilities(sys.argv[3], {sys.argv[3]: {'runtime':'Codex','name':'Fixture'}})
+    assert result['actions']['queue']['available'] is False
+finally:
+    store.close()
+"""
+        env = dict(os.environ, PYTHONPATH=str(Path(server.__file__).parent))
+        result = subprocess.run([sys.executable,'-c',code,str(self.base/'fifo-state'),str(self.sessions),self.aid],env=env,capture_output=True,text=True,timeout=3)
+        self.assertEqual(result.returncode,0,result.stderr)
+
+    def test_duplicates_do_not_reinspect_transcripts_or_capabilities(self):
+        payload = self.payload(); expected = self.request('POST','/agent-message',payload)
+        with patch.object(self.store,'owner_capabilities',side_effect=AssertionError('preview on replay')), patch.object(self.store,'_metadata',side_effect=AssertionError('metadata on replay')):
+            self.assertEqual(self.request('POST','/agent-message',payload),expected)
 
     def test_promotion_is_rejected_without_write(self):
         with self.assertRaises(messaging.MessagingError):

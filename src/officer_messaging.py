@@ -3,7 +3,6 @@
 Queue acceptance is not delivery. Only the exact outgoing user envelope followed
 by a matching completed turn can produce an answer. Uncertain sends are never retried.
 """
-import glob
 import json
 import math
 from datetime import datetime
@@ -279,9 +278,13 @@ class MessagingStore:
     def _metadata(self, path, ident):
         if os.path.realpath(path) != path or not path.startswith(self.sessions_dir + os.sep):
             raise MessagingError(400, 'The session log is not a plain local transcript.')
-        with open(path, 'rb') as f:
-            raw = f.readline(MAX_LINE + 1)
+        flags = os.O_RDONLY | getattr(os, 'O_NONBLOCK', 0) | getattr(os, 'O_NOFOLLOW', 0)
+        fd = os.open(path, flags)
+        with os.fdopen(fd, 'rb') as f:
             st = os.fstat(f.fileno())
+            if not stat.S_ISREG(st.st_mode):
+                raise MessagingError(400, 'The session log is not a regular transcript.')
+            raw = f.readline(MAX_LINE + 1)
         if not raw.endswith(b'\n') or len(raw) > MAX_LINE or not stat.S_ISREG(st.st_mode):
             raise MessagingError(400, 'The session identity is not readable yet.')
         try:
@@ -296,12 +299,20 @@ class MessagingStore:
         return st
 
     def _target_log(self, ident):
-        matches = []
-        for n, path in enumerate(glob.iglob(os.path.join(self.sessions_dir, '**', '*.jsonl'), recursive=True)):
-            if n >= 20000:
-                raise MessagingError(503, 'Too many session logs to safely resolve this chat.')
-            if path.endswith(ident + '.jsonl'):
-                matches.append(path)
+        matches, pending, visited = [], [self.sessions_dir], 0
+        while pending:
+            directory = pending.pop()
+            with os.scandir(directory) as entries:
+                for entry in entries:
+                    visited += 1
+                    if visited > 20000:
+                        raise MessagingError(503, 'Too many session entries to safely resolve this chat.')
+                    if entry.is_dir(follow_symlinks=False):
+                        pending.append(entry.path)
+                    elif entry.name.endswith(ident + '.jsonl'):
+                        matches.append(entry.path)
+                        if len(matches) > 1:
+                            raise MessagingError(409, 'The chat must have exactly one local transcript before sending.')
         if len(matches) != 1:
             raise MessagingError(409, 'The chat must have exactly one local transcript before sending.')
         path = matches[0]
@@ -332,6 +343,13 @@ class MessagingStore:
             queue_reason = CLAUDE_OWNER_UNAVAILABLE
         elif codex and (self.worker_failed or not (self.available if self.codex_available is None else self.codex_available)):
             queue_reason = self.reason or 'Codex queue transport is unavailable.'
+        if codex and not queue_reason:
+            try:
+                self._target_log(agent[2:])
+            except MessagingError as error:
+                queue_reason = str(error)
+            except (OSError, ValueError, TypeError):
+                queue_reason = 'The local transcript identity is unavailable or unreadable.'
         control_reason = reason
         if not reason and (not codex or agents[agent].get('sub') or agents[agent].get('parent')):
             control_reason = 'Live controls support local parent Codex desktop chats only.'
