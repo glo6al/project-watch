@@ -1182,3 +1182,49 @@ async function watchTerminalNoticeChecks(mutate=false){
   }
 }
 (async()=>{await watchTerminalNoticeChecks();let caught=false;try{await watchTerminalNoticeChecks(true)}catch(e){caught=true}assert.ok(caught,'missing terminal WATCH notice mutation detected');console.log('ok actual WATCH HTTP503, JSON error and transport rejection notify after navigation; no focus/draft theft, exact context return; terminal notice mutation detected')})().catch(e=>{console.error(e);process.exitCode=1});
+
+/* Proportional room zoom and large-gesture clearance, using the shipped helpers. */
+const zoomSource=html.slice(html.indexOf('function roomZoomStep('),html.indexOf('/* end room zoom helpers */'));
+function zoomChecks(source=zoomSource){
+  const ctx={P:1300,turned:(p,t)=>({x:p.x*Math.cos(t)+(p.z-1500)*Math.sin(t),z:-p.x*Math.sin(t)+(p.z-1500)*Math.cos(t)+1500})};
+  vm.runInNewContext(source,ctx);
+  const roots=[-13,13].map(a=>({a,x:1500*Math.sin(a*Math.PI/180),z:1500*(1-Math.cos(a*Math.PI/180)),y:0}));
+  const fit=67.31, view=ctx.roomZoomDistance(fit,32,fit,roots,0,0,20);
+  assert.ok(view.D>-500,'large single pinch cannot jump past the nearest screens');
+  assert.ok(view.zoom>1&&view.zoom<2,'clearance limits close two-root room');
+  const reverse=ctx.roomZoomDistance(fit,ctx.roomZoomStep(view.zoom,10),view.D,roots,0,0,20);
+  assert.ok(reverse.D>view.D,'small reverse gesture immediately backs out of clearance limit');
+  const tall=ctx.roomZoomDistance(7887.31,4,7887.31,[{a:0,x:0,y:0,z:0}],0,0,2521);
+  assert.ok(tall.zoom>3.9,'tall stack gets fourfold zoom instead of fixed 250px travel');
+  for(const yaw of [-.6,0,.6])for(const tilt of [-Math.PI/10,0,Math.PI/10]){
+    const v=ctx.roomZoomDistance(7887.31,32,7887.31,roots,yaw,tilt,2521);assert.ok(Number.isFinite(v.D)&&v.D>=-1180);
+  }
+  const many=Array.from({length:36},(_,i)=>{const a=(i-17.5)*150/35;return {a,x:9400*Math.sin(a*Math.PI/180),z:9400*(1-Math.cos(a*Math.PI/180)),y:0}});
+  assert.equal(ctx.roomZoomDistance(2201.51,1,9000,many,0,0,20).D,ctx.roomZoomDistance(2201.51,1,2201.51,many,0,0,20).D,'default framing ignores obsolete tall-room distance');
+  assert.equal(ctx.roomZoomStep(1,-1e6),32);assert.equal(ctx.roomZoomStep(1,1e6),.25);
+  assert.ok(Math.abs(ctx.roomZoomStep(ctx.roomZoomStep(1,-10),-10)-ctx.roomZoomStep(1,-20))<1e-12);
+}
+zoomChecks();
+for(const [from,to] of [['&&!inFront(before)',''],['zoom!==1&&','']]){let caught=false;try{zoomChecks(zoomSource.replace(from,to))}catch(e){caught=true}assert.ok(caught,'zoom regression mutation: '+from)}
+const panLine=html.split('\n').find(l=>l.includes('cam.py=Math.max('));
+for(const stack of [600,5602]){const ctx={cam:{py:0},STACK:stack,e:{deltaY:100000,deltaX:0},yawTo(){},queueApply(){},hands(){}};vm.runInNewContext(panLine,ctx);assert.equal(ctx.cam.py,Math.min(-200,-(stack-600)/2-20));}
+assert.ok(html.indexOf('const M0=new DOMMatrix',html.indexOf('const view=roomZoomDistance'))>html.indexOf('const view=roomZoomDistance'),'culling matrix uses clamped distance');
+console.log('ok room zoom: fourfold tall framing, large pinch clearance, immediate reverse, yaw/tilt, default refit, limits and tall pan; guard mutations detected');
+function zoomWheelChecks(){
+  let listener,queued=0;const ctx={focus:null,cam:{zoom:1,actualZoom:1},gT:0,gx:0,gz:0,gFired:false,gZone:null,gPinch:'',deskView:'doing',performance:{now:()=>500},addEventListener:(name,fn)=>listener=fn,hands(){},queueApply(){queued++}};
+  vm.runInNewContext(zoomSource,ctx);
+  const start=html.lastIndexOf("addEventListener('wheel',e=>{");vm.runInNewContext(html.slice(start,html.indexOf('/* ---------- stepped up:',start)),ctx);
+  const event=deltaY=>({ctrlKey:true,deltaX:0,deltaY,target:{closest:()=>null},preventDefault(){}});
+  listener(event(-10));listener(event(-10));assert.ok(Math.abs(ctx.cam.zoom-Math.exp(.16))<1e-12,'wheel events accumulate before a frame');assert.equal(queued,2);
+  ctx.cam.actualZoom=1.5;ctx.cam.zoom=32;ctx.cam.zoomPending=false;listener(event(10));assert.ok(ctx.cam.zoom<1.5,'next gesture starts at achieved zoom rather than blocked request');
+}
+zoomWheelChecks();console.log('ok actual room wheel handler accumulates frames and reverses from achieved zoom');
+function zoomApplyChecks(code){
+  const ctx={fitted:1000,cam:{zoom:32,D:2000,zoomPending:true,yaw:0,tilt:0},order:['a'],pos:{a:{}},th:0,ti:0,T:20,hudH:60,ARC:{R:1500},roomZoomDistance:()=>({D:500,zoom:2}),DOMMatrix:function(value){this.value=value;ctx.matrix=value}};
+  vm.runInNewContext(code,ctx);assert.equal(ctx.cam.zoom,2,'apply commits attained zoom');assert.equal(ctx.cam.actualZoom,2);assert.equal(ctx.cam.zoomPending,false);assert.ok(ctx.matrix.includes('translateZ(-500px)'),'culling matrix receives final clearance distance');
+  ctx.cam.zoom=1;ctx.cam.zoomPending=false;vm.runInNewContext('{'+code+'}',ctx);assert.equal(ctx.cam.zoom,1,'ordinary refit preserves requested default framing');
+}
+const zoomApplyStart=html.indexOf('const view=roomZoomDistance'),zoomApplySource=html.slice(zoomApplyStart,html.indexOf('for(const k of order)',zoomApplyStart));
+zoomApplyChecks(zoomApplySource);
+for(const [from,to] of [['cam.zoom=view.zoom;cam.zoomPending=false',''],['translateZ(${-D}px)','translateZ(${-fitted}px)']]){let caught=false;try{zoomApplyChecks(zoomApplySource.replace(from,to))}catch(e){caught=true}assert.ok(caught,'zoom apply mutation '+from)}
+console.log('ok actual apply commits achieved zoom, preserves requested refit and culls from final camera matrix; two mutations detected');

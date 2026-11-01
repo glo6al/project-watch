@@ -1606,7 +1606,7 @@ function turn(n){const rs=ROOTS.filter(k=>pos[k]).sort((a,b)=>pos[a].a-pos[b].a)
   const d=pos[rs[i]].a-cam.yaw;
   if(Math.abs(d)<1||(n>0&&d<0)||(n<0&&d>0)) i+=n;          /* at one already, or the nearest is behind the way we are going: go on past it */
   i=Math.max(0,Math.min(rs.length-1,i)); if(peek)setPeek(null); yawTo(pos[rs[i]].a); fly(); apply()}      /* a keyboard turn is navigation: whatever was in hand is let go first */
-let pos={}, cam={yaw:0,tilt:0,dolly:0,py:0}, focus=null, moved=false, STACK=600, drag=null;
+let pos={}, cam={yaw:0,tilt:0,zoom:1,py:0}, focus=null, moved=false, STACK=600, drag=null;
 let FLOOR_S=2, FLOOR_C=0;      /* how far the 3000 px floor image is stretched, and how far it is slid toward the ring's middle */
 /* The room is arranged by family: each top-level agent gets a full-size monitor in a row, centred on however many
    that row holds (the owner asked for re-centring), with the agents it started as smaller monitors above it. */
@@ -1888,6 +1888,23 @@ function deskKeydown(e){
 addEventListener('keydown',deskKeydown,true);
 /* end desk keyboard handling */
 
+/* Room zoom: scale camera distance, independent of the height of the agent families. */
+function roomZoomStep(zoom,delta){return Math.max(.25,Math.min(32,zoom*Math.exp(-delta*.008)))}
+function roomZoomDistance(fitted,zoom,previous,poses,th,ti,T){
+  const requested=(P+fitted)/Math.max(.25,Math.min(32,zoom))-P, before=zoom!==1&&Number.isFinite(previous)?previous:fitted;
+  let near=-Infinity;
+  for(const q of poses){
+    const t=turned(q,th), z=t.z+340*Math.abs(Math.sin(th-q.a*Math.PI/180));
+    const inFront=D=>{const depth=P+D-(q.y+T)*Math.sin(ti)-z*Math.cos(ti);return depth>0&&Math.atan2(Math.abs(t.x),depth)<=62*Math.PI/180};
+    // Include the last accepted view: a large pinch must not jump past the clearance check.
+    if(!inFront(requested)&&!inFront(before))continue;
+    for(const dy of [-300,300])near=Math.max(near,(q.y+T+dy)*Math.sin(ti)+z*Math.cos(ti)+520);
+  }
+  const D=Math.max(requested,near-(P-260),-P+120);
+  return {D,zoom:(P+fitted)/(P+D)};
+}
+/* end room zoom helpers */
+
 function apply(){
   room.classList.toggle('stepped',!!focus); document.body.classList.toggle('stepped',!!focus); document.body.classList.toggle('portrait',portrait());
   if(focus&&A[focus]){
@@ -1900,23 +1917,18 @@ function apply(){
     const n=Math.min(FIT,Math.max(1,nRoots())), fit=arcFor(n);        /* the camera stands where it would for FIT monitors, however many there are */
     const r=(n-1)/2*fit.STEP*Math.PI/180, ex=fit.R*Math.sin(r)+340*Math.cos(r), ez=fit.R*(1-Math.cos(r))+340*Math.sin(r), Hh=STACK+80;
     const hudH=$('#hud').offsetHeight;                     /* the room is fitted below the top bar, not under it */
-    let D=Math.max(0,ex*P/(innerWidth/2-12)-P+ez,P*(Hh/(innerHeight-hudH-36)-1)+ez*.5)+cam.dolly;      /* the ends of a row are nearer and so taller: fit those */
-    yawTo(cam.yaw);                                        /* fewer monitors than a moment ago: the turn may now be past the end */
-    const M0=new DOMMatrix(`translateY(${hudH/2}px) translateZ(${-D}px) rotateX(${cam.tilt}deg) translateZ(${ARC.R}px) rotateY(${cam.yaw}deg) translateZ(${-ARC.R}px) translateY(${(STACK-600)/2+20+cam.py}px)`);      /* the world as it will stand at this distance */
-    /* never let a monitor reach the camera: find the nearest edge after turning, with room for the hover lean-in */
-    const th=cam.yaw*Math.PI/180, ti=cam.tilt*Math.PI/180, T=(STACK-600)/2+20+cam.py, D0=D; let near=-1e9;
-    for(const k of order){const q=pos[k]; if(!q) continue;
-      const t=turned(q,th), z1=t.z+340*Math.abs(Math.sin(th-q.a*Math.PI/180));      /* after turning */
-      /* the row curves round the camera: a monitor behind it, or far out to the side, is not in the picture and
-         must not push the camera back; only one that could be in front of the lens is kept clear of it */
-      const dz=P+D0-(q.y+T)*Math.sin(ti)-z1*Math.cos(ti);      /* depth after tilting too */
-      /* the seat's nearest corner, after every transform: a monitor any corner of which would cross the lens is not painted
-         at all (so no giant back-projected plane); one in hand, or on its way back, is judged by that pose instead */
+    const fitted=Math.max(0,ex*P/(innerWidth/2-12)-P+ez,P*(Hh/(innerHeight-hudH-36)-1)+ez*.5);
+    yawTo(cam.yaw);
+    const th=cam.yaw*Math.PI/180, ti=cam.tilt*Math.PI/180, T=(STACK-600)/2+20+cam.py;
+    const view=roomZoomDistance(fitted,cam.zoom,cam.D,order.map(k=>pos[k]).filter(Boolean),th,ti,T), D=view.D;
+    cam.actualZoom=view.zoom;
+    // Only a user's pinch commits the achieved zoom; layout/resize keeps the requested framing.
+    if(cam.zoomPending){cam.zoom=view.zoom;cam.zoomPending=false}
+    const M0=new DOMMatrix(`translateY(${hudH/2}px) translateZ(${-D}px) rotateX(${cam.tilt}deg) translateZ(${ARC.R}px) rotateY(${cam.yaw}deg) translateZ(${-ARC.R}px) translateY(${T}px)`);
+    for(const k of order){const q=pos[k];if(!q)continue;
       const cz=Math.max(...corners(M0,q,A[k].el.classList.contains('kid')).map(c=>c.z));
-      A[k].el.classList.toggle('behind',k!==peek&&cz>P-120);      /* in hand it is judged by that pose; returning to a seat behind the lens it is hidden, since a glide through the lens is worse than a cut */
-      if(dz<=0||Math.atan2(Math.abs(t.x),dz)>62*Math.PI/180) continue;
-      for(const dy of [-300,300]) near=Math.max(near,(q.y+T+dy)*Math.sin(ti)+z1*Math.cos(ti)+520)}   /* after tilting, with room for the hover lean-in */
-    D=Math.max(D,near-(P-260));
+      A[k].el.classList.toggle('behind',k!==peek&&cz>P-120);
+    }
     for(const k of order){const e=A[k].el; e.style.width=e.style.height=e.style.left=e.style.top=''}
     $('#floor').style.transform=`translateY(330px) rotateX(90deg) translateY(${FLOOR_C}px) scale(${FLOOR_S.toFixed(3)})`;      /* flat, slid along the floor to the ring's middle, then stretched */
     cam.D=D; cam.H=hudH/2;
@@ -1997,7 +2009,7 @@ const drop=()=>{drag=null;room.classList.remove('drag')};
 addEventListener('pointerup',drop);addEventListener('pointercancel',drop);addEventListener('blur',drop);
 room.addEventListener('click',()=>{if(!moved&&focus)setFocus(null)});
 document.addEventListener('click',ev=>{const b=ev.target.closest('.pin');if(b&&focus){A[focus].pin=null;A[focus].dirty=true;render()}},true);
-room.addEventListener('dblclick',e=>{if(focus||e.target.closest('.st'))return; if(peek)setPeek(null); cam={yaw:0,tilt:0,dolly:0,py:0}; fly(); apply()});
+room.addEventListener('dblclick',e=>{if(focus||e.target.closest('.st'))return; if(peek)setPeek(null); cam={yaw:0,tilt:0,zoom:1,py:0}; fly(); apply()});
 
 /* ---------- trackpad ----------
    In Chrome a pinch arrives as a wheel event with ctrlKey set; a two-finger scroll is a plain wheel event.
@@ -2018,7 +2030,7 @@ addEventListener('wheel',e=>{
     const pz=(focus||'room')+'|'+(st?st.dataset.id:'')+'|'+deskView; if(pz!==gPinch){gPinch=pz; gz=0}      /* a pinch gathered over one thing never counts toward another */
     if(!focus){
       if(st&&e.deltaY<0){gz-=e.deltaY; if(!gFired&&gz>36){gFired=true;setFocus(st.dataset.id)}}       /* pinch out on a screen: step up */
-      else if(!gFired){cam.dolly=Math.max(-250,Math.min(2500,cam.dolly+e.deltaY*7));queueApply()}          /* otherwise: closer / further */
+      else if(!gFired){cam.zoom=roomZoomStep(cam.zoomPending?cam.zoom:(cam.actualZoom||cam.zoom),e.deltaY);cam.zoomPending=true;queueApply()}          /* otherwise: closer / further */
     }else if(!gFired){
       const a=A[focus];
       if(deskView==='seeing'&&st&&(e.deltaY<0||(a.zm||1)>1.02)){                                       /* enlarge what the agent is looking at */
@@ -2032,7 +2044,7 @@ addEventListener('wheel',e=>{
     if(horiz&&e.target.closest&&e.target.closest('#projs')&&canScrollX(e.target,e.deltaX)) return;      /* the fleet strip scrolls first */
     e.preventDefault(); hands();
     yawTo(cam.yaw-e.deltaX*.06);
-    cam.py=Math.max(-200,Math.min(STACK-400,cam.py-e.deltaY*1.2));
+    cam.py=Math.max(Math.min(-200,-(STACK-600)/2-20),Math.min(STACK-400,cam.py-e.deltaY*1.2));
     queueApply(); return;
   }
   if(!horiz) return;                               /* vertical scroll at a desk stays ordinary scrolling */
