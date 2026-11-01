@@ -423,7 +423,10 @@ class ReviewRegressionTests(unittest.TestCase):
     directory = DirectoryTests.directory
     complete = DirectoryTests.complete
 
-    def test_f1_completed_snapshot_survives_unchanged_default_rescan(self):
+    @patch.object(d.time, 'monotonic', return_value=0.0)
+    def test_f1_completed_snapshot_survives_unchanged_default_rescan(self, _monotonic):
+        # Isolate the default file-count/cache contract from the independent 50ms
+        # wall budget; deadline behavior has its own deterministic regression.
         for n in range(300):
             self.codex_chat(name='Named ' + str(n))
         clock = [time.time()]
