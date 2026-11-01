@@ -16,14 +16,15 @@ import threading
 import time
 import uuid
 import claude_channel
+import claude_mod
 import peer_bridge
 
 CLI = '/Applications/ChatGPT.app/Contents/Resources/codex-cli/bin/codex'
 ACTIVE = ('sending', 'queued', 'awaiting_reply', 'unknown', 'expired')
 MAX_RECORDS, MAX_PENDING, MAX_LINE, MAX_READ = 256, 8, 1_000_000, 2_000_000
 TTL, RETENTION = 900, 86400
-CLAUDE_OWNER_UNAVAILABLE = ("Exact named-chat delivery to Claude is unavailable. "
-                           "Its channel targets a process whose conversation can change. Nothing was sent.")
+CLAUDE_OWNER_UNAVAILABLE = ("Exact named-chat delivery requires the WATCH official mod connected in this Claude chat. "
+                           "Connect it before sending. Nothing was sent.")
 
 
 class MessagingError(Exception):
@@ -124,7 +125,10 @@ class MessagingStore:
                     control.update(state='unknown', error='WATCH restarted during control dispatch. It will not retry.')
                     self.db.execute('UPDATE controls SET data=? WHERE id=?', (json.dumps(control), control['request_id']))
             self.db.execute('CREATE TABLE IF NOT EXISTS asks (id TEXT PRIMARY KEY, user_text TEXT NOT NULL, created REAL NOT NULL, decision TEXT)')
+            self.mods = claude_mod.ClaudeMod(self)
             for row in self._rows():
+                if row.get('transport') == claude_mod.TRANSPORT:
+                    continue
                 if row['state'] == 'sending':
                     peer_meta = peer_bridge.transport_metadata(self.db, transport_ids=(row['request_id'],)).get(row['request_id'])
                     if peer_meta is not None and peer_meta['launched_at'] is None:
@@ -319,7 +323,7 @@ class MessagingStore:
         return path, self._metadata(path, ident)
 
     def snapshot(self):
-        claude_ready = claude_channel.any_configured(self.channel_root) and not self.worker_failed
+        claude_ready = (self.mods.any_ready() or claude_channel.any_configured(self.channel_root)) and not self.worker_failed
         codex_ready = (self.available if self.codex_available is None else self.codex_available) and not self.worker_failed
         with self.lock:
             now = time.time()
@@ -340,7 +344,8 @@ class MessagingStore:
         codex = not reason and agent.startswith('x:')
         queue_reason = reason
         if not reason and not codex:
-            queue_reason = CLAUDE_OWNER_UNAVAILABLE
+            ready, _, _ = self.mods.capability(agent, agents[agent])
+            queue_reason = '' if ready else CLAUDE_OWNER_UNAVAILABLE
         elif codex and (self.worker_failed or not (self.available if self.codex_available is None else self.codex_available)):
             queue_reason = self.reason or 'Codex queue transport is unavailable.'
         if codex and not queue_reason:
@@ -411,12 +416,12 @@ class MessagingStore:
             if any(r['agent'] == agent for r in active):
                 row['delivery_warning'] = 'When this message was submitted, older messages to this agent were unresolved and could still run. This request did not cancel them.'
             if agent.startswith('c:'):
-                try:
-                    descriptor = claude_channel.discover(self.channel_root, agent[2:])
-                except claude_channel.ChannelError as error:
-                    raise MessagingError(503, str(error)) from None
-                row.update(runtime='claude', channel=claude_channel.identity(descriptor),
-                           envelope=claude_channel.envelope(request_id, question))
+                ready, enrollment, _ = self.mods.capability(agent, agents[agent])
+                if not ready:
+                    raise MessagingError(503, CLAUDE_OWNER_UNAVAILABLE)
+                row.update(runtime='claude', transport=claude_mod.TRANSPORT,
+                           mod_enrollment=enrollment['id'], mod_project=enrollment['project'],
+                           envelope=envelope(request_id, question))
             else:
                 path, st = self._target_log(agent[2:])
                 # Start only after a complete record; never bind a partial old line.
@@ -763,6 +768,8 @@ class MessagingStore:
         return [r for r in rows if now - r['created'] <= RETENTION]
 
     def _send(self, row):
+        if row.get('transport') == claude_mod.TRANSPORT:
+            return 'unknown', 'Official-mod requests are dispatched only by their atomic claim.'
         if row.get('runtime') == 'claude':
             return self._send_claude(row)
         try:
@@ -897,6 +904,8 @@ class MessagingStore:
                 row.update(state='answered', reply='\n'.join(line for line in answer.splitlines() if line != marker).strip()[:16000], error='')
 
     def _poll(self, row):
+        if row.get('transport') == claude_mod.TRANSPORT:
+            return
         if row.get('runtime') == 'claude':
             return self._poll_claude(row)
         try:
@@ -935,11 +944,15 @@ class MessagingStore:
         # A competing owner CLI transaction is transient; never kill the owner worker.
         with self.lock:
             try:
+                with self.db:
+                    self.mods.maintain()
                 rows = self._prune(self._rows(), time.time())
             except sqlite3.OperationalError:
                 self.db.rollback()
                 return
         for row in rows:
+            if row.get('transport') == claude_mod.TRANSPORT:
+                continue  # HTTP claims/events exclusively own these rows; no stale tick writeback.
             if self.stop.is_set():
                 break
             peer = row.get('origin') == 'peer'

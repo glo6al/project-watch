@@ -3474,6 +3474,12 @@ class H(BaseHTTPRequestHandler):
         if self.path.startswith('/native/v1/'):
             import native_observation
             return native_observation.handle_http(self, NATIVE_OBSERVATIONS, KEY, PORT)
+        if self.path.startswith('/claude-mod/'):
+            if MESSAGING is None:
+                self.close_connection = True
+                return self.send(503, b'{"error":"Claude mod messaging unavailable."}', 'application/json')
+            import claude_mod
+            return claude_mod.handle_http(self, MESSAGING)
         if self.path.startswith('/bridge/v2/'):
             if MESSAGING is None:
                 self.close_connection = True
@@ -3549,6 +3555,19 @@ class H(BaseHTTPRequestHandler):
             return self.send(200, KEY.encode())
         if not self.keyed(self.headers.get('X-Live-Room-Key', '')):
             return self.send(403, b'forbidden')
+        if route == '/claude-mod-pair':
+            if MESSAGING is None:
+                return self.send(503, b'{"error":"Claude mod messaging unavailable."}', 'application/json')
+            import claude_mod
+            try:
+                if set(d) != {'agent'}:
+                    raise claude_mod.ModError(400, 'Expected one Claude agent identifier.')
+                out = MESSAGING.mods.pair(d['agent'], dict(AGENTS), PORT)
+            except claude_mod.ModError as error:
+                return self.send(error.status, json.dumps({'error': str(error)}).encode(), 'application/json')
+            except (OSError, ValueError, sqlite3.Error):
+                return self.send(503, b'{"error":"Claude pairing unavailable."}', 'application/json')
+            return self.send(200, json.dumps(out).encode(), 'application/json')
         if route == '/agent-message':
             if MESSAGING is None:
                 return self.send(503, json.dumps({'error': MESSAGING_WHY}).encode(), 'application/json')

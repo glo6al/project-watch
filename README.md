@@ -37,7 +37,7 @@ The **room** gives you an overview of sessions and anything that may need your a
 
 The current release starts with locally recorded coding sessions: **Claude Code, Codex, and Cursor**. It follows recently active sessions by default, not every historical chat in your provider accounts. Codex cloud work running on this computer has limited command observation, without its conversation. Ordinary Claude web chats, ChatGPT chats, and other providers’ full account histories are not imported.
 
-Reading a session does not mean WATCH can send to it or control it. Today, eligible local Codex chats support queued messages and some active-turn controls; Claude Code supports optional permission answering. The [capability table](#current-provider-capabilities) spells out the differences. Broader conversation coverage and provider actions are on the [roadmap](docs/ROADMAP.md), not implied by appearing in the room.
+Reading a session does not mean WATCH can send to it or control it. Eligible local Codex chats support queued messages and some active-turn controls. Existing Claude Code chats can receive owner messages through the optional [WATCH plugin](#messaging-an-existing-claude-chat); permission answering uses separate optional hooks. The [capability table](#current-provider-capabilities) spells out the differences. Broader conversation coverage and provider actions are on the [roadmap](docs/ROADMAP.md), not implied by appearing in the room.
 
 ## What you can see
 
@@ -67,7 +67,7 @@ Observation does not imply messaging or control support. Codex messaging, contro
 | Capability | Local Codex | Claude Code | Cursor | Codex cloud on this computer |
 | --- | --- | --- | --- | --- |
 | Observe recorded activity | Session logs | Session logs; optional hooks | Transcript; tool results not recorded | Commands from the process list |
-| Send a direct message | Queue to an eligible existing chat | Disabled: exact-chat targeting is unverified | Unavailable | Unavailable |
+| Send a direct message | Queue to an eligible existing chat | Queue to a connected existing chat through the optional WATCH plugin | Unavailable | Unavailable |
 | Steer or stop the active turn through WATCH | Supported when the control checks pass | Unavailable | Unavailable | Unavailable |
 | Promote an already queued message with Steer | Unavailable | Unavailable | Unavailable | Unavailable |
 | Read native questions | Supported, read-only, on the verified build | Unavailable | Unavailable | Unavailable |
@@ -77,7 +77,7 @@ You can still open an unsupported desk, inspect the evidence available there, an
 
 ### Where support goes next
 
-The next priorities are easier discovery and return to supported sessions, reliable messaging and steering across providers, and a clearer view of what each connection can do. Claude exact-chat targeting and promoting a queued message with **Steer** need verified delivery routes before they can be enabled. Cursor actions and additional providers remain exploratory. Persistent cross-session history and search are planned; starting sessions and coordinating work across them come later. See the [roadmap](docs/ROADMAP.md#priorities) for scope and completion criteria.
+The next priorities are easier discovery and return to supported sessions, reliable messaging and steering across providers, and a clearer view of what each connection can do. Claude live controls and promoting a queued message with **Steer** need verified delivery routes before they can be enabled. Cursor actions and additional providers remain exploratory. Persistent cross-session history and search are planned; starting sessions and coordinating work across them come later. See the [roadmap](docs/ROADMAP.md#priorities) for scope and completion criteria.
 
 ## What you cannot see
 
@@ -177,11 +177,11 @@ Pending messages appear in a compact strip above the composer in the agent view.
 
 If you change recipient or context while WATCH is answering, a **View WATCH update** link lets you return to the original answer or error without replacing your current draft or moving you automatically. Speech citations select the relevant agent conversation and reveal the recorded message; work evidence opens in Work.
 
-### Asking a Codex agent
+### Asking an agent
 
 Ask the Officer, for example, “Ask Atlas how far along its subagents are.” That request authorizes sending; there is no second Send button. WATCH resolves the name uniquely, queues the question in that existing local Codex session and displays the attributed reply when the matching turn finishes. A busy session finishes its current work first. A different explicit message can be queued even while an earlier request is unresolved; each keeps its own delivery and reply status. WATCH still blocks an identical unresolved message and never automatically resends the earlier request. Sending a new instruction does not cancel older queued instructions. WATCH warns when an accepted message follows unresolved messages to the same agent. Up to eight unresolved deliveries can be retained in the pending queue, including expired or fulfilled requests without replies; reaching that limit blocks new messages because the older ones may still run. Reloading the page restores recorded request statuses.
 
-The Codex adapter uses the macOS desktop app’s bundled CLI. New owner messages to named Claude chats are disabled because the channel cannot verify which conversation is currently open in its process. Existing Claude request records and correlated replies remain readable. Cursor, cloud sessions and other platforms are not connected for messaging yet. Missing or unsupported CLI support leaves the rest of WATCH working. Delivery uncertainty and expiration do not mean a question was never received; WATCH does not automatically resend. Codex replies must match the exact question and completed turn; Claude replies must match the original request and channel instance.
+The Codex adapter uses the macOS desktop app’s bundled CLI. Claude owner messages use the optional plugin described below, in an existing connected chat. Cursor, cloud sessions and other platforms are not connected for messaging yet. Missing or unsupported connection support leaves the rest of WATCH working. Delivery uncertainty and expiration do not mean a question was never received; WATCH does not automatically resend. Replies must match the request and its corresponding completed main turn.
 
 The queue runs through the target agent’s existing account and may consume its normal model allowance. When addressed to WATCH, a model interprets your intent from the current request; it can misunderstand you. Direct agent messages bypass that interpretation. In requests to the Officer, quoted examples and hypothetical questions are not intended to authorize sending. Use a clear agent name and question. In the direct agent lane, pressing Send queues the text as written. The selected agent can use its existing tools when answering. Requests and replies are kept locally under `~/.live-room/`; the reply is displayed directly, without executing any actions it contains.
 
@@ -211,18 +211,22 @@ Questions are read-only here; use **Answer in app** to respond. Secret, unsuppor
 
 The new `/native/v1/read` and `/native/v1/agents/<agent-id>` routes require the owner key in a header and return private, non-cacheable snapshots. They do not accept answers or arbitrary native commands. Native snapshots stay out of the general event stream, Officer context and peer bridge; this does not change what existing transcript readers may independently record. The browser clears native information when it leaves the selected desk or becomes hidden. Already-started bounded server reads finish, and their in-memory cache expires.
 
-### Claude channel status
+### Messaging an existing Claude chat
 
-New owner messages to named Claude chats are disabled, including through the Officer. A Claude Code process can switch conversations with `/clear`, `/resume`, or a fork while its channel remains connected. That process connection cannot guarantee delivery to the chat selected in WATCH. Starting another channel does not remove this limitation.
+Install the optional [WATCH Claude plugin](integrations/claude-mod/README.md) and reload plugins in the existing chat. Open that agent in an unlocked WATCH window, choose the agent as the message recipient, then choose **Connect Claude**. Run the displayed one-time `/watch-connect` command in that same Claude chat. Once connected, tell the Officer to message the agent by name, or send through the existing direct agent lane. A busy chat finishes its current turn first.
 
-The optional launcher and channel adapter remain available for development and existing request recovery. WATCH preserves old request records and polls for correlated replies without resending them. A connected transport does not prove delivery or an answer. Claude clients can still use the shared MCP to send to reachable Codex chats; see [peer bridge setup](docs/PEER_BRIDGE.md). The optional Claude permission hooks are separate and unchanged.
+This uses the chat's current model, sign-in, project context, tools, and permissions. The plugin submits a message attributed to WATCH and relays the owner's request; it does not grant new permissions. WATCH shows the matching reply when that main turn finishes. A dropped, interrupted, or uncertain delivery is reported without automatically sending the message again. Reconnecting restores the connection for new messages; it does not resend an earlier attempt.
+
+Keep the chat open while waiting for a message or reply. Clearing, switching, resuming, or forking during delivery can change which native conversation receives queued input. Wait for queued work to settle, then reconnect the intended chat after such a change. WATCH does not promise atomic targeting across these lifecycle changes.
+
+The connection is for owner messages through WATCH. Claude clients can still use the shared MCP to send to reachable Codex chats; receiving shared peer messages and Claude live controls remain unavailable. The older development channel remains only for existing request recovery. The optional Claude permission hooks are separate and unchanged.
 
 ## Trust boundary
 
 Read this before relying on Allow / Deny.
 
 - Binds to 127.0.0.1; rejects other Host and Origin headers; cannot be framed.
-- The key in `~/.live-room/key` is required by `/events`, `/check`, `/decide`, `/open`, `/ask`, `/agent-message`, `/agent-messages`, `/agent-capabilities`, `/presence`, `/hook`, `/permission`, `/keep`, `/unlink` and `/watch`. Four things do not use it: `/pair` (unauthenticated; it only asks your default browser to open an unlock tab, at most once a minute, and returns nothing to the caller), `/claim` (trades the one-time code from that tab for the key, once), `/fs/<preview key>/…` (a separate per-run key that is only good for previews) and `/static/<name>` (the page's own four icon files, by exact name).
+- The key in `~/.live-room/key` is required by `/events`, `/check`, `/decide`, `/open`, `/ask`, `/agent-message`, `/agent-messages`, `/agent-capabilities`, `/claude-mod-pair`, `/presence`, `/hook`, `/permission`, `/keep`, `/unlink` and `/watch`. The Claude plugin service routes under `/claude-mod/` use a one-use pairing code or a receive/reply token scoped to the connected chat; they never receive the owner key. Other routes with separate access are: `/pair` (unauthenticated; it only asks your default browser to open an unlock tab, at most once a minute, and returns nothing to the caller), `/claim` (trades the one-time code from that tab for the key, once), `/fs/<preview key>/…` (a separate per-run key that is only good for previews) and `/static/<name>` (the page's own four icon files, by exact name).
 - The hooks, and the terminal view, send the key to whatever is listening on the port; the terminal view reads it from the key file and never sends it through a proxy. Stopping another local program from taking that port while W.A.T.C.H. is not running is outside what this tool can do.
 - The key file and its directory are forced to private permissions at start on macOS. Windows has no such modes, and the server checks neither owner nor permissions there: the folder is as private as your user profile's default permissions make it, which keep other non-administrator accounts out unless they have been changed. On Windows the server holds its port exclusively, so no other program can bind it alongside. The hooks send the key from a private header file, so it does not appear in any process's arguments. It does sit in the page's localStorage and in the query string of the page's own `/events` and `/check` requests.
 - A program that can read `~/.live-room/`, or drive your browser, can do what you can do here, including approving a prompt. Protecting against that needs an OS-level boundary this tool lacks.
