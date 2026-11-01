@@ -645,6 +645,9 @@ body.stepped #hud #roomTheme{display:none}
 
 
 #nativeCard{flex:0 1 auto;min-height:0;max-height:min(280px,32vh);overflow:auto;overscroll-behavior:contain;scrollbar-width:thin;border:1px solid var(--line);padding:12px;margin:10px 0;min-width:0;font:inherit}#nativeCard header{display:flex;align-items:center;justify-content:space-between;gap:8px}#nativeCard p{margin:8px 0;overflow-wrap:anywhere;white-space:pre-wrap}#nativeCard small{display:block;color:var(--mute)}#nativeCard ol{padding-left:24px}#nativeCard li{margin:8px 0;white-space:pre-wrap;overflow-wrap:anywhere}#nativeCard article{border-top:1px solid var(--line);margin-top:12px;padding-top:8px}#nativeCard article>b{display:block;margin:6px 0}#nativeCard button{min-height:44px;font:inherit;color:var(--ink);background:var(--panel);border:1px solid var(--line);padding:6px 10px;cursor:pointer}#nativeCard button:disabled{opacity:.55;cursor:default}#nativeCard button:focus-visible,#nativeCard:focus-visible{outline:2px solid var(--ink);outline-offset:-2px}#nativeModel{overflow-wrap:anywhere}#nativeCard[hidden]{display:none}
+/* Shared recipient chooser and compact queue evidence. */
+#cuAgentPicker{position:relative;flex:none;padding:0 12px}#officer.docked #cuAgentPicker{padding:0}#cuChooseAgent{font:12px system-ui;border:0;background:transparent;color:var(--mute);padding:6px 0;cursor:pointer}#cuChooseAgent[hidden],#cuAgentChoices[hidden]{display:none}#cuAgentChoices{position:absolute;bottom:100%;left:0;right:0;max-height:240px;overflow:auto;z-index:5;border:1px solid var(--line);background:var(--panel);box-shadow:0 4px 16px #0002;padding:5px;display:flex;flex-direction:column}#officer #cuAgentChoices button{display:block;text-align:left;min-height:40px;white-space:normal;overflow-wrap:anywhere;font:13px/1.4 system-ui;background:transparent;border:0;color:var(--ink);padding:8px}#officer #cuAgentChoices button:hover{background:var(--action-hover)}#cuAgentChoices button:focus-visible,#cuChooseAgent:focus-visible{outline:2px solid var(--hl);outline-offset:-2px}
+#pendingQueue,#compactDesk #pendingQueue{margin:6px 10px -1px;padding:0;border:1px solid var(--line);background:var(--panel);max-height:min(180px,25vh);font:13px/1.5 system-ui}#compactDesk #pendingQueue{margin-left:6px;margin-right:6px}#pendingQueueTitle{font-size:10px;padding:3px 10px 0;margin:0;color:var(--mute)}#pendingQueueList{gap:0}#pendingQueue details+details{border-top:1px solid var(--line)}#pendingQueue summary{padding:8px 10px;min-height:40px;align-items:center;gap:9px;list-style:none}#pendingQueue summary::before,#pendingQueue summary::-webkit-details-marker{display:none}#pendingQueue summary svg{width:17px;height:20px;flex:none;color:var(--mute)}#pendingQueue summary b{font-size:10px;max-width:120px;color:var(--mute)}#pendingQueue summary span{color:var(--ink);font-size:13px}#pendingQueue details[open] summary{align-items:flex-start}#pendingQueue details[open] summary span{white-space:pre-wrap;overflow-wrap:anywhere}#pendingQueue small{font-size:11px;margin:0 10px 8px 36px}#pendingQueue summary:focus-visible{outline:2px solid var(--hl);outline-offset:-2px}#ofLog .watch-reply-link{font:inherit;color:var(--hl);background:transparent;border:0;padding:5px 0;cursor:pointer;text-align:left;text-decoration:underline;text-underline-offset:3px}#ofLog .watch-reply-link:focus-visible{outline:2px solid var(--hl);outline-offset:2px}#recipient{flex-wrap:wrap}#compactDesk #recipient{padding-bottom:5px}#officer #pendingQueue:not([hidden])+#ofRow{padding-top:0}
 </style>
 </head>
 <body>
@@ -677,7 +680,7 @@ body.stepped #hud #roomTheme{display:none}
 <div id="deskT" hidden><span class="lbl">Chain of command</span><div id="crumb"></div><div id="deskChainTools"><button type="button" data-drawer="facts" aria-controls="deskFacts" aria-expanded="false">Details</button><span class="theme-choices" role="group" aria-label="Visual theme"><button type="button" data-theme="original" aria-pressed="true">Original</button><button type="button" data-theme="neutral" aria-pressed="false">Neutral</button></span></div></div>
 <div id="deskB" class="hud" hidden><div class="in"><div id="bay"><div id="bayH"><button data-pg="-1" aria-label="Previous panel">‹</button><span id="bayT"></span><button id="bayN" hidden></button><span id="bayD"></span><button data-pg="1" aria-label="Next panel">›</button></div><div id="fleet"></div></div><div id="badge"></div></div></div>
 <div id="empty" hidden></div>
-<span id="officerHome" hidden></span><div id="officer" class="hud fold" role="region" aria-label="Officer of the Watch"><div class="in"><button id="ofB" aria-expanded="false" aria-controls="ofBody" title="Officer of the Watch: ask about the room, in plain English"><span class="lamp"></span><b>Officer of the Watch</b><i id="ofSt">listening</i><u id="ofLine"></u><s>▴</s></button><div id="ofBody"><div id="ofContext"><div id="ofScope" role="group" aria-label="Officer question scope"><button type="button" data-scope="station" aria-pressed="false">Station</button><button type="button" data-scope="room" aria-pressed="true" aria-label="Whole room">Room</button></div><div id="ofTarget"><b id="ofSubject">Whole room</b><span id="ofProgress" role="status" hidden>Ready</span></div></div><div id="ofLog" role="log" aria-label="Conversation history"></div><div id="ofQuick"><button data-q="What did I miss?">What did I miss?</button><button data-q="Is anything stuck?">Anything stuck?</button><button data-q="Who is waiting on me?">Who is waiting on me?</button></div><section id="responseCard" aria-label="Agent request" hidden><header><div><b id="responseTitle"></b><small id="responseAgent"></small></div><button type="button" id="responseToggle" aria-expanded="true" aria-controls="responseBody" aria-label="Collapse request">⌄</button></header><div id="responseBody"><pre id="responseEvidence" tabindex="0" aria-label="Request details"></pre><div id="responseActions"><span id="responseDecisions"><button type="button" class="response-allow" disabled>Allow</button><button type="button" class="response-deny" disabled>Deny</button></span><button type="button" id="responseOpenApp">Answer in app ↗</button><button type="button" id="responseDismiss" hidden>Dismiss notice</button></div><small id="responseNote" role="status"></small></div></section><section id="nativeCard" aria-label="Native observations" tabindex="0" hidden><header><b>Native observations</b><button type="button" id="nativeRefresh">Refresh</button></header><p id="nativeStatus" role="status"></p><div id="nativeModel"></div><small id="nativeRequestStatus"></small><div id="nativeQuestions"></div><button type="button" id="nativeOpenApp">Open app ↗</button></section><section id="pendingQueue" aria-label="Pending messages and steering" hidden><div id="pendingQueueTitle" role="status"></div><div id="pendingQueueList"></div></section><div id="recipient" role="group" aria-label="Message recipient"><span>TO</span><button type="button" data-recipient="agent" aria-pressed="false">Agent</button><button type="button" data-recipient="watch" aria-pressed="true">Ask WATCH</button></div><div id="ofRow"><textarea id="ofIn" rows="2" placeholder="Ask about the room…" autocomplete="off" maxlength="4000"></textarea><button id="ofSend">Ask WATCH</button></div><div id="sendHint"></div></div></div></div>
+<span id="officerHome" hidden></span><div id="officer" class="hud fold" role="region" aria-label="Officer of the Watch"><div class="in"><button id="ofB" aria-expanded="false" aria-controls="ofBody" title="Officer of the Watch: ask about the room, in plain English"><span class="lamp"></span><b>Officer of the Watch</b><i id="ofSt">listening</i><u id="ofLine"></u><s>▴</s></button><div id="ofBody"><div id="ofContext"><div id="ofScope" role="group" aria-label="Officer question scope"><button type="button" data-scope="station" aria-pressed="false">Station</button><button type="button" data-scope="room" aria-pressed="true" aria-label="Whole room">Room</button></div><div id="ofTarget"><b id="ofSubject">Whole room</b><span id="ofProgress" role="status" hidden>Ready</span></div></div><div id="ofLog" role="log" aria-label="Conversation history"></div><div id="ofQuick"><button data-q="What did I miss?">What did I miss?</button><button data-q="Is anything stuck?">Anything stuck?</button><button data-q="Who is waiting on me?">Who is waiting on me?</button></div><section id="responseCard" aria-label="Agent request" hidden><header><div><b id="responseTitle"></b><small id="responseAgent"></small></div><button type="button" id="responseToggle" aria-expanded="true" aria-controls="responseBody" aria-label="Collapse request">⌄</button></header><div id="responseBody"><pre id="responseEvidence" tabindex="0" aria-label="Request details"></pre><div id="responseActions"><span id="responseDecisions"><button type="button" class="response-allow" disabled>Allow</button><button type="button" class="response-deny" disabled>Deny</button></span><button type="button" id="responseOpenApp">Answer in app ↗</button><button type="button" id="responseDismiss" hidden>Dismiss notice</button></div><small id="responseNote" role="status"></small></div></section><section id="nativeCard" aria-label="Native observations" tabindex="0" hidden><header><b>Native observations</b><button type="button" id="nativeRefresh">Refresh</button></header><p id="nativeStatus" role="status"></p><div id="nativeModel"></div><small id="nativeRequestStatus"></small><div id="nativeQuestions"></div><button type="button" id="nativeOpenApp">Open app ↗</button></section><div id="recipient" role="group" aria-label="Message recipient"><span>TO</span><button type="button" data-recipient="watch" aria-pressed="true">WATCH</button><button type="button" data-recipient="agent" aria-pressed="false">Choose agent</button></div><div id="cuAgentPicker"><button id="cuChooseAgent" type="button" aria-expanded="false" aria-controls="cuAgentChoices">Change agent ▾</button><div id="cuAgentChoices" role="group" aria-label="Choose message recipient agent" hidden></div></div><section id="pendingQueue" aria-label="Pending messages" hidden><div id="pendingQueueTitle" role="status"></div><div id="pendingQueueList"></div></section><div id="ofRow"><textarea id="ofIn" rows="2" placeholder="Ask about the room…" autocomplete="off" maxlength="4000"></textarea><button id="ofSend">Ask WATCH</button></div><div id="sendHint"></div></div></div></div>
 <div id="lock" hidden><div><img src="/static/icon.svg?v=fleet-3" alt="" style="height:72px;margin-bottom:14px"><h1>W.A.T.C.H. is locked</h1><b style="color:var(--hl);letter-spacing:.06em">Window on Agents, Tools, Changes and Hand-offs.</b><br><br>This window has no key. Press Unlock and the server will open a new tab in your default browser with the room unlocked. The key is kept on this computer in <code>~/.live-room/key</code> and is never sent to a window that merely asks for it.<br><button id="unlock">Unlock</button><br><span id="lockMsg"></span></div></div>
 
 <script>
@@ -1960,7 +1963,7 @@ function setFocus(id){
   if(id&&A[id].gone)revive(id);
   for(const k of order){A[k].dirty=true;A[k].pin=null}
   if(id&&A[id]) A[id].sayAt=null;
-  const was=focus; if(was!==id){cuDraftSave();OFUI.epoch++;OFUI.recipient=id?'agent':'watch';if(id)OFUI.scope='station'} stick=true; deskView='doing';      /* Every desk starts with work; speech is in the conversation. */ narrow=null; focus=id; if(was!==id)cuDraftRestore(); glideN++; fly(); apply(); render();
+  const was=focus; if(was!==id){cuDraftSave();OFUI.epoch++;OFUI.recipient=id?'agent':'watch';OFUI.scope=id?'station':'room';cuChooserClose(false)} stick=true; deskView='doing';      /* Every desk starts with work; speech is in the conversation. */ narrow=null; focus=id; if(was!==id)cuDraftRestore(); glideN++; fly(); apply(); render();
   ofPlace();
   apply();                                    /* again, now that the desk's own bars exist and can be measured */
   if(P0&&pos[id]&&!STATION.compact) stepUp(id,P0);
@@ -2334,7 +2337,7 @@ function ofHistory(rows){return (Array.isArray(rows)?rows:[]).filter(t=>t&&(t.ro
 function ofSnapshot(scope,id,agents,epoch){const context=scope==='station'&&id?{scope:'station',agent:id}:{scope:'room'};return {context:Object.freeze(context),history:Object.freeze({...context,...(context.scope==='station'?{name:[...String(agents[id]?.name||id)].slice(0,120).join('')}:{})}),epoch}}
 function ofMayAct(request,epoch,active){return !request||(request.epoch===epoch&&active)}
 /* end officer context helpers */
-const OFUI={tab:'officer',recipient:'watch',scope:'room',epoch:0,subject:'',docked:false};
+const OFUI={tab:'officer',recipient:'watch',target:null,targetName:'',scope:'room',epoch:0,subject:'',docked:false};
 /* unified conversation helpers: identities never depend on message text. */
 function cuEventKey(it){return Number.isInteger(it.seq)&&it.seq>=0?'seq:'+it.seq:it.key?'key:'+it.key:it.n!=null?'story:'+it.n:null}
 function cuSourceRows(a){const rows=[],seen=new Set();for(const it of a.story){if(!['you','say'].includes(it.t))continue;const key=cuEventKey(it);if(key&&seen.has(key))continue;if(key)seen.add(key);rows.push({...it,key:key||'story-index:'+rows.length})}for(const [i,m] of a.msgs.entries()){const key=cuEventKey(m);if(key&&seen.has(key))continue;if(key)seen.add(key);rows.push({...m,t:'you',key:key||'message-index:'+i})}return rows}
@@ -2350,9 +2353,11 @@ function cuEnvelopeMatch(it,agent,records){
   const claude="\nUse this channel's reply tool with request_id "+r.request_id+" and your answer in text. Preserve the owner's scope and authorization: an explicit work instruction authorizes that work under your existing permissions; a status question asks only for information. Do not infer additional tasks or permissions. For a progress question, inspect your own current state.";
   return text===prefix+codex+guidance||text===prefix+codex+old||text===prefix+claude;
 }
-function cuDirectReason(id,a){return !a?'This station is no longer available.':a.observed?'This agent’s conversation stays in ChatGPT; direct messaging is unavailable.':!['x:','c:'].includes(String(id).slice(0,2))||a.runtime!==(String(id).startsWith('c:')?'Claude':'Codex')||(String(id).startsWith('c:')&&a.sub)?'Direct messaging supports local Codex chats and parent Claude sessions.':''}
-function cuDraftKey(station,recipient,scope){return JSON.stringify([station||'room',recipient,recipient==='watch'?scope:'station'])}
-function cuVisible(context,station){return !station||context?.scope==='room'||context?.scope==='station'&&context.agent===station}
+function cuDirectReason(id,a){return !a?'This station is no longer available.':a.observed?'This agent’s conversation stays in ChatGPT; direct messaging is unavailable.':!['x:','c:'].includes(String(id).slice(0,2))||a.runtime!==(String(id).startsWith('c:')?'Claude':'Codex')||(String(id).startsWith('c:')&&a.sub)?'Direct messaging is unavailable for this station. A verified connection is required for local Codex chats and parent Claude sessions.':''}
+function cuDraftKey(station,recipient,scope){return JSON.stringify([recipient==='watch'&&scope==='room'?'room':station||'room',recipient,recipient==='watch'?scope:'station'])}
+function cuVisible(context,station){return station?context?.scope==='station'&&context.agent===station:!context||context.scope==='room'}
+function cuLaneVisible(row,recipient,target,scope){if(row.global)return true;if(row.kind==='source'||row.kind==='message'||row.kind==='agent')return recipient==='agent'&&row.context?.agent===target;if(recipient!=='watch')return false;if(row.kind==='control')return scope==='room'||row.context?.agent===target;return cuVisible(row.context,scope==='station'?target:null)}
+function cuQueueReady(cap,agent,key,epoch,now){return !!cap&&cap.agent===agent&&cap.key===key&&cap.epoch===epoch&&cap.expires>now&&cap.status==='ready'&&cap.queue?.available===true}
 function cuMeta(value){return value&&typeof value.id==='string'&&/^turn:[a-zA-Z0-9:-]{1,100}$/.test(value.id)&&typeof value.ts==='number'&&Number.isFinite(value.ts)&&value.ts>0?{id:value.id,ts:value.ts}:null}
 /* Pending rows are evidence, never an implied command to steer or resend. */
 function cuPendingRows(agent,a,records,controls){
@@ -2371,30 +2376,31 @@ function cuPendingRows(agent,a,records,controls){
   return rows;
 }
 /* end unified conversation helpers */
-const CU={nodes:new Map(),drafts:new Map(),busy:new Set(),serial:0,draftKey:null};
-function cuDraftSave(){const key=cuDraftKey(focus,OFUI.recipient,OFUI.scope);CU.drafts.set(key,ofIn.value);CU.draftKey=key}
-function cuDraftRestore(){const key=cuDraftKey(focus,OFUI.recipient,OFUI.scope);ofIn.value=CU.drafts.get(key)||'';CU.draftKey=key}
+const CU={nodes:new Map(),drafts:new Map(),busy:new Set(),serial:0,draftKey:null,capability:null};
+function cuTarget(){return focus||OFUI.target}
+function cuDraftSave(){const key=cuDraftKey(cuTarget(),OFUI.recipient,OFUI.scope);CU.drafts.set(key,ofIn.value);CU.draftKey=key}
+function cuDraftRestore(){const key=cuDraftKey(cuTarget(),OFUI.recipient,OFUI.scope);ofIn.value=CU.drafts.get(key)||'';CU.draftKey=key}
 function cuTurnMeta(){return {id:'turn:'+(globalThis.crypto?.randomUUID?.()||Date.now()+':'+ ++CU.serial),ts:Date.now()/1000}}
 function cuPaint(follow=false){
   cuPendingPaint();
   const bottom=follow||nearEnd(ofLog),top=ofLog.scrollTop,anchor=[...ofLog.children].find(n=>!n.hidden&&n.getBoundingClientRect().bottom>ofLog.getBoundingClientRect().top),offset=anchor?.getBoundingClientRect().top;
   const rows=[...CU.nodes.values()].sort((a,b)=>(a.ts||0)-(b.ts||0));let at=ofLog.firstElementChild;
-  for(const r of rows){const show=r.kind==='source'?r.context?.agent===focus:cuVisible(r.context,focus)||r.global;r.el.hidden=!show;if(r.el!==at)ofLog.insertBefore(r.el,at);at=r.el.nextElementSibling}
-  ofLog.dataset.a=focus||'';
+  for(const r of rows){const show=cuLaneVisible(r,OFUI.recipient,cuTarget(),ofCurrent().context.scope);r.el.hidden=!show;if(r.el!==at)ofLog.insertBefore(r.el,at);at=r.el.nextElementSibling}
+  ofLog.dataset.a=cuTarget()||'';
   if(bottom)ofLog.scrollTop=ofLog.scrollHeight;else if(anchor?.isConnected&&!anchor.hidden)ofLog.scrollTop=top+anchor.getBoundingClientRect().top-offset;else ofLog.scrollTop=top;
 }
 function cuPendingPaint(){
-  const host=$('#pendingQueue'),list=$('#pendingQueueList'),rows=cuPendingRows(focus,A[focus],OFM.records,OFM.controls);
+  const host=$('#pendingQueue'),list=$('#pendingQueueList'),target=cuTarget(),rows=OFUI.recipient==='agent'?cuPendingRows(target,A[target],OFM.records,new Map()):[];
   const unresolved=rows.filter(r=>r.unresolved).length,pending=rows.length-unresolved,title=[pending?'Pending · '+pending:'',unresolved?'Unresolved · '+unresolved:''].filter(Boolean).join(' · ');
-  txt($('#pendingQueueTitle'),title?title+' · '+(A[focus]?.name||focus):'');
+  txt($('#pendingQueueTitle'),title?title+' · '+(A[target]?.name||target):'');
   const active=new Set(rows.map(r=>r.id)),existing=new Map([...list.children].map(el=>[el.dataset.pendingId,el])),focused=document.activeElement;let restoreFocus=false;
   // Remove obsolete siblings first so surviving summaries never move merely because an earlier row cleared.
   for(const [id,el] of existing)if(!active.has(id)){if(el.contains(focused))restoreFocus=true;el.remove()}
   host.hidden=!rows.length;let at=list.firstElementChild;
   for(const r of rows){
     let el=existing.get(r.id);
-    if(!el){el=document.createElement('details');el.dataset.pendingId=r.id;el.innerHTML='<summary><b></b><span></span></summary><pre></pre><small></small>'}
-    txt(el.querySelector('b'),r.label);txt(el.querySelector('span'),r.text);txt(el.querySelector('pre'),r.text);txt(el.querySelector('small'),r.note);
+    if(!el){el=document.createElement('details');el.dataset.pendingId=r.id;el.innerHTML='<summary><svg aria-hidden="true" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M3 3v11a3 3 0 0 0 3 3h10m-3-3 3 3-3 3M7 5h9M7 9h6"/></svg><b></b><span></span></summary><small></small>'}
+    txt(el.querySelector('b'),r.label);txt(el.querySelector('span'),r.text);txt(el.querySelector('small'),r.note);
     if(el!==at)list.insertBefore(el,at);at=el.nextElementSibling;
   }
   if(restoreFocus)ofIn.focus({preventScroll:true});
@@ -2415,28 +2421,83 @@ function cuSources(a){
   for(const [id,r] of CU.nodes){if(r.kind==='source'&&r.context.agent===a.id&&!active.has(id)){r.el.remove();CU.nodes.delete(id)}}
 }
 function cuNotice(html){const id='notice:'+ ++CU.serial,d=ofAdd('k',html,{id});CU.nodes.get(id).global=true;cuPaint();return d}
-function cuRevealEvent(id,n){if(focus!==id)setFocus(id);if(!A[id])return;deskReveal('conversation');cuSources(A[id]);cuPaint();if(!STATION.compact&&!sideW())narrow='R';render();const el=[...ofLog.querySelectorAll('[data-source-n]')].find(x=>x.dataset.sourceAgent===id&&+x.dataset.sourceN===n);if(el){const detail=el.querySelector('details');if(detail)detail.open=true;el.scrollIntoView({block:'center'});el.classList.add('hl');setTimeout(()=>el.classList.remove('hl'),1600)}}
-function cuCard(r,kind){const id=kind+':'+r.request_id;let row=CU.nodes.get(id);if(!row){const el=ofAdd('of '+kind,'',{id,context:{scope:'station',agent:r.agent,name:r.name},ts:r.created||0});row=CU.nodes.get(id);row.el=el}return row.el}
-function ofCurrent(){return ofSnapshot(focus?OFUI.scope:'room',focus,A,OFUI.epoch)}
+function cuRevealEvent(id,n){if(focus!==id)setFocus(id);if(!A[id])return;cuSelectRecipient('agent');deskReveal('conversation');cuSources(A[id]);cuPaint();if(!STATION.compact&&!sideW())narrow='R';render();const el=[...ofLog.querySelectorAll('[data-source-n]')].find(x=>x.dataset.sourceAgent===id&&+x.dataset.sourceN===n);if(el){const detail=el.querySelector('details');if(detail)detail.open=true;el.scrollIntoView({block:'center'});el.classList.add('hl');setTimeout(()=>el.classList.remove('hl'),1600)}}
+function cuCard(r,kind){const id=kind+':'+r.request_id;let row=CU.nodes.get(id);if(!row){const el=ofAdd('of '+kind,'',{id,context:{scope:'station',agent:r.agent,name:r.name},ts:r.created||0,kind});row=CU.nodes.get(id);row.el=el}return row.el}
+function ofCurrent(){return ofSnapshot(OFUI.scope,cuTarget(),A,OFUI.epoch)}
+function ofOpenContext(context){
+  cuDraftSave();if(context.scope==='station'&&focus!==context.agent){if(A[context.agent])setFocus(context.agent);else{if(focus)setFocus(null);OFUI.target=context.agent;OFUI.targetName=context.name||context.agent}}
+  OFUI.recipient='watch';OFUI.scope=context.scope;OFUI.epoch++;cuDraftRestore();ofContextPaint();ofToggle(true);
+}
+function ofReplyNotice(request){
+  if(!request?.history||request.noticeId&&CU.nodes.has(request.noticeId)||cuLaneVisible({kind:'watch',context:request.history},OFUI.recipient,cuTarget(),ofCurrent().context.scope))return;
+  const id='reply-notice:'+ ++CU.serial,d=ofAdd('k','<button type="button" class="watch-reply-link">'+esc('View WATCH update · '+ofLabel(request.history))+'</button>',{id,global:true,ts:Date.now()/1000});
+  request.noticeId=id;d.querySelector('button').onclick=()=>{ofOpenContext(request.history);d.remove();CU.nodes.delete(id)};
+}
 function ofLabel(c){return !c?'Earlier context unknown':c.scope==='room'?'Whole room':(c.name||c.agent)+(A[c.agent]?'':' · unavailable')}
 function ofAttributed(c,html){return '<small class="turn-context">'+esc(c?.scope==='station'?'About '+ofLabel(c):ofLabel(c))+'</small>'+html}
-function ofContextPaint(){const c=ofCurrent().history, direct=!!focus&&OFUI.recipient==='agent',blocked=direct?(cuDirectReason(focus,A[focus])||(!DEMO&&(!KEY||claiming||locked)?'Unlock the room to send a direct message.':!DEMO&&!connected?'Room connection is offline.':!DEMO&&OFM.available===false?'Agent messaging unavailable: '+(OFM.reason||'transport not ready'):'')):'';txt($('#ofSubject'),focus?(A[focus]?.name||focus):'Whole room');$('#ofSubject').title=$('#ofSubject').textContent;ofIn.placeholder=direct?'Message '+(A[focus]?.name||'agent')+'…':c.scope==='station'?'Ask WATCH about '+(A[c.agent]?.name||'this station')+'…':'Ask WATCH about the room…';ofIn.setAttribute('aria-label',ofIn.placeholder.replace('…',''));ofIn.maxLength=direct?2000:4000;$('#ofScope').hidden=direct;for(const b of $('#ofScope').querySelectorAll('button')){b.setAttribute('aria-pressed',String(b.dataset.scope===c.scope));b.disabled=b.dataset.scope==='station'&&!focus}for(const b of $('#recipient').querySelectorAll('button')){b.setAttribute('aria-pressed',String(b.dataset.recipient===(direct?'agent':'watch')));b.hidden=b.dataset.recipient==='agent'&&!focus;if(b.dataset.recipient==='agent')b.textContent=A[focus]?.name||'Agent'}$('#ofQuick').hidden=direct;txt($('#ofSend'),direct?'Send ↗':'Ask WATCH ↗');$('#ofSend').disabled=direct?CU.busy.has(focus)||!!blocked:OF.busy;txt($('#sendHint'),direct?(blocked||'Messages queue for the agent; sending does not steer its current turn.'):focus?'Explicit steering is supported for running local Codex chats.':'WATCH answers from logs and can act on explicit requests.');ofProgressPaint();cuPaint()}
+function cuCapabilityRefresh(){
+  if(DEMO||OFUI.recipient!=='agent')return;
+  const agent=cuTarget(),key=KEY,epoch=OFUI.epoch,now=Date.now();
+  if(!agent||cuDirectReason(agent,A[agent])||!key||claiming||locked||!connected){CU.capability=null;return}
+  const old=CU.capability,same=old&&old.agent===agent&&old.key===key&&old.epoch===epoch;if(same&&(old.refreshing||old.expires>now+2000))return;
+  // Renew early without discarding a still-valid proof; hard expiry always blocks Send.
+  const retain=same&&old.status==='ready'&&old.expires>now;
+  const cap={agent,key,epoch,status:retain?'ready':'loading',refreshing:true,expires:retain?old.expires:0,queue:retain?old.queue:null};CU.capability=cap;
+  fetch('/agent-capabilities?agent='+encodeURIComponent(agent),{headers:{'X-Live-Room-Key':key},cache:'no-store',signal:AbortSignal.timeout(10000)}).then(async res=>{
+    if(!res.ok)throw Error('Messaging availability could not be checked.');
+    const value=await res.json(),queue=value.actions?.queue;
+    if(value.agent!==agent||typeof queue?.available!=='boolean'||queue.mode!=='queue')throw Error('Messaging availability was not valid.');
+    return {available:queue.available,reason:typeof queue.reason==='string'?queue.reason:''};
+  }).then(queue=>{if(CU.capability!==cap||KEY!==key||OFUI.epoch!==epoch||cuTarget()!==agent)return;if(!connected||locked||claiming){CU.capability=null;return}cap.refreshing=false;cap.queue=queue;cap.status='ready';cap.expires=Date.now()+15000;ofContextPaint()}).catch(()=>{
+    if(CU.capability!==cap||KEY!==key||OFUI.epoch!==epoch||cuTarget()!==agent)return;cap.refreshing=false;cap.queue=null;cap.status='error';cap.expires=Date.now()+15000;ofContextPaint();
+  });
+}
+function cuSendReason(id){
+  const structural=cuDirectReason(id,A[id]);if(structural)return structural;
+  if(DEMO)return '';
+  if(!KEY||claiming||locked)return 'Unlock the room to send a direct message.';
+  if(!connected)return 'Room connection is offline.';
+  const cap=CU.capability;if(cuQueueReady(cap,id,KEY,OFUI.epoch,Date.now()))return '';
+  if(cap?.agent===id&&cap.key===KEY&&cap.epoch===OFUI.epoch&&cap.expires>Date.now())return cap.status==='error'?'Messaging availability could not be checked.':cap.queue?.reason||'Direct messaging is unavailable for this agent.';
+  return 'Checking messaging availability…';
+}
+function ofContextPaint(){
+  cuCapabilityRefresh();const id=cuTarget(),c=ofCurrent().history,direct=OFUI.recipient==='agent',blocked=direct?cuSendReason(id):'',name=A[id]?.name||(id===OFUI.target?OFUI.targetName:'')||'Choose agent';
+  txt($('#ofSubject'),direct?name:c.scope==='station'?ofLabel(c):'Whole room');$('#ofSubject').title=$('#ofSubject').textContent;
+  ofIn.placeholder=direct?'Message '+name+'…':c.scope==='station'?'Ask WATCH about '+ofLabel(c)+'…':'Ask WATCH about the room…';ofIn.setAttribute('aria-label',ofIn.placeholder.replace('…',''));ofIn.maxLength=direct?2000:4000;
+  $('#ofScope').hidden=direct;for(const b of $('#ofScope').querySelectorAll('button')){b.setAttribute('aria-pressed',String(b.dataset.scope===c.scope));b.disabled=b.dataset.scope==='station'&&!id}
+  for(const b of $('#recipient').querySelectorAll('[data-recipient]')){b.setAttribute('aria-pressed',String(b.dataset.recipient===OFUI.recipient));if(b.dataset.recipient==='agent')b.textContent=name}
+  $('#cuChooseAgent').hidden=!!focus;$('#cuChooseAgent').setAttribute('aria-label',id?'Change message recipient agent':'Choose message recipient agent');
+  $('#ofQuick').hidden=direct;txt($('#ofSend'),direct?'Send ↗':'Ask WATCH ↗');$('#ofSend').disabled=direct?CU.busy.has(id)||!!blocked:OF.busy;
+  txt($('#sendHint'),direct?(blocked||'Messages queue for the agent; sending does not steer its current turn.'):'WATCH answers from logs and can act on explicit requests.');
+  if(!focus&&A[id])cuSources(A[id]);cuChooserPaint();ofProgressPaint();cuPaint();
+}
+function cuSelectRecipient(recipient){cuDraftSave();OFUI.recipient=recipient;OFUI.epoch++;cuDraftRestore();ofContextPaint()}
+function cuChooserClose(restore=true){const list=$('#cuAgentChoices');if(!list||list.hidden)return;list.hidden=true;$('#cuChooseAgent').setAttribute('aria-expanded','false');if(restore)$('#cuChooseAgent').focus()}
+function cuChooserPaint(){
+  const list=$('#cuAgentChoices');if(list.hidden)return;const ids=order.filter(id=>A[id]&&!A[id].gone),signature=JSON.stringify(ids.map(id=>[id,A[id].name,A[id].runtime]));if(list.dataset.signature===signature)return;list.dataset.signature=signature;const held=list.contains(document.activeElement),target=document.activeElement?.dataset?.target;
+  list.replaceChildren();for(const id of ids){const b=document.createElement('button');b.type='button';b.dataset.target=id;b.textContent=(A[id].name||id)+' · '+(A[id].runtime||'Unknown provider');b.onclick=()=>{cuDraftSave();OFUI.target=id;OFUI.targetName=A[id]?.name||id;OFUI.recipient='agent';OFUI.epoch++;cuDraftRestore();cuChooserClose(false);ofContextPaint();ofIn.focus()};list.appendChild(b)}if(!ids.length){const p=document.createElement('p');p.textContent='No agents are available.';list.appendChild(p)}
+  if(held){const next=[...list.children].find(b=>b.dataset.target===target)||list.querySelector('button')||$('#cuChooseAgent');next.focus()}
+}
 function ofTab(tab,interaction=true){if(interaction)OFUI.epoch++;OFUI.tab='officer';$('#officerSlot').hidden=false;}
 function ofInit(){if(OF.loaded)return;OF.loaded=true;ofLoad();ofMessageLoad();if(!OF.turns.length)ofAdd('k','<p>Choose the agent to send a direct message, or Ask WATCH for help with recorded activity.</p>')}
 function ofPlace(){const docked=!!focus;if(docked!==OFUI.docked){OFUI.docked=docked;if(docked){$('#officerSlot').appendChild(ofEl);ofEl.classList.add('docked');ofEl.classList.remove('fold');ofInit()}else{$('#officerHome').after(ofEl);ofEl.classList.remove('docked');ofEl.classList.add('fold');$('#ofB').setAttribute('aria-expanded','false')}}ofTab(OFUI.tab,false);ofContextPaint()}
-function ofReveal(){if(focus){deskReveal('conversation');cuDraftSave();OFUI.recipient='watch';OFUI.epoch++;cuDraftRestore();ofContextPaint();ofTab('officer');if(STATION.compact)$('#deskR').scrollIntoView({block:'start'})}ofToggle(true)}
-function ofOwnsFocus(request){return request.epoch===OFUI.epoch&&(!focus||OFUI.recipient==='watch')&&!ofEl.classList.contains('fold')&&(document.activeElement===ofIn||document.activeElement===$('#ofSend'))}
+function ofReveal(){cuSelectRecipient('watch');if(focus){deskReveal('conversation');ofTab('officer');if(STATION.compact)$('#deskR').scrollIntoView({block:'start'})}ofToggle(true)}
+function ofOwnsFocus(request){return request.epoch===OFUI.epoch&&(OFUI.recipient==='watch')&&!ofEl.classList.contains('fold')&&(document.activeElement===ofIn||document.activeElement===$('#ofSend'))}
 $('#ofScope').onclick=e=>{const b=e.target.closest('button[data-scope]');if(!b||b.disabled||b.dataset.scope===ofCurrent().context.scope)return;cuDraftSave();OFUI.scope=b.dataset.scope;OFUI.epoch++;cuDraftRestore();ofContextPaint()};
 $('#ofScope').onkeydown=e=>e.stopPropagation();
-$('#recipient').onclick=e=>{const b=e.target.closest('[data-recipient]');if(!b||b.hidden)return;cuDraftSave();OFUI.recipient=b.dataset.recipient;OFUI.epoch++;cuDraftRestore();ofContextPaint()};
+$('#recipient').onclick=e=>{const b=e.target.closest('[data-recipient]');if(!b||b.hidden)return;if(b.dataset.recipient==='agent'&&!cuTarget()){$('#cuChooseAgent').click();return}cuSelectRecipient(b.dataset.recipient)};
+$('#cuChooseAgent').onclick=()=>{const list=$('#cuAgentChoices');if(!list.hidden){cuChooserClose();return}list.hidden=false;$('#cuChooseAgent').setAttribute('aria-expanded','true');cuChooserPaint();list.querySelector('button')?.focus()};
+$('#cuAgentPicker').onkeydown=e=>{e.stopPropagation();if(e.key==='Escape') {e.preventDefault();cuChooserClose()} };
+addEventListener('pointerdown',e=>{if(!$('#cuAgentPicker').contains(e.target))cuChooserClose(false)});
 $('#recipient').onkeydown=e=>e.stopPropagation();
 ofIn.addEventListener('input',cuDraftSave);
 $('#compactDesk').addEventListener('pointerdown',()=>{moved=false;drop()});
 $('#compactDesk').addEventListener('scroll',()=>{if(focus&&A[focus]){A[focus].dirty=true;render()}},{passive:true});
-function ofProgressPaint(){const p=$('#ofProgress'),c=OF.pending?.history,show=OF.busy&&(!focus||c?.scope==='room'||c?.agent===focus);p.hidden=!show;if(show)txt(p,'WATCH · '+ofLabel(c)+' · thinking…')}
+function ofProgressPaint(){const p=$('#ofProgress'),c=OF.pending?.history,show=OF.busy&&OFUI.recipient==='watch'&&cuVisible(c,ofCurrent().context.scope==='station'?cuTarget():null);p.hidden=!show;if(show)txt(p,'WATCH · '+ofLabel(c)+' · thinking…')}
 function ofStatus(t){txt(ofSt,t);ofProgressPaint()}
 function ofStand(n,who,maybe){const sure=n===0?(order.length?'no confirmed request':''):n===1&&who?(who.name||'an agent')+' is waiting on you':n+' agents are waiting on you'; txt(ofLine,sure+(maybe&&sure?' · '+maybe+' possible':'')); ofEl.classList.toggle('need',n>0); ofEl.classList.toggle('maybe',!n&&maybe>0)}      /* the plate's one line is the room's own count, not the model's: a request the log only suggests is "possible", never absent */
-function ofAdd(cls,html,meta={}){const d=document.createElement('div'); d.className=cls; d.innerHTML=html; const id=meta.id||'ui:'+ ++CU.serial;CU.nodes.set(id,{el:d,context:meta.context||null,ts:meta.ts||0,kind:'watch'});cuPaint();return d}
+function ofAdd(cls,html,meta={}){const d=document.createElement('div'); d.className=cls; d.innerHTML=html; const id=meta.id||'ui:'+ ++CU.serial;CU.nodes.set(id,{el:d,context:meta.context||null,ts:meta.ts||0,kind:meta.kind||'watch',global:!!meta.global});cuPaint();return d}
 /* answer markup (tests/test_page.js evaluates this block on its own; keep it self-contained, up to the end marker)
    The Officer's answers render a safe slice of Markdown, the parts a README uses: the text is escaped first, and
    only renderer-chosen tags are added afterwards (bold, italics, strikethrough, inline and fenced code, bullet,
@@ -2497,6 +2558,7 @@ function ofCite(c){const aid=c.aid||(Object.keys(A).find(k=>A[k].name===c.agent)
 function ofJump(aid,n){const a=A[aid]; if(!a){cuNotice('<span class="k">That agent is no longer in the room.</span>'); return}
   setFocus(aid); const it=a.story.find(x=>x.seq===n||(x.e&&x.e.seq===n));
   if(!it){cuNotice(`<span class="k">That entry is no longer on ${esc(a.name||'the')}'s desk: a desk keeps its last three hundred.</span>`); return}
+  if(['you','say'].includes(it.t))cuSelectRecipient('agent');
   if(it.t==='you')ofTab('comms');
   if(it.e){a.pin=it.e; deskView='doing'}
   deskReveal(['you','say'].includes(it.t)?'conversation':'doing');
@@ -2593,7 +2655,7 @@ function ofAct(x,request){      /* [done, words]: done only when the screen actu
   if(x.do==='filter'){const n=String(x.project||'').trim(); if(!n){setProj(null); return [true,'showing every project']}
     const low=n.toLowerCase(), key=order.map(k=>proj(k)).find(k=>k&&(k.toLowerCase()===low||String(projLabel(k)).toLowerCase()===low)); if(!key) return [false,'no project called '+n+' is in the room, so the filter was not changed'];
     setProj(key); return [PROJ===key,PROJ===key?'showing only '+projLabel(key):'the filter could not be applied']}
-  if(x.do==='go_to'){if(!A[x.agent]) return [false,'that agent is no longer in the room']; setFocus(x.agent); return [true,'went to '+(A[x.agent].name||'the desk')]}
+  if(x.do==='go_to'){if(!A[x.agent]) return [false,'that agent is no longer in the room']; setFocus(x.agent);cuDraftSave();OFUI.recipient='watch';OFUI.scope=request?.history?.scope||'station';OFUI.epoch++;cuDraftRestore();ofContextPaint(); return [true,'went to '+(A[x.agent].name||'the desk')]}
   if(x.do==='dismiss'){if(!A[x.agent]) return [false,'that agent is no longer in the room']; dismiss(x.agent); return [true,'dismissed '+A[x.agent].name+' (Bring back undoes it)']}
   if(x.do==='watch_draft'){const w=[...String(x.words||'').trim().split(/\s+/).join(' ')].slice(0,80).join(''), label=String(x.label||'');      /* eighty characters as the server counts them, never half of one */ if(!w||!KIND_ORDER.includes(label)) return [false,'the Watch rule draft was not usable'];
     if(!$('#watchDraft').hidden) return [false,`a second Watch rule ("${w}") was not drafted: the Watch panel holds one draft at a time; ask for it after keeping or dropping the first`];
@@ -2604,13 +2666,13 @@ function ofAct(x,request){      /* [done, words]: done only when the screen actu
   return [false,'']}
 /* Direct sending is an explicit transport choice; it never passes through the Officer. */
 async function cuSend(){
-  if(!focus||OFUI.recipient==='watch')return ofSend();
-  const id=focus,a=A[id],q=ofIn.value.trim();if(!q||CU.busy.has(id))return;
-  const fail=text=>ofAdd('k',esc(text),{context:{scope:'station',agent:id,name:a?.name||id},ts:Date.now()/1000});
+  if(OFUI.recipient==='watch')return ofSend();
+  const id=cuTarget(),a=A[id],q=ofIn.value.trim();if(!q||CU.busy.has(id))return;
+  const fail=text=>ofAdd('k',esc(text),{context:{scope:'station',agent:id,name:a?.name||id},ts:Date.now()/1000,kind:'agent'});
   if([...q].length>2000||q.includes('\0'))return fail('Message must contain 1–2000 characters and no null characters. Nothing was sent.');
   if(!DEMO&&(!KEY||claiming||locked))return fail('Unlock the room before sending. Nothing was sent.');
   if(!DEMO&&!connected)return fail('Room connection is offline. Nothing was sent.');
-  const unavailable=cuDirectReason(id,a);if(unavailable)return fail(unavailable+' Nothing was sent.');
+  const unavailable=cuSendReason(id);if(unavailable){if(unavailable==='Checking messaging availability…')return;return fail(unavailable+' Nothing was sent.')}
   const request_id=globalThis.crypto?.randomUUID?.();if(!request_id)return fail('This browser cannot create a secure request ID. Nothing was sent.');
   const r={request_id,agent:id,name:a.name||id,question:q,state:'sending',created:Date.now()/1000};
   CU.busy.add(id);OFM.records.set(request_id,r);ofMessagePaint(r);ofMessageSave();ofIn.value='';cuDraftSave();ofContextPaint();
@@ -2631,24 +2693,25 @@ async function ofSend(){
   try{
     if(DEMO){await new Promise(r=>setTimeout(r,700));ofShow(ofDemoAnswer(q,request),request);ofAdd('k','Scripted demo answer · no live agents contacted.',{context:request.history,ts:Date.now()/1000});remove();return}
     const request_id=globalThis.crypto?.randomUUID?.();
-    const res=await post('/ask',{turns:ofHistory(OF.turns).slice(-20),context:request.context,...(request_id?{request_id}:{})});
+    const res=await post('/ask',{turns:ofHistory(OF.turns.filter(t=>cuVisible(t.context,request.context.scope==='station'?request.context.agent:null))).slice(-20),context:request.context,...(request_id?{request_id}:{})});
     if(!res.ok){const t=await res.text();remove();ofAdd('of',ofAttributed(request.history,`<p class="k">${esc(t||('The Officer could not answer ('+res.status+').'))}</p>`),{context:request.history,ts:Date.now()/1000});ofStatus(res.status===503?'off':'listening');return}
     const r=await res.json();if(r.error){remove();ofAdd('of',ofAttributed(request.history,`<p class="k">${esc(r.error)}</p>`),{context:request.history,ts:Date.now()/1000});return}
     request.replyUI=cuTurnMeta();OF.turns.push({role:'assistant',content:String(r.text||'').slice(0,4000),context:request.history,ui:request.replyUI});OF.turns=OF.turns.slice(-40);ofShow(r,request);ofSave();
   }catch(err){remove();ofAdd('of',ofAttributed(request.history,'<p class="k">The Officer could not be reached. If you asked it to message or control an agent, check message/control status. Do not repeat the request while its outcome is uncertain.</p>'),{context:request.history,ts:Date.now()/1000})}
-  finally{OF.busy=false;OF.pending=null;ofContextPaint();if(ofSt.textContent==='thinking…')ofStatus(DEMO?'demo · scripted answers':'listening')}
+  finally{OF.busy=false;OF.pending=null;ofContextPaint();ofReplyNotice(request);if(ofSt.textContent==='thinking…')ofStatus(DEMO?'demo · scripted answers':'listening')}
 }
 /* response actions preserve suggestions across navigation; only a user invokes a deferred action. */
-function ofSuggestion(x,request){let used=false;const d=ofAdd('done','<button class="suggestion" type="button">'+esc('Apply suggestion · '+({go_to:'Go to '+(A[x.agent]?.name||x.agent),filter:'Filter '+(x.project||'all projects'),dismiss:'Dismiss '+(A[x.agent]?.name||x.agent),watch_draft:'Draft Watch rule: '+(x.words||'')}[x.do]||x.do))+'</button>',{context:request?.history,ts:Date.now()/1000});const b=d.querySelector('button');b.onclick=()=>{if(used)return;used=true;b.disabled=true;const [ok,words]=ofAct(x,request);ofAdd('done',(ok?'Done · ':'Not done · ')+esc(words),{context:request?.history,ts:Date.now()/1000});if(ok&&x.do==='watch_draft'){if(!focus)ofToggle(false);$('#watchTry').focus()}}}
+function ofSuggestion(x,request){let used=false;const d=ofAdd('done','<button class="suggestion" type="button">'+esc('Apply suggestion · '+({go_to:'Go to '+(A[x.agent]?.name||x.agent),filter:'Filter '+(x.project||'all projects'),dismiss:'Dismiss '+(A[x.agent]?.name||x.agent),watch_draft:'Draft Watch rule: '+(x.words||'')}[x.do]||x.do))+'</button>',{context:request?.history,ts:Date.now()/1000});const b=d.querySelector('button');b.onclick=()=>{if(used)return;used=true;b.disabled=true;const [ok,words]=ofAct(x,request);ofAdd('done',(ok?'Done · ':'Not done · ')+esc(words),{context:request?.history,ts:Date.now()/1000});if(ok&&x.do==='watch_draft'){if(!focus)ofToggle(false);$('#watchTry').focus()}ofReplyNotice(request)}}
 function ofShow(r,request){
   if(Array.isArray(r.messages))ofMessageMerge(r.messages);
   if(Array.isArray(r.controls))ofControlMerge(r.controls);
   const seen=new Set(),cites=(r.cites||[]).filter(c=>c&&c.n!=null&&!seen.has(c.n)&&seen.add(c.n)).slice(0,12);
   const d=ofAdd('of',ofAttributed(request?.history,'<b>WATCH</b>'+ofParas(r.text)+(cites.length?`<details><summary>Recorded evidence · ${cites.length}</summary><div class="cites">${cites.map(ofCite).join('')}</div></details>`:'')),{...request?.replyUI,context:request?.history,ts:request?.replyUI?.ts||Date.now()/1000});
   d.querySelectorAll('.cites button[data-n]').forEach(b=>b.onclick=()=>ofJump(b.dataset.a,+b.dataset.n));
-  const active=ofMayAct(request,OFUI.epoch,(!focus||OFUI.recipient==='watch')&&!ofEl.classList.contains('fold'))&&(!request||ofOwnsFocus(request));let toWatch=false;
+  const active=ofMayAct(request,OFUI.epoch,(OFUI.recipient==='watch')&&!ofEl.classList.contains('fold'))&&(!request||ofOwnsFocus(request));let toWatch=false;
   for(const x of (r.actions||[])){if(!active&&x.do!=='draft'){ofSuggestion(x,request);continue}const [ok,words]=ofAct(x,request);if(words)ofAdd('done',(ok?'Done · ':'Not done · ')+esc(words),{context:request?.history,ts:Date.now()/1000});if(ok&&x.do==='watch_draft')toWatch=true}
   if(toWatch){if(!focus)ofToggle(false);$('#watchTry').focus()}
+  ofReplyNotice(request);
 }
 function ofDemoAnswer(q,request){      /* the demo's Officer: four scripted answers, each built from the synthetic agents as they are on screen now, never from a model */
   const low=q.toLowerCase(), nowS=Date.now()/1000, agoW=ts=>{const s=Math.max(0,nowS-ts); return s<60?'just now':s<3600?Math.round(s/60)+' min ago':Math.round(s/3600)+' h ago'};
@@ -2687,7 +2750,7 @@ setInterval(()=>ofMessagePoll(),3000);
 $('#ofB').onclick=()=>ofToggle(ofEl.classList.contains('fold')); $('#ofSend').onclick=cuSend;
 $('#ofQuick').onclick=ev=>{const b=ev.target.closest('[data-q]'); if(b&&!OF.busy){if(OFUI.recipient!=='watch'){cuDraftSave();OFUI.recipient='watch';OFUI.epoch++;cuDraftRestore();ofContextPaint()}ofIn.value=b.dataset.q; ofSend()}};      /* the three questions you ask most, one tap each */
 ofIn.addEventListener('keydown',ev=>{if(deskSubmitKey(ev)){ev.preventDefault();cuSend()}});
-addEventListener('keydown',e=>{if(e.key!=='Escape')return;if(OFUI.docked){if(ofEl.contains(e.target)||e.target===$('#ofScope')){e.preventDefault();e.stopImmediatePropagation();OFUI.epoch++;$('#recipient [aria-pressed="true"]').focus()}}else if(!ofEl.classList.contains('fold')){ofToggle(false);e.stopImmediatePropagation()}},true);
+addEventListener('keydown',e=>{if(e.key!=='Escape')return;if(!$('#cuAgentChoices').hidden){e.preventDefault();e.stopImmediatePropagation();cuChooserClose();return}if(OFUI.docked){if(ofEl.contains(e.target)||e.target===$('#ofScope')){e.preventDefault();e.stopImmediatePropagation();OFUI.epoch++;$('#recipient [aria-pressed="true"]').focus()}}else if(!ofEl.classList.contains('fold')){ofToggle(false);e.stopImmediatePropagation()}},true);
 addEventListener('pointerdown',e=>{if(!OFUI.docked&&!ofEl.classList.contains('fold')&&!ofEl.contains(e.target))ofToggle(false)},true);
 
 function demo(){
