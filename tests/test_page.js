@@ -557,13 +557,14 @@ deskForestChecks();for(const mutation of [c=>c.replace("/^related/.test(a.via||'
 console.log('ok agent forest: relationship truth, cycles, missing/dismissed parents, input ordering, unique rows, provider source, 12000-level iterative chain; mutations detected');
 
 const alertHelpers=html.slice(html.indexOf('function activeAlert('),html.indexOf('/* end alert presentation helpers */'));
+const alertFixtures={proj:()=> 'Orchard',projLabel:String,clock:ts=>'time '+ts};
 const alertEscape=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 
 /* Agent rail signals preserve their existing alternate views without duplicate lists. */
 function deskSignalsChecks(mutate=false){
   const nodes=new Map(),node=id=>{if(!nodes.has(id))nodes.set(id,{hidden:false,textContent:'',firstElementChild:null,children:[],setAttribute(k,v){this[k]=v}});return nodes.get(id)};
   const requests=[];
-  const ctx={focus:'A',A:{A:{name:'Ada',runtime:'Codex'}},DESK:{open:false,agents:new Map(),agentRows:new Map()},bayPg:0,PINS:{},STEADY:false,order:[],document:{activeElement:null},$:node,txt:(el,text)=>el.textContent=text,one:String,stateOf:a=>({label:'Waiting',need:a.request}),responsePaint:(a,n)=>requests.push(n),deskSetViewUI(){},deskFocus(){},render(){},esc:alertEscape,put:(n,v)=>n.html=v};
+  const ctx={...alertFixtures,focus:'A',A:{A:{name:'Ada',runtime:'Codex'}},DESK:{open:false,agents:new Map(),agentRows:new Map()},bayPg:0,PINS:{},STEADY:false,order:[],document:{activeElement:null},$:node,txt:(el,text)=>el.textContent=text,one:String,stateOf:a=>({label:'Waiting',need:a.request}),responsePaint:(a,n)=>requests.push(n),deskSetViewUI(){},deskFocus(){},render(){},esc:alertEscape,put:(n,v)=>n.html=v};
   let code=html.slice(html.indexOf('function deskPaint('),html.indexOf('function deskTheme('));
   if(mutate)code=code.replace("$('#bay').hidden=bayPg===0;","$('#bay').hidden=false;");
   const signals=[1,2].map(page=>({dataset:{bay:String(page)},setAttribute(k,v){this[k]=v}}));node('#deskSignals').children=signals;
@@ -581,7 +582,7 @@ function deskAlertChecks(mutation=''){
   assert.ok(headStart>=0&&alertAt>headStart&&alertAt<headEnd,'alert belongs to the persistent desk header');
   assert.ok(headEnd<html.indexOf('id="deskWork"',headEnd),'alert is outside the closable Work area');
   const {node,doc,events}=railDOM(),list=node('#deskAgentList'),agents=new Map();
-  const ctx={focus:'A',A:{A:{name:'Ada',runtime:'Codex'},B:{name:'Bram',runtime:'Claude'}},DESK:{open:false,agents,agentRows:new Map()},bayPg:0,PINS:{},STEADY:false,order:['A','B'],document:doc,Date:{now:()=>1000*1000},$:node,one:t=>String(t||'').replace(/\s+/g,' '),stateOf:a=>({label:'between actions',need:a.request,busy:!!a.busy}),responsePaint:(a,n)=>ctx.cardRequest=n,deskSetViewUI(){},deskFocus:el=>el.focus({preventScroll:true}),post(){throw Error('Painting alerts must not submit')},cuSend(){throw Error('Painting alerts must not send')},esc:alertEscape,put:(n,v)=>n.html=v};
+  const ctx={...alertFixtures,focus:'A',A:{A:{name:'Ada',runtime:'Codex'},B:{name:'Bram',runtime:'Claude'}},DESK:{open:false,agents,agentRows:new Map()},bayPg:0,PINS:{},STEADY:false,order:['A','B'],document:doc,Date:{now:()=>1000*1000},$:node,one:t=>String(t||'').replace(/\s+/g,' '),stateOf:a=>({label:'between actions',need:a.request,busy:!!a.busy}),responsePaint:(a,n)=>ctx.cardRequest=n,deskSetViewUI(){},deskFocus:el=>el.focus({preventScroll:true}),post(){throw Error('Painting alerts must not submit')},cuSend(){throw Error('Painting alerts must not send')},esc:alertEscape,put:(n,v)=>n.html=v};
   let code=html.slice(html.indexOf('function deskPaint('),html.indexOf('function deskTheme('));
   const mutations={
     hide:c=>c.replace("paintAlert($('#deskAlert'),alert);","paintAlert($('#deskAlert'),null);"),
@@ -594,17 +595,17 @@ function deskAlertChecks(mutation=''){
   const realTxt=html.split('\n').find(line=>line.startsWith('const txt='));const paint=vm.runInNewContext(realTxt+'\n'+alertHelpers+'\n'+deskHelpers+'\n'+code+';deskPaint',ctx);
   paint();assert.equal(node('#deskAlert').hidden,true);assert.equal(node('#deskAlert').html,'');assert.equal(agents.get('A').dataset.state,'idle');
   const command='git push origin main <img src=x onerror=bad()>',alert={n:1,id:'A',ts:990,label:'a push',text:command};ctx.A.A.alert=alert;paint();
-  assert.equal(ctx.DESK.open,false);assert.equal(node('#deskAlert').hidden,false);assert.match(node('#deskAlert').html,/Looks like a push/);assert.match(node('#deskAlert').html,/<details class="alert-details"><summary>View details<\/summary><pre tabindex="0">git push origin main &lt;img/);assert.equal(agents.get('A').dataset.state,'alarm');assert.equal(agents.get('A').querySelector('.agent-status').textContent,'Looks like a push','rail alarm remains compact');assert.equal(agents.get('A').title,undefined,'rail has no raw-command tooltip');
+  assert.equal(ctx.DESK.open,false);assert.equal(node('#deskAlert').hidden,false);assert.match(node('#deskAlert').html,/Possible push/);assert.match(node('#deskAlert').html,/<div class="alert-evidence" hidden>[\s\S]*<pre tabindex="0">git push origin main &lt;img/);assert.equal(agents.get('A').dataset.state,'alarm');assert.equal(agents.get('A').querySelector('.agent-status').textContent,'Looks like a push','rail alarm remains compact');assert.equal(agents.get('A').title,undefined,'rail has no raw-command tooltip');
   assert.equal(ctx.DESK.agents.get('A'),list.children[0].children[0],'keyed agent identity survives the alert repaint');
   ctx.A.A.request={kind:'Approve',text:'Inspect a different command',sure:true,perm:{pid:'p1',sent:false}};paint();
   assert.equal(node('#deskAlert').hidden,false);assert.equal(ctx.cardRequest,ctx.A.A.request,'independent response card receives the concurrent request');assert.equal(node('#deskRespond').hidden,false);assert.equal(agents.get('A').dataset.state,'need');assert.equal(agents.get('A').querySelector('.agent-status').textContent,'Approve','pending request keeps rail priority');
   ctx.A.A.request.sure=false;paint();assert.equal(agents.get('A').querySelector('.agent-status').textContent,'Approve · possible');assert.equal(node('#deskAlert').hidden,false);
   delete ctx.A.A.request;ctx.focus='B';paint();assert.equal(node('#deskAlert').hidden,true);assert.equal(node('#deskAlert').html,'','station switch clears previous alert');assert.equal(agents.get('A').dataset.state,'alarm','other agent still carries its live rail alarm');
-  ctx.A.B.alert={n:2,id:'B',ts:995,label:'a delete',text:'remove generated files'};paint();assert.match(node('#deskAlert').html,/Looks like a delete/);delete ctx.A.B.alert;paint();assert.equal(node('#deskAlert').hidden,true);assert.equal(node('#deskAlert').html,'');
+  ctx.A.B.alert={n:2,id:'B',ts:995,label:'a delete',text:'remove generated files'};paint();assert.match(node('#deskAlert').html,/Possible deletion/);delete ctx.A.B.alert;paint();assert.equal(node('#deskAlert').hidden,true);assert.equal(node('#deskAlert').html,'');
   ctx.focus='A';ctx.A.A.alert.ts=821;paint();assert.equal(node('#deskAlert').hidden,false,'179 seconds is still live');assert.equal(agents.get('A').dataset.state,'alarm');
   ctx.A.A.alert.ts=820;paint();assert.equal(node('#deskAlert').hidden,true,'180 seconds expires');assert.equal(node('#deskAlert').html,'');assert.equal(agents.get('A').dataset.state,'idle','rail uses the same expiry');assert.equal(agents.get('A').querySelector('.agent-status').textContent,'between actions');
   ctx.A.A.alert.ts=819;paint();assert.equal(node('#deskAlert').hidden,true);
-  ctx.A.A.alert.ts=990;ctx.STEADY=true;paint();assert.match(node('#deskAlert').html,/Looks like a push/);assert.equal(node('#deskAlert').html.includes(command),false);assert.equal(node('#deskAlert').html.includes('<details'),false);
+  ctx.A.A.alert.ts=990;ctx.STEADY=true;paint();assert.match(node('#deskAlert').html,/Possible push/);assert.equal(node('#deskAlert').html.includes(command),false);assert.equal(node('#deskAlert').html.includes('alert-evidence'),false);
   ctx.STEADY=false;ctx.A.A.alert.text='x'.repeat(350);paint();assert.equal(node('#deskAlert').html.includes('x'.repeat(350)),true,'full command is available in explicit details');
   ctx.A.A.alert.off=true;paint();assert.equal(node('#deskAlert').hidden,true);assert.equal(agents.get('A').dataset.state,'idle');ctx.A.A.alert.off=false;
   delete ctx.A.A.alert;paint();assert.equal(node('#deskAlert').hidden,true);assert.equal(node('#deskAlert').html,'');assert.equal(agents.get('A').dataset.state,'idle');assert.equal(ctx.DESK.open,false);
@@ -628,7 +629,7 @@ console.log('ok live desk alerts: closed Work, expiry boundaries, station change
 /* Exact alert identity, shared surfaces and actual delegated handlers. */
 function alertBehaviorChecks(source=alertHelpers,ingestion=html.split('\n').find(l=>l.trim().startsWith('if(e.alert&&'))){
   const els=new Map(),node=id=>{if(!els.has(id))els.set(id,{hidden:false,html:''});return els.get(id)};
-  const ctx={A:{},ALERTS:[],ALN:0,LABEL:{push:'a push'},STEADY:false,focus:null,$:node,esc:alertEscape,put:(n,v)=>{if(n.html!==v){n.html=v;n.paints=(n.paints||0)+1}},render:()=>ctx.renders++,renders:0,setFocus:id=>ctx.focus=id};
+  const ctx={...alertFixtures,document:{activeElement:null},A:{},ALERTS:[],ALN:0,LABEL:{push:'a push'},STEADY:false,focus:null,$:node,esc:alertEscape,put:(n,v)=>{if(n.html!==v){n.html=v;n.paints=(n.paints||0)+1}},render:()=>ctx.renders++,renders:0,setFocus:id=>ctx.focus=id};
   const wired=html.split('\n').filter(l=>["$('#needs').onclick=","$('#deskAlert').onclick=","$('#fleet').onclick="].some(prefix=>l.startsWith(prefix))).join('\n');
   const workPaint=html.split('\n').find(l=>l.trim().startsWith('paintAlert(a.$.fr,al);'));
   const roomPaint=html.split('\n').find(l=>l.trim().startsWith("put($('#needs'),focus?"));
@@ -638,17 +639,17 @@ function alertBehaviorChecks(source=alertHelpers,ingestion=html.split('\n').find
   const command='git push /fictional/project <img src=x onerror=bad()>',old={n:1,id:'A',ts:990,label:'a push',text:command};
   const request={kind:'Approve',sure:true,perm:{pid:'approval',sent:false}};ctx.A.A={name:'Ada',alert:old,request,dirty:false,$:{fr:node('work')}};ctx.ALERTS.push(old);ctx.ALN=1;
   for(const lifetime of [180,600,1800]){assert.equal(api.activeAlert(old,990+lifetime-1,lifetime),old);assert.equal(api.activeAlert(old,990+lifetime,lifetime),null,'exact lifetime expires');}
-  const markup=api.alertMarkup(old,'Ada','A');assert.match(markup,/Looks like a push/);assert.match(markup,/data-alert-dismiss="1">Dismiss alert/);assert.equal(markup.slice(0,markup.indexOf('<details')).includes(command),false,'raw command only behind disclosure');assert.match(markup,/<details class="alert-details"><summary>View details<\/summary><pre tabindex="0">git push \/fictional\/project &lt;img/);assert.equal(markup.includes('<details open'),false);
+  const markup=api.alertMarkup(old,'Ada','A');assert.match(markup,/Possible push/);assert.match(markup,/data-alert-dismiss="1">Dismiss ×/);assert.equal(markup.slice(0,markup.indexOf('<div class="alert-evidence"')).includes(command),false,'raw command only behind disclosure');assert.match(markup,/<div class="alert-evidence" hidden>[\s\S]*<pre tabindex="0">git push \/fictional\/project &lt;img/);assert.match(markup,/aria-expanded="false"/);
   assert.equal(api.alertMarkup({...old,label:'<img src=x onerror=bad()>'}).includes('<img'),false,'arbitrary alert label is escaped');
   api.paintAlert(node('header'),old);api.work(ctx.A.A,old);assert.equal(node('header').html,node('work').html,'header and Work use identical presentation');api.paintAlert(node('header'),old);assert.equal(node('header').paints,1,'unchanged repaint preserves disclosure DOM');
-  const bay=api.surfaces(1000);assert.ok(node('#needs').html.includes(markup));assert.ok(bay.includes(markup),'bay and room share presentation');api.surfaces(1590);assert.equal(node('#needs').html,'','room lifetime is 600s');assert.ok(api.surfaces(2789).includes('Looks like'));assert.ok(!api.surfaces(2790).includes('Looks like'),'bay lifetime is 1800s');
-  const event=n=>({preventDefault(){this.prevented=true},stopPropagation(){this.stopped=true},target:{closest:selector=>selector==='[data-alert-dismiss]'?{dataset:{alertDismiss:String(n)}}:null}});
-  for(const surface of ['#deskAlert','#needs','#fleet']){old.off=false;ctx.A.A.dirty=false;const e=event(1);node(surface).onclick(e);assert.equal(old.off,true,surface+' dismisses exact event');assert.equal(ctx.A.A.dirty,true,'same-second station paint invalidated');assert.equal(ctx.A.A.request,request);assert.equal(request.perm.sent,false,'pending permission remains unanswered');assert.equal(e.prevented,true);assert.equal(e.stopped,true);for(const lifetime of [180,600,1800])assert.equal(api.activeAlert(old,1000,lifetime),null,'dismissal applies at every lifetime');api.paintAlert(node('header'),api.activeAlert(old,1000));api.work(ctx.A.A,api.activeAlert(old,1000));assert.equal(node('header').hidden,true);assert.equal(node('work').hidden,true);assert.equal(api.surfaces(1000).includes('Looks like'),false);assert.equal(node('#needs').html,'');}
+  const bay=api.surfaces(1000);assert.ok(node('#needs').html.includes(markup));assert.ok(bay.includes(markup),'bay and room share presentation');api.surfaces(1590);assert.equal(node('#needs').html,'','room lifetime is 600s');assert.ok(api.surfaces(2789).includes('Possible'));assert.ok(!api.surfaces(2790).includes('Possible'),'bay lifetime is 1800s');
+  const event=n=>({preventDefault(){this.prevented=true},stopPropagation(){this.stopped=true},target:{closest:selector=>selector==='[data-alert-dismiss]'?{dataset:{alertDismiss:String(n)},closest:()=>null}:null}});
+  for(const surface of ['#deskAlert','#needs','#fleet']){old.off=false;ctx.A.A.dirty=false;const e=event(1);node(surface).onclick(e);assert.equal(old.off,true,surface+' dismisses exact event');assert.equal(ctx.A.A.dirty,true,'same-second station paint invalidated');assert.equal(ctx.A.A.request,request);assert.equal(request.perm.sent,false,'pending permission remains unanswered');assert.equal(e.prevented,true);assert.equal(e.stopped,true);for(const lifetime of [180,600,1800])assert.equal(api.activeAlert(old,1000,lifetime),null,'dismissal applies at every lifetime');api.paintAlert(node('header'),api.activeAlert(old,1000));api.work(ctx.A.A,api.activeAlert(old,1000));assert.equal(node('header').hidden,true);assert.equal(node('work').hidden,true);assert.equal(api.surfaces(1000).includes('Possible'),false);assert.equal(node('#needs').html,'');}
   const replacement={...old,n:2,ts:995,off:false};ctx.A.A.alert=replacement;ctx.ALERTS.unshift(replacement);node('#deskAlert').onclick(event(1));assert.equal(replacement.off,false,'old captured control cannot dismiss newer alert');assert.equal(api.activeAlert(replacement,1000),replacement);
-  ctx.moved=false;const el={};api.agentHandler(el);const detailEvent={stopPropagation(){},target:{closest:s=>s==='.alert-details'?{}:null}};ctx.focus=null;el.onclick(detailEvent);assert.equal(ctx.focus,null,'room details never navigate to station');old.off=false;el.onclick(event(1));assert.equal(old.off,true,'room monitor uses actual dismiss handler');
+  ctx.moved=false;const el={};api.agentHandler(el);const detailEvent={stopPropagation(){},target:{closest:s=>s==='.alert-evidence'?{}:null}};ctx.focus=null;el.onclick(detailEvent);assert.equal(ctx.focus,null,'room details never navigate to station');old.off=false;el.onclick(event(1));assert.equal(old.off,true,'room monitor uses actual dismiss handler');
   ctx.ALERTS.length=0;for(let k=0;k<9;k++){const al={n:10+k,id:'agent'+k,ts:990,label:'a push',text:'command'};ctx.A[al.id]={alert:al,dirty:false};ctx.ALERTS.unshift(al)}ctx.ALERTS.length=8;api.dismissAlert(10);assert.equal(ctx.A.agent0.alert.off,true,'active agent alert remains dismissible after retained list truncation');assert.equal(ctx.A.agent0.dirty,true);
   ctx.A.A.alert=old;ctx.ALERTS.length=0;ctx.ALERTS.push(old);old.off=true;api.ingest({agent:'A',alert:'push',ts:990,cmd:command});assert.equal(ctx.A.A.alert,old,'same event replay stays dismissed');api.ingest({agent:'A',alert:'push',ts:991,cmd:command+' --new'});assert.notEqual(ctx.A.A.alert,old,'new event after dismissal appears within grouping interval');assert.equal(api.activeAlert(ctx.A.A.alert,1000),ctx.A.A.alert);const current=ctx.A.A.alert;api.ingest({agent:'A',alert:'push',ts:992,cmd:'paired observation'});assert.equal(ctx.A.A.alert,current,'visible-alert grouping is preserved');
-  ctx.STEADY=true;assert.equal(api.alertMarkup(current).includes('<details'),false,'steady mode never reveals command details');
+  ctx.STEADY=true;assert.equal(api.alertMarkup(current).includes('alert-evidence'),false,'steady mode never reveals command details');
 }
 alertBehaviorChecks();
 for(const [name,from,to] of [
@@ -656,13 +657,105 @@ for(const [name,from,to] of [
   ['exact identity','al.n===n','true'],
   ['same-second repaint','A[al.id].dirty=true','A[al.id].dirty=false'],
   ['truncated list','...Object.values(A).map(a=>a.alert)','...[]'],
-  ['escaped label','esc(al.label)','al.label'],
-  ['steady details',"al.text&&!STEADY?","al.text?"],
+  ['escaped label','esc(title)','title'],
+  ['steady details','evidence=al.text&&!STEADY','evidence=al.text'],
 ]){let caught=false;const changed=alertHelpers.replace(from,to);assert.notEqual(changed,alertHelpers);try{alertBehaviorChecks(changed)}catch(e){caught=true}assert.ok(caught,name+' mutation detected')}
 {
   const ingest=html.split('\n').find(l=>l.trim().startsWith('if(e.alert&&'));let caught=false;try{alertBehaviorChecks(alertHelpers,ingest.replace("&&(!a.alert.off||(a.alert.ts===e.ts&&a.alert.text===(e.cmd||e.name||'')))",''))}catch(e){caught=true}assert.ok(caught,'new event after dismissal regression detected');
 }
 console.log('ok shared alerts: exact identity across four handlers, three expiry windows, permission independence, safe disclosure, nine-agent truncation, replay/new-event grouping; seven mutations detected');
+
+/* Small DOM fixture parses the actual alert markup; geometry is reserved for browser QA. */
+function alertDOM(){
+  const nodes=new Map(),doc={activeElement:null,querySelectorAll:()=>[]},focuses=[];
+  const matches=(el,selector)=>selector.split(',').some(s=>{
+    if(s==='[hidden]'||s==='[inert]')return !!el[s.slice(1,-1)];
+    if(s[0]==='#')return el.id===s.slice(1);
+    if(s[0]==='.')return el.className===s.slice(1);
+    const attr=s.match(/^\[data-([\w-]+)(?:="([^"]*)")?\]$/);
+    if(attr){const key=attr[1].replace(/-([a-z])/g,(_,c)=>c.toUpperCase());return key in el.dataset&&(attr[2]===undefined||el.dataset[key]===attr[2])}
+    return el.tag===s;
+  });
+  function element(tag='div',props={}){
+    const el={tag,dataset:{},children:[],parentElement:null,hidden:false,isConnected:true,...props,
+      closest(s){for(let n=this;n;n=n.parentElement)if(matches(n,s))return n;return null},
+      contains(other){for(let n=other;n;n=n.parentElement)if(n===this)return true;return false},
+      querySelectorAll(s){return this.children.flatMap(n=>[...(matches(n,s)?[n]:[]),...n.querySelectorAll(s)])},
+      querySelector(s){return this.querySelectorAll(s)[0]||null},
+      getClientRects(){return this.hidden?[]:[{}]},
+      focus(options){doc.activeElement=this;focuses.push({el:this,options})},
+      append(n){n.parentElement=this;this.children.push(n)}
+    };return el;
+  }
+  function node(id){if(!nodes.has(id))nodes.set(id,element('div',{id:id.slice(1)}));return nodes.get(id)}
+  function put(surface,value){
+    if(surface.html===value)return;
+    if(surface.contains(doc.activeElement))doc.activeElement=null;
+    for(const child of surface.children)child.isConnected=false;
+    surface.html=value;surface.children=[];
+    for(const [,n,markup] of value.matchAll(/<article class="alert-item" data-alert-event="(\d+)">([\s\S]*?)<\/article>/g)){
+      const row=element('article',{dataset:{alertEvent:n}});surface.append(row);
+      for(const [,attrs,text] of markup.matchAll(/<button ([^>]+)>([^<]*)<\/button>/g)){
+        const b=element('button',{textContent:text});
+        for(const [,key,val] of attrs.matchAll(/data-([\w-]+)="([^"]*)"/g))b.dataset[key.replace(/-([a-z])/g,(_,c)=>c.toUpperCase())]=val;
+        b.expanded=attrs.match(/aria-expanded="([^"]*)"/)?.[1];row.append(b);
+      }
+      const evidence=markup.match(/<div class="alert-evidence"( hidden)?>[\s\S]*?<pre tabindex="0">([\s\S]*?)<\/pre>/);
+      if(evidence){const panel=element('div',{className:'alert-evidence',hidden:!!evidence[1]});panel.append(element('pre',{textContent:evidence[2]}));row.append(panel)}
+    }
+  }
+  return {node,doc,put,focuses,element};
+}
+function alertControlChecks(source=alertHelpers){
+  const {node,doc,put,focuses,element}=alertDOM(),calls=[];
+  const one={n:21,id:'A',ts:990,label:'a push',text:'git push origin main'},two={n:22,id:'B',ts:991,label:'sending something out',text:'remove old preview'};
+  const ctx={...alertFixtures,A:{A:{name:'Ada',$:{go:{click:()=>calls.push('A')}}},B:{name:'Bram',$:{go:{click:()=>calls.push('B')}}}},ALERTS:[one],STEADY:false,document:doc,$:node,esc:alertEscape,put,getComputedStyle:n=>({visibility:n.visibility||'visible'})};
+  ctx.A.A.alert=one;ctx.A.B.alert=two;
+  const api=vm.runInNewContext(source+';({alertMarkup,alertClick,dismissAlert,paintAlert})',ctx);
+  const surfaces=['#needs','#deskAlert','#fleet','#monitor'];node('#monitor').className='flag.r';
+  ctx.render=()=>{for(const id of surfaces){const surface=node(id);put(surface,ctx.ALERTS.filter(a=>!a.off).map(a=>api.alertMarkup(a)).join(''))}};
+  const find=(id,n,kind)=>node(id).querySelector(`[data-alert-${kind}="${n}"]`);
+  function click(target){const e={target,preventDefault(){this.prevented=true},stopPropagation(){this.stopped=true}};assert.equal(api.alertClick(e),true);assert.equal(e.stopped,true);return e}
+  ctx.render();assert.match(node('#needs').html,/data-alert-open="A"/);assert.doesNotMatch(node('#needs').html,/data-go=/);
+  for(const id of surfaces){
+    const b=find(id,21,'inspect');doc.activeElement=b;click(b);
+    let current=find(id,21,'inspect');assert.equal(current.expanded,'true','actual inspector expands matching event');assert.equal(current.closest('[data-alert-event]').querySelector('.alert-evidence').hidden,false);assert.equal(doc.activeElement,current,'only exact inspector in its original surface regains focus');assert.equal(focuses.at(-1).options.preventScroll,true);
+    const unchanged=current;ctx.render();assert.equal(find(id,21,'inspect'),unchanged,'polling does not replace expanded DOM');
+    ctx.ALERTS.unshift(two);ctx.render();current=find(id,21,'inspect');assert.equal(current.expanded,'true','another alert arrival preserves existing expansion');assert.equal(find(id,22,'inspect').expanded,'false','new event starts collapsed');
+    doc.activeElement=element('input');const before=focuses.length;click(current);assert.equal(focuses.length,before,'pointer inspection cannot steal outside focus');assert.equal(find(id,21,'inspect').expanded,'false');
+    ctx.ALERTS.splice(ctx.ALERTS.indexOf(two),1);ctx.render();
+  }
+  ctx.ALERTS.unshift(two);ctx.render();
+  for(const id of surfaces){click(find(id,'B','open'));assert.equal(calls.at(-1),'B','Open delegates to the exact native go control');assert.equal(one.off,undefined)}
+  const absent=api.alertMarkup({...one,id:'absent'});assert.doesNotMatch(absent,/data-alert-open/,'missing native target never receives Open');
+  const unknown=api.alertMarkup({...one,label:'__proto__'});assert.match(unknown,/>Flagged activity: __proto__<\/h3>/);
+  assert.match(api.alertMarkup(two),/>Flagged activity<\/h3>/,'broad send category is not described as outbound messaging');
+  ctx.proj=()=>'<img project>';ctx.projLabel=s=>s;ctx.A.A.name='<img agent>';const unsafe=api.alertMarkup({...one,label:'<img label>',text:'<script>bad()</script>'});
+  assert.doesNotMatch(unsafe,/<(?:img|script)\b/);for(const text of ['&lt;img agent&gt;','&lt;img project&gt;','&lt;img label&gt;','&lt;script&gt;'])assert.ok(unsafe.includes(text),'arbitrary evidence and metadata escaped');
+  ctx.STEADY=true;const steady=api.alertMarkup(one);assert.doesNotMatch(steady,/alert-evidence|data-alert-inspect|git push/);ctx.STEADY=false;assert.doesNotMatch(api.alertMarkup({...one,text:''}),/alert-evidence|data-alert-inspect/);
+  ctx.render();let evidence=find('#needs',21,'inspect').closest('[data-alert-event]').querySelector('.alert-evidence');doc.activeElement=null;click(evidence);assert.equal(doc.activeElement,null,'evidence clicks stay within alert routing');
+  for(const id of surfaces){
+    one.off=false;two.off=false;ctx.render();const b=find(id,21,'dismiss');doc.activeElement=b;click(b);assert.equal(one.off,true);assert.equal(two.off,false,'dismiss only exact event');assert.equal(doc.activeElement,find(id,22,'inspect'),'focused dismissal moves to surviving alert in same surface');
+    one.off=false;ctx.render();doc.activeElement=element('input');const before=focuses.length;click(find(id,21,'dismiss'));assert.equal(focuses.length,before,'dismissal never steals outside focus');
+  }
+  one.off=false;two.off=true;ctx.render();node('#deskSignals [aria-pressed="true"]').hidden=true;node('#deskWorkToggle').hidden=true;
+  click(find('#deskAlert',21,'inspect'));assert.equal(find('#deskAlert',21,'inspect').expanded,'true');
+  const last=find('#deskAlert',21,'dismiss');doc.activeElement=last;click(last);assert.equal(doc.activeElement,node('#back'),'last dismissal skips hidden fallback controls');
+  one.off=false;ctx.render();assert.equal(find('#needs',21,'inspect').expanded,'false','dismissed event expansion was removed');
+}
+alertControlChecks();
+for(const [name,from,to] of [
+  ['expansion state','expanded=ALERT_EXPANDED.has(al.n)','expanded=false'],
+  ['dismissed expansion cleanup','ALERT_EXPANDED.delete(n);','void n;'],
+  ['unknown label uncertainty',"title=titles.get(al.label)||('Flagged activity: '+al.label)",'title=titles.get(al.label)||al.label'],
+  ['native identity','A[open.dataset.alertOpen]?.$?.go?.click()','A.A?.$?.go?.click()'],
+  ['inspect focus ownership','const restore=document.activeElement===inspect','const restore=true'],
+  ['dismiss focus ownership','if(owned){','if(true){'],
+  ['hidden fallback','return !!el&&el.isConnected&&!el.closest(\'[hidden],[inert]\')&&!!el.getClientRects().length&&getComputedStyle(el).visibility!==\'hidden\'','return !!el'],
+  ['escaped identity','esc(identity)','identity'],
+  ['escaped project','esc(project)','project']
+]){const changed=alertHelpers.replace(from,to);assert.notEqual(changed,alertHelpers);let caught=false;try{alertControlChecks(changed)}catch(e){caught=true}assert.ok(caught,name+' regression detected')}
+console.log('ok actual alert controls: four surfaces, matching evidence, polling/new-event expansion, exact native Open, safe metadata/steady mask, owned focus and visible dismissal fallback; nine mutations detected');
 
 /* Dispatch actual capture/bubble handlers in browser order, including existing Officer/Watch handlers. */
 function deskKeyboardChecks(mutate=false){

@@ -493,8 +493,23 @@ html[data-theme=neutral] #room{background:radial-gradient(ellipse at 50% 36%,#ff
 #deskCenter{position:relative;z-index:0}#deskConversation{position:relative;z-index:0}#deskWork{z-index:1}#compactDesk.work-compact.work-open #deskConversation{visibility:hidden}#deskWorkInner{background:var(--desk-surface)}
 /* Keep live command alerts visible even when Work is closed. */
 
-.alert-line{display:flex;align-items:center;gap:8px;flex-wrap:wrap;min-width:0}.alert-line>span{flex:1 1 140px;min-width:0;overflow-wrap:anywhere}.alert-line button{flex:none;min-height:32px;font:inherit;color:inherit;background:var(--panel);border:1px solid var(--line);padding:5px 8px;cursor:pointer}.alert-line button:focus-visible,.alert-details summary:focus-visible,.alert-details pre:focus-visible{outline:2px solid var(--hl);outline-offset:2px}.alert-details{flex:0 1 auto;min-width:0;margin:0}.alert-details[open]{flex-basis:100%;order:2}.alert-details summary{cursor:pointer;width:fit-content;min-height:32px;line-height:32px}.alert-details pre{max-height:180px;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere;font:12px/1.45 ui-monospace,Menlo,monospace;margin:4px 0}.alert-notice{min-width:0;max-width:100%;border:1px solid var(--del);background:var(--panel);color:var(--del);padding:6px 8px}#needs .alert-notice{pointer-events:auto;width:min(720px,100%)}#needs .alert-line button,#fleet .alert-line button{display:block;max-width:100%;white-space:normal;overflow-wrap:anywhere;background:var(--panel);color:inherit;border:1px solid var(--line);font:inherit;min-height:32px;padding:5px 8px}#needs .alert-line>span{padding:0;white-space:normal;align-self:auto;flex:1 1 140px}.flag.r{display:block;padding:6px 10px}.flag.r[hidden]{display:none}#fleet .alert-notice{flex:none}#fleet:has(.alert-notice){overflow:auto}
-#deskAlert{flex-basis:100%;min-width:0;font-size:12px;line-height:1.4;color:var(--del);overflow-wrap:anywhere}
+/* Shared signal rail: component-sized wrapping also covers the narrow agent bay. */
+.alert-notice,#deskAlert,.flag.r{container-type:inline-size;min-width:0;max-width:100%;background:var(--panel);color:var(--ink);border:1px solid var(--line);padding:0 14px}
+.alert-item{min-width:0}.alert-line{display:flex;align-items:center;gap:14px;min-height:70px;position:relative;min-width:0}.alert-line:before{content:"";position:absolute;left:-15px;top:19px;width:3px;height:30px;background:var(--del)}
+.alert-icon{font:600 12px ui-monospace,Menlo,monospace;color:var(--del);width:22px;height:22px;display:grid;place-items:center;border:1px solid var(--del);clip-path:polygon(0 0,calc(100% - 5px) 0,100% 5px,100% 100%,0 100%);flex:none}
+.alert-copy{flex:1;min-width:150px}.alert-title{font:600 14px/1.4 system-ui;color:var(--ink);margin:0;overflow-wrap:anywhere}.alert-meta{font:11px/1.45 system-ui;color:var(--mute);margin-top:3px;overflow-wrap:anywhere}.alert-meta .alert-sep{padding:0 5px;color:var(--line)}
+.alert-controls{display:flex;align-items:center;gap:5px;flex:none;min-width:0}
+/* Specificity protects these controls from room, bay, Work and opt-in theme chrome. */
+:is(#needs,#fleet,#deskAlert,.flag.r,#compactDesk #fleet) .alert-controls button{display:block;flex:none;margin:0;max-width:100%;min-height:36px;border:1px solid var(--action-frame);border-radius:0;padding:9px 12px;background:var(--action-fill);color:var(--ink);font:600 11px/1.35 ui-monospace,Menlo,monospace;letter-spacing:.065em;text-transform:uppercase;white-space:nowrap;overflow:visible;cursor:pointer;text-align:center}
+:is(#needs,#fleet,#deskAlert,.flag.r,#compactDesk #fleet) .alert-controls .alert-open{background:transparent;border-color:transparent;color:#7fa6c2}
+:is(#needs,#fleet,#deskAlert,.flag.r,#compactDesk #fleet) .alert-controls .alert-dismiss{background:transparent;color:var(--mute);border-color:transparent;border-left-color:var(--line);margin-left:7px;padding-left:16px}
+:is(#needs,#fleet,#deskAlert,.flag.r,#compactDesk #fleet) .alert-controls button:hover{border-color:var(--hl)}:is(#needs,#fleet,#deskAlert,.flag.r,#compactDesk #fleet) .alert-controls .alert-open:hover{color:var(--hl)}:is(#needs,#fleet,#deskAlert,.flag.r,#compactDesk #fleet) .alert-controls .alert-dismiss:hover{color:var(--del)}
+.alert-controls button[aria-expanded=true]{border-color:var(--hl)!important;color:var(--hl)!important}.alert-controls button:focus-visible,.alert-evidence pre:focus-visible{outline:2px solid var(--hl);outline-offset:3px}
+.alert-evidence{min-width:0;background:var(--mon);padding:11px 14px 13px;margin:0 0 13px 36px;border-left:1px solid var(--action-frame)}.alert-evidence-head{display:flex;justify-content:space-between;gap:10px;margin-bottom:6px;font:600 10px/1.4 ui-monospace,Menlo,monospace;letter-spacing:.12em;text-transform:uppercase;color:var(--mute)}.alert-evidence pre{max-height:180px;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere;font:13px/1.5 ui-monospace,Menlo,monospace;color:var(--monink);margin:0}
+#needs .alert-notice{pointer-events:auto;width:min(980px,100%)}#fleet .alert-notice{flex:none;width:100%}#fleet:has(.alert-notice){overflow:auto}.flag.r{display:block;flex:none;overflow:visible}.flag.r[hidden]{display:none}#deskAlert{flex-basis:100%;width:100%;font-size:12px;line-height:1.4}
+html[data-theme=neutral] :is(#needs,#fleet,#deskAlert,.flag.r,#compactDesk #fleet) .alert-controls button{font-family:ui-monospace,Menlo,monospace;letter-spacing:.065em;text-transform:uppercase;background:var(--mon);border-color:var(--line);color:var(--ink)}html[data-theme=neutral] :is(#needs,#fleet,#deskAlert,.flag.r,#compactDesk #fleet) .alert-controls .alert-open{background:transparent;border-color:transparent;color:var(--mute)}html[data-theme=neutral] :is(#needs,#fleet,#deskAlert,.flag.r,#compactDesk #fleet) .alert-controls .alert-dismiss{background:transparent;border-color:transparent;border-left-color:var(--line);color:var(--mute)}
+@container(max-width:780px){.alert-line{flex-wrap:wrap;gap:10px;padding:13px 0}.alert-copy{flex-basis:calc(100% - 38px)}.alert-controls{margin-left:32px;width:calc(100% - 32px)}:is(#needs,#fleet,#deskAlert,.flag.r,#compactDesk #fleet) .alert-controls .alert-dismiss{margin-left:auto}.alert-evidence{margin-left:32px}}
+@container(max-width:520px){.alert-controls{gap:0;margin-left:0;width:100%;justify-content:space-between;flex-wrap:wrap}.alert-copy{min-width:0}:is(#needs,#fleet,#deskAlert,.flag.r,#compactDesk #fleet) .alert-controls button{font-size:9px;padding:10px 8px;min-height:40px}:is(#needs,#fleet,#deskAlert,.flag.r,#compactDesk #fleet) .alert-controls .alert-dismiss{padding-left:10px;margin-left:0}.alert-evidence{margin-left:0;padding:10px}.alert-evidence-head{font-size:9px}}
 #deskAgentList button[data-state=alarm] i{background:var(--del)}
 /* Keep rail navigation and its selected signal panel in view as the agent list grows. */
 #deskAgents{display:flex;flex-direction:column;overflow:hidden}#deskAgents>header{flex:none}#deskAgentList{flex:1;min-height:0;overflow:auto;overscroll-behavior:contain;scrollbar-width:thin}#deskAgentList>li{flex:none}#deskSignals{flex:none;margin-top:12px}#deskBaySlot{flex:0 1 auto;max-height:45%;overflow:auto;overscroll-behavior:contain;scrollbar-width:thin}
@@ -770,20 +785,47 @@ function permissionDispatch(a,p,allow){const id=a.id;
 
 /* alert presentation helpers: one event identity across room, station and Work */
 function activeAlert(al,now,lifetime=180){return al&&!al.off&&now-al.ts<lifetime?al:null}
+const ALERT_EXPANDED=new Set();
 function dismissAlert(n){
   const matches=new Set([...ALERTS,...Object.values(A).map(a=>a.alert)].filter(al=>al&&al.n===n));
   if(!matches.size)return;
+  ALERT_EXPANDED.delete(n);
   for(const al of matches){al.off=true;if(A[al.id])A[al.id].dirty=true}
   render();
 }
 function alertMarkup(al,name='',id=''){
-  return `<div class="alert-line">${name?`<button type="button" data-go="${esc(id)}">${esc(name)}</button>`:''}<span>Looks like ${esc(al.label)}</span><button type="button" data-alert-dismiss="${al.n}">Dismiss alert</button>${al.text&&!STEADY?`<details class="alert-details"><summary>View details</summary><pre tabindex="0">${esc(al.text)}</pre></details>`:''}</div>`;
+  const target=al.id||id,a=A[target],identity=name||a?.name||'Agent',project=a?projLabel(proj(target)):'',expanded=ALERT_EXPANDED.has(al.n),evidence=al.text&&!STEADY;
+  const titles=new Map([['a publish','Possible publish'],['a push','Possible push'],['a deploy','Possible deploy'],['a delete','Possible deletion'],['sending something out','Flagged activity']]),title=titles.get(al.label)||('Flagged activity: '+al.label);
+  return `<article class="alert-item" data-alert-event="${esc(al.n)}"><div class="alert-line"><span class="alert-icon" aria-label="Alert">!</span><div class="alert-copy"><h3 class="alert-title">${esc(title)}</h3><div class="alert-meta">${esc(identity)}${project?`<span class="alert-sep">/</span>${esc(project)}`:''}<span class="alert-sep">·</span><time>${esc(clock(al.ts))}</time></div></div><div class="alert-controls">${evidence?`<button type="button" data-alert-inspect="${esc(al.n)}" aria-expanded="${expanded}">${expanded?'Hide evidence':'Inspect evidence'}</button>`:''}${a?.$?.go?`<button type="button" class="alert-open" data-alert-open="${esc(target)}">Open agent ↗</button>`:''}<button type="button" class="alert-dismiss" data-alert-dismiss="${esc(al.n)}">Dismiss ×</button></div></div>${evidence?`<div class="alert-evidence"${expanded?'':' hidden'}><div class="alert-evidence-head"><span>Recorded evidence</span><span>Pattern match</span></div><pre tabindex="0">${esc(al.text)}</pre></div>`:''}</article>`;
 }
 function paintAlert(el,al){el.hidden=!al;put(el,al?alertMarkup(al):'')}
+function alertVisible(el){return !!el&&el.isConnected&&!el.closest('[hidden],[inert]')&&!!el.getClientRects().length&&getComputedStyle(el).visibility!=='hidden'}
 function alertClick(e){
-  const b=e.target.closest('[data-alert-dismiss]');
-  if(b){e.preventDefault();e.stopPropagation();dismissAlert(Number(b.dataset.alertDismiss));return true}
-  return !!e.target.closest('.alert-details');
+  const inspect=e.target.closest('[data-alert-inspect]'),open=e.target.closest('[data-alert-open]'),dismiss=e.target.closest('[data-alert-dismiss]');
+  if(inspect||open||dismiss){
+    e.preventDefault();e.stopPropagation();
+    const b=inspect||open||dismiss,row=b.closest('[data-alert-event]'),surface=row?.closest('#needs,#deskAlert,#fleet,.flag.r'),owned=!!row?.contains(document.activeElement);
+    if(open){A[open.dataset.alertOpen]?.$?.go?.click();return true}
+    if(inspect){
+      const n=Number(inspect.dataset.alertInspect),evidence=row?.querySelector('.alert-evidence');
+      if(!evidence||STEADY)return true;
+      if(ALERT_EXPANDED.has(n))ALERT_EXPANDED.delete(n);else{ALERT_EXPANDED.add(n);if(ALERT_EXPANDED.size>64)ALERT_EXPANDED.delete(ALERT_EXPANDED.values().next().value)}
+      /* Invalidate monitors too; they may skip unchanged seconds during the next paint. */
+      for(const a of Object.values(A))if(a.alert?.n===n)a.dirty=true;
+      const restore=document.activeElement===inspect;
+      render();
+      if(restore){const next=surface?.querySelector(`[data-alert-inspect="${n}"]`);if(alertVisible(next))next.focus({preventScroll:true})}
+      return true;
+    }
+    dismissAlert(Number(dismiss.dataset.alertDismiss));
+    if(owned){
+      const next=[...(surface?.querySelectorAll('button')||[]),$('#deskSignals [aria-pressed="true"]'),$('#deskWorkToggle'),$('#back'),...document.querySelectorAll('#hud button')].find(alertVisible);
+      if(next)next.focus({preventScroll:true});
+    }
+    return true;
+  }
+  if(e.target.closest('.alert-evidence')){e.stopPropagation();return true}
+  return false;
 }
 /* end alert presentation helpers */
 
