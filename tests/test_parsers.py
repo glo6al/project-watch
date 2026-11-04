@@ -417,6 +417,272 @@ def test_active_log():
         d.cleanup()
 
 
+def bounded_index_child(scanner, root):
+    """An outer process/tree deadline independent of the scanner's own implementation."""
+    import subprocess
+    code = r'''
+import faulthandler, importlib.util, json, os, subprocess, sys, threading, time
+faulthandler.dump_traceback_later(5, repeat=True)
+spec = importlib.util.spec_from_file_location('scanner', sys.argv[1])
+scanner = importlib.util.module_from_spec(spec); spec.loader.exec_module(scanner)
+real_popen, children = subprocess.Popen, []
+def tracked(*args, **kwargs):
+    # The independent outer guard owns this harness's POSIX group, even if the
+    # scanner stalls. Production private-session cleanup is exercised separately.
+    if os.name != 'nt':
+        kwargs['start_new_session'] = False
+    proc = real_popen(*args, **kwargs); children.append(proc); return proc
+subprocess.Popen = tracked
+before = set(threading.enumerate())
+rows = [('100644', '0' * 40, 'missing.txt')] + [('100644', '%040x' % i, 'f%d' % i) for i in range(1, 6000)]
+hits, unread = [], []
+start = time.monotonic()
+scanner.scan_index(sys.argv[2], rows, scanner.SHAPES, hits, unread)
+assert hits == [] and unread and 'could not produce' in unread[0][1], (hits, unread)
+assert not (set(threading.enumerate()) - before), 'scanner worker survived return'
+assert children and all(proc.poll() is not None for proc in children), 'scanner process survived return'
+print(json.dumps({'hits': hits, 'unread': unread, 'elapsed': time.monotonic() - start}))
+'''
+    try:
+        child = subprocess.Popen([sys.executable, '-u', '-c', code, os.path.abspath(scanner.__file__), root],
+                                 stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                                 start_new_session=os.name != 'nt')
+    except OSError as error:
+        raise AssertionError('could not start bounded scanner child') from error
+    try:
+        out, err = child.communicate(timeout=12)
+    except subprocess.TimeoutExpired:
+        issue = ''
+        try:
+            if os.name == 'nt':
+                command = os.path.join(os.environ.get('SystemRoot', r'C:\Windows'), 'System32', 'taskkill.exe')
+                result = subprocess.run([command, '/PID', str(child.pid), '/T', '/F'],
+                                        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=5)
+                if result.returncode != 0:
+                    issue = '; outer tree cleanup failed'
+            else:
+                import signal
+                os.killpg(child.pid, signal.SIGKILL)
+        except (OSError, subprocess.SubprocessError):
+            issue = '; outer tree cleanup failed'
+        finally:
+            try:
+                child.communicate(timeout=3)
+            except subprocess.TimeoutExpired:
+                child.kill()
+                try:
+                    child.wait(timeout=3)
+                except subprocess.TimeoutExpired:
+                    issue += '; outer child did not stop'
+        raise AssertionError('staged-content child exceeded its independent deadline' + issue)
+    assert child.returncode == 0, 'staged-content child failed: ' + err.decode('utf-8', 'replace')[-2000:]
+    return json.loads(out)
+
+
+def test_index_ownership(scanner):
+    """A second queued request holds a real lock: the former feeder/close design deadlocks."""
+    import threading, time
+    ready, release = threading.Event(), threading.Event()
+    lock, writes, closed_by = threading.Lock(), [], []
+    before = set(threading.enumerate())
+    class Input:
+        def write(self, data):
+            with lock:
+                writes.append(data)
+                if len(writes) > 1:
+                    ready.set()
+                    release.wait()
+                return len(data)
+        def flush(self): ready.set()
+        def close(self):
+            with lock: closed_by.append(threading.get_ident())
+    class Output:
+        def readline(self, n=-1):
+            assert ready.wait(1), 'neither flushed current request nor queued another'
+            return b'0000000000000000000000000000000000000000 missing\n'
+        def close(self): closed_by.append(threading.get_ident())
+    class Proc:
+        def __init__(self, *args, **kwargs): self.stdin, self.stdout, self.rc = Input(), Output(), None
+        def poll(self): return self.rc
+        def wait(self, timeout=None): self.rc = 0; return 0
+        def kill(self): self.rc = -9
+    saved = scanner.subprocess.Popen, scanner._stop_index_process
+    scanner.subprocess.Popen = Proc
+    scanner._stop_index_process = lambda proc, timeout: (proc.kill(), release.set(), '')[-1]
+    hits, unread, errors = [], [], []
+    def scan():
+        try:
+            scanner.scan_index('/fictional', [('100644', '%040x' % i, 'f%d' % i) for i in range(6000)], scanner.SHAPES, hits, unread)
+        except BaseException as error:
+            errors.append(error)
+    runner = threading.Thread(target=scan, daemon=True)
+    try:
+        runner.start(); runner.join(1)
+        check('a failed first response returns without queued later writes or a concurrent buffered close',
+              not runner.is_alive() and not errors and writes == [b'0' * 40 + b'\n'] and
+              hits == [] and unread and len(set(closed_by)) == 1)
+    finally:
+        release.set(); runner.join(2)
+        for worker in set(threading.enumerate()) - before:
+            worker.join(2)
+        scanner.subprocess.Popen, scanner._stop_index_process = saved
+        assert not runner.is_alive(), 'ownership probe did not release its worker'
+
+
+def test_index_failures(scanner):
+    """Protocol and lifecycle failures remain unread; mock cleanup never kills a real PID."""
+    import io, threading, subprocess, contextlib
+    blob = 'a' * 40
+    good = blob.encode() + b' blob 1\nx\n'
+    cases = ['write', 'flush', 'read', 'header', 'identity', 'type', 'size', 'body', 'newline',
+             'extra', 'exit', 'wait', 'read-stall', 'eof-stall', 'cleanup-error']
+    saved = scanner.subprocess.Popen, scanner._stop_index_process, scanner.INDEX_DEADLINE, scanner.INDEX_CLEANUP
+    try:
+        scanner.INDEX_DEADLINE, scanner.INDEX_CLEANUP = 0.05, 0.5
+        for case in cases:
+            stopped, operations, processes, stops = threading.Event(), [], [], []
+            output = {'header': b'bad\n', 'identity': b'0' * 40 + b' blob 1\nx\n',
+                      'type': blob.encode() + b' tree 1\nx\n', 'size': blob.encode() + b' blob -1\n',
+                      'body': blob.encode() + b' blob 9\nx', 'newline': good[:-1],
+                      'extra': good + b'unrequested', 'cleanup-error': b'bad\n'}.get(case, good)
+            class Input(io.BytesIO):
+                def write(self, data):
+                    operations.append(threading.get_ident())
+                    if case == 'write': raise OSError('write failed')
+                    return super().write(data)
+                def flush(self):
+                    if case == 'flush': raise OSError('flush failed')
+                    super().flush()
+                def close(self): operations.append(threading.get_ident()); super().close()
+            class Output(io.BytesIO):
+                def readline(self, n=-1):
+                    operations.append(threading.get_ident())
+                    if case == 'read': raise OSError('read failed')
+                    if case == 'read-stall': stopped.wait(); return b''
+                    return super().readline(n)
+                def read(self, n=-1):
+                    operations.append(threading.get_ident())
+                    if case == 'eof-stall' and self.tell() == len(output): stopped.wait(); return b''
+                    return super().read(n)
+                def close(self): operations.append(threading.get_ident()); super().close()
+            class Proc:
+                def __init__(self, *args, **kwargs):
+                    self.stdin, self.stdout, self.rc = Input(), Output(output), None
+                    processes.append(self)
+                def poll(self): return self.rc
+                def kill(self): self.rc = -9        # direct-root termination alone retains the read handle
+                def wait(self, timeout=None):
+                    assert timeout is not None and timeout > 0
+                    if case in ('wait', 'cleanup-error') and not stopped.is_set():
+                        raise subprocess.TimeoutExpired('fictional-git', timeout)
+                    self.rc = self.rc if self.rc is not None else (2 if case == 'exit' else 0)
+                    return self.rc
+            def stop(proc, timeout):
+                assert proc is processes[0] and 0 < timeout <= scanner.INDEX_CLEANUP
+                stops.append(proc); proc.kill(); stopped.set()  # close the retained descendant handle too
+                return 'git process tree could not be stopped' if case == 'cleanup-error' else ''
+            scanner.subprocess.Popen, scanner._stop_index_process = Proc, stop
+            before, hits, unread, errors = set(threading.enumerate()), [], [], io.StringIO()
+            try:
+                with contextlib.redirect_stderr(errors):
+                    scanner.scan_index('/fictional', [('100644', blob, 'fixture.bin')], scanner.SHAPES, hits, unread)
+                check('staged-content %s failure is unread, quiet, joined and reaped' % case,
+                      hits == [] and bool(unread) and 'Traceback' not in errors.getvalue() and
+                      not (set(threading.enumerate()) - before) and processes[0].poll() is not None and
+                      len(set(operations)) == 1)
+                if case in ('wait', 'read-stall', 'eof-stall', 'cleanup-error'):
+                    assert stops, 'owned-tree cleanup was omitted'
+                if case == 'cleanup-error':
+                    assert any('could not produce' in why for _, why in unread)
+                    assert any('process tree could not be stopped' in why for _, why in unread)
+            finally:
+                stopped.set()
+                for worker in set(threading.enumerate()) - before:
+                    worker.join(1)
+    finally:
+        scanner.subprocess.Popen, scanner._stop_index_process, scanner.INDEX_DEADLINE, scanner.INDEX_CLEANUP = saved
+
+    # Inspect Windows tree targeting without ever invoking an OS command with a fake PID.
+    from types import SimpleNamespace
+    saved_name, saved_run = scanner.os.name, scanner.subprocess.run
+    calls = []
+    try:
+        scanner.os.name = 'nt'
+        def run(command, **kwargs):
+            calls.append((command, kwargs)); return SimpleNamespace(returncode=0)
+        scanner.subprocess.run = run
+        assert scanner._stop_index_process(SimpleNamespace(pid=12345), 0.5) == ''
+        check('Windows cleanup targets only the owned root and tree under a finite deadline',
+              calls[0][0][1:] == ['/PID', '12345', '/T', '/F'] and calls[0][1]['timeout'] == 0.5)
+    finally:
+        scanner.os.name, scanner.subprocess.run = saved_name, saved_run
+
+
+def test_index_owned_tree(scanner):
+    """A real wrapper and descendant retain stdout until the scanner stops its owned tree."""
+    import subprocess, threading, time, signal
+    real_popen, saved_deadline = subprocess.Popen, scanner.INDEX_DEADLINE
+    processes, descendant, handle = [], None, None
+    with tempfile.TemporaryDirectory() as directory:
+        ready = os.path.join(directory, 'ready.json')
+        code = r'''
+import json, os, subprocess, sys, time
+child = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(60)'], close_fds=False)
+with open(sys.argv[1] + '.new', 'w') as stream: json.dump(child.pid, stream)
+os.replace(sys.argv[1] + '.new', sys.argv[1])
+time.sleep(60)
+'''
+        def spawn(args, **kwargs):
+            nonlocal descendant, handle
+            if args[0] != 'git':
+                return real_popen(args, **kwargs)
+            proc = real_popen([sys.executable, '-u', '-c', code, ready], **kwargs)
+            processes.append(proc)
+            end = time.monotonic() + 3
+            while not os.path.exists(ready):
+                assert time.monotonic() < end, 'owned wrapper did not become ready'
+                time.sleep(0.01)       # bounded external readiness polling, not a completion delay
+            with open(ready) as stream: descendant = json.load(stream)
+            if os.name == 'nt':
+                import ctypes
+                kernel = ctypes.WinDLL('kernel32', use_last_error=True)
+                kernel.OpenProcess.restype = ctypes.c_void_p
+                handle = kernel.OpenProcess(0x100000 | 0x1, False, descendant)  # synchronize + terminate
+                assert handle, 'could not observe owned descendant'
+            return proc
+        def running():
+            if os.name == 'nt':
+                import ctypes
+                kernel = ctypes.WinDLL('kernel32', use_last_error=True)
+                return kernel.WaitForSingleObject(ctypes.c_void_p(handle), 0) == 258
+            result = subprocess.run(['ps', '-p', str(descendant), '-o', 'stat='],
+                                    stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, timeout=2)
+            return result.returncode == 0 and not result.stdout.strip().startswith(b'Z')
+        scanner.subprocess.Popen, scanner.INDEX_DEADLINE = spawn, 0.1
+        before = set(threading.enumerate())
+        try:
+            hits, unread = [], []
+            scanner.scan_index('/fictional', [('100644', 'a' * 40, 'held.bin')], scanner.SHAPES, hits, unread)
+            scanner.subprocess.Popen = real_popen
+            check('deadline stops a real owned wrapper and retained descendant without a worker leak',
+                  hits == [] and unread and any('stalled' in why for _, why in unread) and
+                  processes[0].poll() is not None and not running() and not (set(threading.enumerate()) - before))
+        finally:
+            scanner.subprocess.Popen, scanner.INDEX_DEADLINE = real_popen, saved_deadline
+            if descendant is not None:
+                if os.name == 'nt' and handle:
+                    import ctypes
+                    kernel = ctypes.WinDLL('kernel32', use_last_error=True)
+                    if running(): kernel.TerminateProcess(ctypes.c_void_p(handle), 1)
+                    kernel.CloseHandle(ctypes.c_void_p(handle))
+                elif os.name != 'nt' and running():
+                    try: os.killpg(processes[0].pid, signal.SIGKILL)
+                    except ProcessLookupError: pass
+            for proc in processes:
+                if proc.poll() is None: proc.kill()
+                proc.wait(timeout=3)
+
+
 def test_officer():
     """The Officer of the Watch: the key file policy (owner-only, a plain file opened without following links, no key
     anywhere in the project, every file there readable), the scanner's fail-closed rules, the read-only tools over
@@ -506,23 +772,25 @@ def test_officer():
         import threading as _th
         class StallPipe:
             def __init__(self): self.ev = _th.Event()
-            def readline(self): self.ev.wait(); return b''
+            def readline(self, n=-1): self.ev.wait(); return b''
             def read(self, n=-1): self.ev.wait(); return b''
             def write(self, b): return len(b)
+            def flush(self): pass
             def close(self): pass
         class StallProc:
             def __init__(self, *a, **k): self.stdin = StallPipe(); self.stdout = StallPipe(); self.rc = None
             def poll(self): return self.rc
             def kill(self): self.rc = -9; self.stdout.ev.set()
             def wait(self, timeout=None): return self.rc
-        saved_popen, saved_dl = check_secrets.subprocess.Popen, check_secrets.INDEX_DEADLINE
+        saved_popen, saved_dl, saved_stop = check_secrets.subprocess.Popen, check_secrets.INDEX_DEADLINE, check_secrets._stop_index_process
+        check_secrets._stop_index_process = lambda proc, timeout: (proc.kill(), '')[1]
         check_secrets.subprocess.Popen, check_secrets.INDEX_DEADLINE = StallProc, 1
         try:
             hits, unread = [], []
             check_secrets.scan_index(root, [('100644', 'a' * 40, 'stalled.txt')], check_secrets.SHAPES, hits, unread)
             check('a git that stalls producing staged content is killed and the index counted as unread', hits == [] and any('stalled' in u[1] for u in unread))
             class BrokenPipe(StallPipe):
-                def readline(self): raise OSError('broken')
+                def readline(self, n=-1): raise OSError('broken')
             class BrokenProc(StallProc):
                 def __init__(self, *a, **k): super().__init__(); self.stdout = BrokenPipe()
             check_secrets.subprocess.Popen = BrokenProc
@@ -532,22 +800,24 @@ def test_officer():
                 hits, unread = [], []
                 check_secrets.scan_index(root, [('100644', 'b' * 40, 'broken.txt')], check_secrets.SHAPES, hits, unread)
             check('a read error from git counts as unread, quietly', hits == [] and any('could not be read' in u[1] for u in unread) and 'Traceback' not in errs.getvalue())
-            class SlowFeedProc(StallProc):
+            class FailedWriteProc(StallProc):
                 def __init__(self, *a, **k):
                     super().__init__(); self.stdout = BrokenPipe()
                     class Stdin:
-                        def write(self, b): __import__('time').sleep(0.3); raise ValueError('write to closed file')      # the feeder resuming after cleanup closed the pipe
+                        def write(self, b): raise ValueError('write to closed file')      # a failed write is captured by the stream owner
                         def close(self): pass
                     self.stdin = Stdin()
-            check_secrets.subprocess.Popen = SlowFeedProc
+            check_secrets.subprocess.Popen = FailedWriteProc
             errs = io.StringIO()
             with contextlib.redirect_stderr(errs):
                 hits, unread = [], []
                 check_secrets.scan_index(root, [('100644', 'c' * 40, 'late.txt')], check_secrets.SHAPES, hits, unread)
-                __import__('time').sleep(0.6)
-            check('a feeder writing after cleanup closed the pipe is quiet too', hits == [] and unread and 'Traceback' not in errs.getvalue())
+            check('a failed request write is quiet and counts as unread', hits == [] and unread and 'Traceback' not in errs.getvalue())
         finally:
-            check_secrets.subprocess.Popen, check_secrets.INDEX_DEADLINE = saved_popen, saved_dl
+            check_secrets.subprocess.Popen, check_secrets.INDEX_DEADLINE, check_secrets._stop_index_process = saved_popen, saved_dl, saved_stop
+        test_index_ownership(check_secrets)
+        test_index_failures(check_secrets)
+        test_index_owned_tree(check_secrets)
         nm = os.path.join(root, 'node_modules'); os.mkdir(nm)
         with open(os.path.join(nm, 'x.js'), 'w') as f:
             f.write(fake)
@@ -583,10 +853,21 @@ def test_officer():
             subprocess.run(['git', '-C', root, 'replace', '-d', secret_blob], check=True, capture_output=True, timeout=30)
             subprocess.run(['git', '-C', root, 'rm', '-q', '-f', '--cached', 'cfg.txt'], check=True, capture_output=True, timeout=30); os.remove(os.path.join(root, 'cfg.txt'))
             check('and a clean index with a clean tree is clean', check_secrets.scan(root) == ([], []))
-            rows = [('100644', '0' * 40, 'missing.txt')] + [('100644', '%040x' % i, 'f%d' % i) for i in range(1, 6000)]      # one missing object, then enough to fill every pipe
-            t0 = __import__('time').monotonic(); hits, unread = [], []
-            check_secrets.scan_index(root, rows, check_secrets.SHAPES, hits, unread)
-            check('a missing staged object with a backed-up pipe behind it ends promptly, as unread', hits == [] and unread and 'could not produce' in unread[0][1] and __import__('time').monotonic() - t0 < 10)
+            result = bounded_index_child(check_secrets, root)
+            check('a missing staged object with a backed-up pipe behind it ends promptly, as unread',
+                  result['hits'] == [] and result['unread'] and 'could not produce' in result['unread'][0][1] and result['elapsed'] < 10)
+            split = os.path.join(root, 'split.bin')
+            clean = os.path.join(root, 'large.bin')
+            with open(split, 'wb') as f:
+                f.write(b'\0' * (check_secrets.CHUNK - 10) + fake.encode() + b'\0' * check_secrets.CHUNK)
+            with open(clean, 'wb') as f:
+                f.write(b'\0' * (check_secrets.CHUNK * 2 + 97))
+            subprocess.run(['git', '-C', root, 'add', 'split.bin', 'large.bin'], check=True, capture_output=True, timeout=30)
+            hits, unread = [], []
+            check_secrets.scan_index(root, check_secrets.git_index(root), check_secrets.SHAPES, hits, unread)
+            check('large staged blobs stream completely and a secret across the chunk boundary is found',
+                  [path for path, _ in hits] == ['staged: split.bin'] and unread == [])
+            subprocess.run(['git', '-C', root, 'rm', '-q', '-f', '--cached', 'split.bin', 'large.bin'], check=True, capture_output=True, timeout=30)
         except (OSError, subprocess.SubprocessError) as e:
             print('skip: git not available for the staged-content checks (%s)' % type(e).__name__)
     finally:

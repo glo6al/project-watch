@@ -22,6 +22,7 @@ SHAPES = [('an Anthropic API key', re.compile(rb'sk-ant-[A-Za-z0-9_-]{20,}')),
 ANTHROPIC = SHAPES[:1]
 SKIP = ('.git', 'node_modules')     # the pre-publish check: npm's own files hold key-like test strings; what git has staged there is still scanned, from the index
 EVERYTHING = ('.git',)              # the server's check before the Officer starts: the whole tree, nothing but .git skipped
+INDEX_CLEANUP = 10                  # seconds to stop/reap this scan after a read deadline or failed completion
 INDEX_DEADLINE = 300                # seconds for the whole staged-content read; past it git is killed and the index counts as unread
 CHUNK, KEEP = 1 << 20, 512          # files are read a megabyte at a time, whatever their size; the last 512 bytes of
                                     # each piece are kept in front of the next, so a key cut by the piece boundary is still seen
@@ -63,9 +64,28 @@ def git_index(root):
     return rows
 
 
+def _stop_index_process(proc, timeout):
+    """Stop only this scan's owned lifetime, including a Windows Git launcher child."""
+    try:
+        if os.name == 'nt':
+            command = os.path.join(os.environ.get('SystemRoot', r'C:\Windows'), 'System32', 'taskkill.exe')
+            stopped = subprocess.run([command, '/PID', str(proc.pid), '/T', '/F'],
+                                     stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+                                     stderr=subprocess.DEVNULL, timeout=timeout)
+            if stopped.returncode != 0:
+                return 'git process tree could not be stopped'
+        else:
+            import signal
+            os.killpg(proc.pid, signal.SIGKILL)    # Popen starts this scan in its own session
+    except ProcessLookupError:
+        pass                                     # the owned lifetime already ended
+    except (OSError, subprocess.SubprocessError):
+        return 'git process tree could not be stopped'
+    return ''
+
+
 def scan_index(root, rows, shapes, hits, unread):
-    """Every staged blob, read from git's object store the way a commit would publish it (not the working copy, which
-    may differ or be gone): names, link text and contents. A blob that cannot be read counts as unread."""
+    """Stream staged blobs from Git. One worker owns both pipes and each request/response."""
     want = []
     for mode, blob, path in rows:
         what = shape_in(path.encode('utf-8', 'surrogateescape'), shapes)
@@ -76,74 +96,104 @@ def scan_index(root, rows, shapes, hits, unread):
     if not want:
         return
     try:
-        proc = subprocess.Popen(['git', '--no-replace-objects', '-C', root, 'cat-file', '--batch'], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)      # the object as stored, never a replacement standing in for it
+        proc = subprocess.Popen(['git', '--no-replace-objects', '-C', root, 'cat-file', '--batch'],
+                                stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+                                start_new_session=os.name != 'nt')
     except OSError as e:
         unread.append(('the staged files', 'git could not be run (%s)' % type(e).__name__))
         return
-    import threading
-    def feed():
-        try:
-            for blob, _, _ in want:
-                proc.stdin.write(blob.encode() + b'\n')
-            proc.stdin.close()
-        except (OSError, ValueError):     # the pipe closed under it at cleanup: expected
-            pass
-
-    state = {'done': False}
-
-    def read():
-        try:
-            read_all()
-            state['done'] = True
-        except Exception as e:             # any failure reading or parsing git's output: the index is not checked, and that is recorded, not raised
-            unread.append(('the staged files', 'git\'s output could not be read (%s)' % type(e).__name__))
+    import threading, time
+    end = time.monotonic() + INDEX_DEADLINE
+    found_hits, failures = [], []
 
     def read_all():
         for blob, path, link in want:
-            head = proc.stdout.readline()
+            request = blob.encode() + b'\n'
+            if proc.stdin.write(request) != len(request):
+                raise OSError('incomplete request')
+            proc.stdin.flush()
+            head = proc.stdout.readline(256)
             parts = head.split()
-            if len(parts) != 3 or parts[0].decode() != blob:
-                unread.append(('staged: ' + path, 'git could not produce the staged content'))
+            if (not head.endswith(b'\n') or len(parts) != 3 or parts[0] != blob.encode() or
+                    parts[1] != b'blob' or not parts[2].isdigit()):
+                failures.append(('staged: ' + path, 'git could not produce the staged content'))
                 return
             size, tail, found = int(parts[2]), b'', ''
             while size > 0:
                 buf = proc.stdout.read(min(CHUNK, size))
                 if not buf:
-                    break
+                    failures.append(('staged: ' + path, 'git stopped before the staged content ended'))
+                    return
                 size -= len(buf)
                 if not found:
                     found = shape_in(tail + buf, shapes)
                     tail = buf[-KEEP:]
-            proc.stdout.read(1)        # the newline after the content
-            if size > 0:
-                unread.append(('staged: ' + path, 'git stopped before the staged content ended'))
+            if proc.stdout.read(1) != b'\n':
+                failures.append(('staged: ' + path, 'git stopped before the staged content ended'))
                 return
             if found:
-                hits.append(('staged: ' + path, found + (', in the link text' if link else '')))
-        proc.stdout.close()
-        rc = proc.wait()
-        if rc != 0:
-            unread.append(('the staged files', 'git did not finish cleanly reading the staged content'))
+                found_hits.append(('staged: ' + path, found + (', in the link text' if link else '')))
+        return True
 
-    try:
-        threading.Thread(target=feed, daemon=True).start()
-        th = threading.Thread(target=read, daemon=True)
-        th.start()
-        th.join(INDEX_DEADLINE)
-        if th.is_alive():                  # a stalled git: kill it so the reads end, and say the index was not checked
-            proc.kill()
-            th.join(10)
-            unread.append(('the staged files', 'git stalled, so the staged content was not fully checked'))
-        elif not state['done'] and not any(u[0] == 'the staged files' or u[0].startswith('staged: ') for u in unread):
-            unread.append(('the staged files', 'the staged content was not fully checked'))      # the reader ended without finishing and without saying why
-    finally:
-        if proc.poll() is None:            # git first: a feeder blocked on a full pipe holds stdin's lock, and only git's end releases it
-            proc.kill()
+    def work():
+        complete = False
         try:
-            proc.stdin.close()
-        except (OSError, ValueError):
-            pass
-        proc.wait()
+            complete = read_all()
+        except Exception as e:
+            failures.append(('the staged files', "git's output could not be read (%s)" % type(e).__name__))
+        finally:
+            # Only this worker closes streams; the caller first stops the owned tree to
+            # unblock I/O, then joins. It never contends for a buffered stream's lock.
+            try:
+                proc.stdin.close()              # EOF follows the final requested object
+                if complete and proc.stdout.read(1) != b'':
+                    failures.append(('the staged files', 'git produced unexpected staged content'))
+            except (OSError, ValueError):
+                failures.append(('the staged files', 'git streams could not be closed cleanly'))
+            finally:
+                try:
+                    proc.stdout.close()
+                except (OSError, ValueError):
+                    failures.append(('the staged files', 'git streams could not be closed cleanly'))
+            try:
+                if proc.wait(timeout=max(0.01, end - time.monotonic())) != 0:
+                    failures.append(('the staged files', 'git did not finish cleanly reading the staged content'))
+            except subprocess.TimeoutExpired:
+                failures.append(('the staged files', 'git stalled, so the staged content was not fully checked'))
+            except (OSError, ValueError):
+                failures.append(('the staged files', 'git could not be reaped cleanly'))
+
+    worker = threading.Thread(target=work, daemon=True)
+    started = False
+    try:
+        worker.start()
+        started = True
+        worker.join(max(0, end - time.monotonic()))
+    finally:
+        cleanup_end = time.monotonic() + INDEX_CLEANUP
+        if worker.is_alive() or proc.poll() is None:
+            unread.append(('the staged files', 'git stalled, so the staged content was not fully checked'))
+            issue = _stop_index_process(proc, max(0.01, cleanup_end - time.monotonic()))
+            if issue:
+                unread.append(('the staged files', issue))
+            if started:
+                worker.join(max(0, cleanup_end - time.monotonic()))
+        if worker.is_alive():
+            unread.append(('the staged files', 'git cleanup did not finish; its worker may still be running'))
+        else:
+            if not started:                    # no worker ever acquired stream ownership
+                for stream in (proc.stdin, proc.stdout):
+                    try:
+                        stream.close()
+                    except (OSError, ValueError):
+                        unread.append(('the staged files', 'git streams could not be closed cleanly'))
+            hits.extend(found_hits)
+            unread.extend(failures)            # publish only after the stream owner stopped
+            if proc.poll() is None:
+                try:
+                    proc.wait(timeout=max(0.01, cleanup_end - time.monotonic()))
+                except (OSError, subprocess.SubprocessError):
+                    unread.append(('the staged files', 'git cleanup did not finish; its process may still be running'))
 
 
 def scan(root=ROOT, shapes=SHAPES, skip=SKIP):
