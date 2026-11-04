@@ -929,6 +929,25 @@ function headerWheelChecks(mutate=false){let listener;const steps=[],ctx={focus:
   listener(event(true));assert.equal(steps.length,0,'gestures on theme/Details do not navigate agents');listener(event(false));assert.deepEqual(steps,[1],'chain navigation elsewhere remains active');
 }
 headerWheelChecks();let wheelFailed=false;try{headerWheelChecks(true)}catch(e){wheelFailed=true}assert.ok(wheelFailed,'missing control gesture exclusion must fail');
+function evidenceWheelChecks(removeGuard=false){
+  let listener,prevented=0,moved=0;
+  const ctx={focus:null,cam:{yaw:0,py:0},STACK:600,gT:0,gx:0,gz:0,gFired:false,gZone:null,gPinch:'',performance:{now:()=>500},addEventListener:(name,fn)=>listener=fn,hands(){},yawTo(){moved++},queueApply(){moved++}};
+  const start=html.lastIndexOf("addEventListener('wheel',e=>{");
+  let code=html.slice(start,html.indexOf('/* ---------- stepped up:',start));
+  if(removeGuard)code=code.replace(', .alert-evidence','').replace(',.alert-evidence','');
+  vm.runInNewContext(code,ctx);
+  for(const focus of [null,'A'])for(const deltaY of [-120,120])for(const deltaX of [0,160]){
+    ctx.focus=focus;
+    listener({target:{closest:selector=>selector.split(',').includes('.alert-evidence')?{}:null},deltaX,deltaY,preventDefault(){prevented++}});
+    assert.equal(prevented,0,'evidence wheel retains native scrolling in room and desk, in both directions');
+    assert.equal(moved,0,'evidence gestures never move the room, including at scroll boundaries');
+  }
+  ctx.focus=null;
+  listener({target:{closest:()=>null},deltaX:0,deltaY:120,preventDefault(){prevented++}});
+  assert.equal(prevented,1,'room gestures outside evidence remain active');assert.ok(moved>0);
+}
+evidenceWheelChecks();let evidenceGuardCaught=false;try{evidenceWheelChecks(true)}catch(e){evidenceGuardCaught=true}assert.ok(evidenceGuardCaught,'removing evidence wheel exemption must fail');
+console.log('ok evidence scrolling: native wheel default preserved, room/desk isolation and unaffected room navigation; guard mutation detected');
 console.log('ok native header controls: 1000/1001 focus, 1380/1381 Details transitions, shared themes/aria/inert, gesture isolation; mutations detected');
 
 /* Exercise the real visibility predicate independently of layout stubs. */
