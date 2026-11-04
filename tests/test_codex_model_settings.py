@@ -82,12 +82,20 @@ class Wire:
 
 
 class ModelSettingsTests(unittest.TestCase):
+    def setUp(self):
+        self.family = object()  # A fake-only family, including on hosts without Unix sockets.
+        family = patch.object(transport.socket, 'AF_UNIX', self.family, create=True)
+        family.start()
+        self.addCleanup(family.stop)
+
     def run_read(self, settings=UNSET, behavior=None, target=TARGET, host='local', build_error=False):
         self.wire = Wire(settings, behavior)
         with patch.object(transport, '_verify_build', side_effect=RuntimeError('private') if build_error else None) as build, \
              patch.object(transport, '_verify_endpoint', return_value=['fixture']), \
-             patch.object(transport.socket, 'socket', return_value=self.wire):
+             patch.object(transport.socket, 'socket', return_value=self.wire) as socket_factory:
             result = model.read_settings(target, host_id=host)
+            if socket_factory.called:
+                socket_factory.assert_called_once_with(self.family, socket.SOCK_STREAM)
             self.build_calls = build.call_count
         return result
 
@@ -180,6 +188,7 @@ class ModelSettingsTests(unittest.TestCase):
         with patch.object(transport, '_verify_endpoint', return_value=[]), \
              patch.object(transport.socket, 'socket', return_value=Wire()) as socket_factory:
             c = model._ReadConnection(Path('/fixture'), TARGET)
+            socket_factory.assert_called_once_with(self.family, socket.SOCK_STREAM)
             for method, params, version in [
                 ('thread-follower-update-thread-settings', {'conversationId': TARGET}, 2),
                 ('thread-follower-read-model-settings', {'conversationId': OTHER}, 1),
