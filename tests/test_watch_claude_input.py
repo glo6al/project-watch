@@ -13,6 +13,7 @@ import threading
 import time
 import unittest
 import uuid
+from unittest.mock import patch
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -23,6 +24,24 @@ from test_claude_native_input import payload, decision
 spec = importlib.util.spec_from_file_location('watch_claude_input', ROOT / 'scripts' / 'watch_claude_input.py')
 helper = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(helper)
+
+
+class NonWakingTimeoutSocket:
+    """Model a timeout-select that ignores shutdown; blocking reads still wake."""
+    def __init__(self, sock, shutdowns):
+        self.sock, self.shutdowns = sock, shutdowns
+
+    def __getattr__(self, name):
+        return getattr(self.sock, name)
+
+    def shutdown(self, how):
+        mode = self.sock.gettimeout()
+        self.shutdowns.append(mode)
+        if mode is None:
+            self.sock.shutdown(how)
+
+    def close(self):
+        self.sock.close()
 
 
 class Fixture:
@@ -184,13 +203,135 @@ class HelperTests(unittest.TestCase):
                 done = []
                 kwargs = {'timeout': .1} if reason == 'deadline' else {'cancelled': cancelled.is_set} if reason == 'cancel' else {'parent_alive': lambda: not cancelled.is_set()}
                 t = threading.Thread(target=lambda: done.append(f.invoke(**kwargs)))
-                t.start()
-                self.assertTrue(f.started.wait(1))
-                cancelled.set()
+                try:
+                    t.start()
+                    self.assertTrue(f.started.wait(1))
+                    cancelled.set()
+                    t.join(1)
+                    self.assertFalse(t.is_alive())
+                    self.assertEqual(done, [('relinquished_to_native', b'')])
+                    self.assertEqual(len(f.seen), 2)  # one attempt only, never re-challenge/resend
+                finally:
+                    f.release.set()
+                    t.join(3)
+                    self.assertFalse(t.is_alive(), 'fixture worker did not clean up')
+
+    def test_connected_blocking_mode_keeps_finite_connect_and_wakes_cancelled_reads(self):
+        for reason in ('deadline', 'cancel', 'parent'):
+            with self.subTest(reason=reason), Fixture(mode='wait') as f:
+                shutdowns, connections, modes, done = [], [], [], []
+                cancelled = threading.Event()
+                class Tracked(helper.http.client.HTTPConnection):
+                    def connect(self):
+                        connections.append(self)
+                        super().connect()
+                        self.sock = NonWakingTimeoutSocket(self.sock, shutdowns)
+                    def request(self, *args, **kwargs):
+                        modes.append(self.sock.gettimeout())
+                        return super().request(*args, **kwargs)
+                kwargs = {'timeout': .1} if reason == 'deadline' else {'cancelled': cancelled.is_set} if reason == 'cancel' else {'parent_alive': lambda: not cancelled.is_set()}
+                t = threading.Thread(target=lambda: done.append(f.invoke(connection_factory=Tracked, **kwargs)))
+                try:
+                    t.start(); self.assertTrue(f.started.wait(1))
+                    cancelled.set(); t.join(1)
+                    self.assertFalse(t.is_alive())
+                    self.assertEqual(done, [('relinquished_to_native', b'')])
+                    self.assertEqual(len(connections), 1)
+                    self.assertTrue(0 < connections[0].timeout <= 75)
+                    self.assertEqual(modes, [None, None])
+                    self.assertEqual(shutdowns, [None])
+                    self.assertEqual(len(f.seen), 2)
+                finally:
+                    f.release.set(); t.join(3)
+                    for connection in connections: connection.close()
+                    self.assertFalse(t.is_alive(), 'mode fixture worker did not clean up')
+
+    def test_callback_errors_abort_held_response_without_output_or_guard_leak(self):
+        real_thread = threading.Thread
+        for callback in ('clock', 'cancel', 'parent'):
+            with self.subTest(callback=callback), Fixture(mode='wait') as f:
+                failed, done, guards = threading.Event(), [], []
+                def value(normal):
+                    if failed.is_set(): raise RuntimeError('fictional private callback detail')
+                    return normal
+                kwargs = {'clock': lambda: value(time.monotonic())} if callback == 'clock' else {'cancelled': lambda: value(False)} if callback == 'cancel' else {'parent_alive': lambda: value(True)}
+                def tracked(*args, **kwargs):
+                    thread = real_thread(*args, **kwargs)
+                    if getattr(kwargs.get('target'), '__name__', '') == 'watch': guards.append(thread)
+                    return thread
+                t = real_thread(target=lambda: done.append(f.invoke(**kwargs)))
+                errors = io.StringIO()
+                try:
+                    with contextlib.redirect_stderr(errors), patch.object(helper.threading, 'Thread', side_effect=tracked):
+                        t.start(); self.assertTrue(f.started.wait(1))
+                        failed.set(); t.join(1)
+                        self.assertFalse(t.is_alive())
+                    self.assertEqual(done, [('relinquished_to_native', b'')])
+                    self.assertEqual(len(guards), 1)
+                    self.assertFalse(guards[0].is_alive())
+                    self.assertEqual(errors.getvalue(), '')
+                    self.assertEqual(len(f.seen), 2)
+                finally:
+                    failed.clear(); f.release.set(); t.join(3)
+                    for guard in guards: guard.join(1)
+                    self.assertFalse(t.is_alive(), 'callback fixture worker did not clean up')
+                    self.assertFalse(any(guard.is_alive() for guard in guards))
+
+    def test_guard_error_during_cleanup_rejects_an_already_verified_response(self):
+        with Fixture(mode='wait') as f:
+            entered, release, closed = threading.Event(), threading.Event(), threading.Event()
+            worker, done = [], []
+            def cancelled():
+                if worker and threading.get_ident() != worker[0]:
+                    entered.set()
+                    if not release.wait(2): raise AssertionError('guard latch was not released')
+                    raise RuntimeError('fictional private guard error')
+                return False
+            class Tracked(helper.http.client.HTTPConnection):
+                def close(self):
+                    try: super().close()
+                    finally: closed.set(); release.set()
+            def invoke():
+                worker.append(threading.get_ident())
+                done.append(f.invoke(cancelled=cancelled, connection_factory=Tracked))
+            t = threading.Thread(target=invoke)
+            try:
+                t.start(); self.assertTrue(f.started.wait(1)); self.assertTrue(entered.wait(1))
+                f.release.set()  # Valid signed response wins I/O while the guard check is in flight.
                 t.join(1)
                 self.assertFalse(t.is_alive())
+                self.assertTrue(closed.is_set())
                 self.assertEqual(done, [('relinquished_to_native', b'')])
-                self.assertEqual(len(f.seen), 2)  # one attempt only, never re-challenge/resend
+                self.assertEqual(len(f.seen), 2)
+            finally:
+                release.set(); f.release.set(); t.join(3)
+                self.assertFalse(t.is_alive(), 'late-abort fixture worker did not clean up')
+
+    def test_valid_held_response_remains_available_until_the_original_deadline(self):
+        with Fixture(mode='wait') as f:
+            watched, worker, done, connections = threading.Event(), [], [], []
+            def cancelled():
+                if worker and threading.get_ident() != worker[0] and f.started.is_set(): watched.set()
+                return False
+            class Tracked(helper.http.client.HTTPConnection):
+                def connect(self):
+                    connections.append(self)
+                    super().connect()
+            def invoke():
+                worker.append(threading.get_ident())
+                done.append(f.invoke(cancelled=cancelled, connection_factory=Tracked))
+            t = threading.Thread(target=invoke)
+            try:
+                t.start(); self.assertTrue(f.started.wait(1)); self.assertTrue(watched.wait(1))
+                self.assertTrue(t.is_alive()); self.assertEqual(done, [])
+                self.assertTrue(70 < connections[0].timeout <= 75)
+                f.release.set(); t.join(1)
+                self.assertFalse(t.is_alive())
+                self.assertEqual(done[0][0], 'returned_to_hook_unconfirmed')
+                self.assertTrue(done[0][1]); self.assertEqual(len(f.seen), 2)
+            finally:
+                f.release.set(); t.join(3)
+                self.assertFalse(t.is_alive(), 'held-valid fixture worker did not clean up')
 
     def test_invalid_or_unsupported_input_never_contacts_listener(self):
         for p in (dict(payload(), hook_event_name='PermissionRequest'), dict(payload(), tool_name='Bash')):

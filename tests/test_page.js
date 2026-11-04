@@ -4,7 +4,8 @@
    by a Windows server (either slash). Run: node tests/test_page.js */
 'use strict';
 const fs = require('fs'), path = require('path'), vm = require('vm');
-const html = fs.readFileSync(path.join(__dirname, '..', 'src', 'web', 'index.html'), 'utf8');
+// Normalize HTML input line endings before matching and executing script fragments.
+const html = fs.readFileSync(path.join(__dirname, '..', 'src', 'web', 'index.html'), 'utf8').replace(/\r\n?/g, '\n');
 const a = html.indexOf('/* path helpers'), b = html.indexOf('/* end path helpers */');
 if (a < 0 || b < 0 || b < a) throw new Error('the path helper markers are missing from index.html');
 const block = html.slice(html.indexOf('\n', a) + 1, b);

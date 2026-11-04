@@ -56,6 +56,7 @@ def exchange(invocation, credential, port, *, clock=time.monotonic,
         native.reject()
     conn = connection_factory('127.0.0.1', port, timeout=max(.001, invocation.deadline - clock()))
     stop = threading.Event()
+    aborted = threading.Event()
     guard = None
     pinned = None
     try:
@@ -65,11 +66,21 @@ def exchange(invocation, credential, port, *, clock=time.monotonic,
         pinned = conn.sock
         if pinned is None:
             native.reject()
+        # Keep connect finite; the independent watchdog owns connected I/O's
+        # total deadline, including platforms whose timeout-select does not wake.
+        pinned.settimeout(None)
         conn.auto_open = False  # A connection object must never reconnect after proof.
 
         def watch():
-            while not stop.wait(.025):
-                if cancelled() or clock() >= invocation.deadline:
+            try:
+                while not stop.wait(.025):
+                    if cancelled() or clock() >= invocation.deadline:
+                        aborted.set()
+                        break
+            except Exception:
+                aborted.set()  # A failed callback must not strand blocking I/O.
+            finally:
+                if aborted.is_set():
                     try:
                         pinned.shutdown(socket.SHUT_RDWR)
                     except OSError:
@@ -78,7 +89,6 @@ def exchange(invocation, credential, port, *, clock=time.monotonic,
                         pinned.close()
                     except OSError:
                         pass
-                    return
         guard = threading.Thread(target=watch, daemon=True)
         guard.start()
         request = native.challenge_request(credential, nonce_factory(), invocation.invocation_id)
@@ -99,13 +109,18 @@ def exchange(invocation, credential, port, *, clock=time.monotonic,
         signatures = response.headers.get_all('X-Watch-Native-Signature', [])
         if len(signatures) != 1:
             native.reject()
-        return native.verify_response(credential, challenge, request, invocation, port, response.status,
-                                      raw, signatures[0], clock=clock, cancelled=cancelled)
+        output = native.verify_response(credential, challenge, request, invocation, port, response.status,
+                                        raw, signatures[0], clock=clock, cancelled=cancelled)
     finally:
         stop.set()
-        conn.close()
-        if guard:
-            guard.join(.2)
+        try:
+            conn.close()
+        finally:
+            if guard:
+                guard.join(.2)
+    if aborted.is_set() or (guard and guard.is_alive()):
+        native.reject()
+    return output
 
 
 def run_hook(stdin, stdout, *, credential_path=None, port=None, enabled=False,
@@ -125,17 +140,26 @@ def run_hook(stdin, stdout, *, credential_path=None, port=None, enabled=False,
             native.reject()
         parent_pid = os.getppid()
         alive = parent_alive or (lambda: os.getppid() == parent_pid)
-        stopped = lambda: cancelled() or not alive()
-        deadline = clock() + timeout
+        def stopped():
+            try:
+                return cancelled() or not alive()
+            except Exception:
+                native.reject()
+        def now():
+            try:
+                return clock()
+            except Exception:
+                native.reject()
+        deadline = now() + timeout
         if stopped():
             native.reject()
         raw = stdin.read(native.MAX_INPUT + 1)
         payload = native.parse_json(raw)
-        invocation = native.HookInvocation.create(payload, invocation_id_factory(), deadline, clock)
+        invocation = native.HookInvocation.create(payload, invocation_id_factory(), deadline, now)
         credential = credential_loader(credential_path)
-        out = exchange(invocation, credential, port, clock=clock, cancelled=stopped,
+        out = exchange(invocation, credential, port, clock=now, cancelled=stopped,
                        connection_factory=connection_factory)
-        if stopped() or clock() >= deadline:
+        if stopped() or now() >= deadline:
             native.reject()
         if out:
             stdout.write(out)
