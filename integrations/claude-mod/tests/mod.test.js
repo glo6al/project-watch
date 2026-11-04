@@ -12,7 +12,7 @@ const copy=value=>JSON.parse(JSON.stringify(value));
 const drain=async()=>{for(let i=0;i<30;i++) await new Promise(resolve=>setImmediate(resolve));};
 
 async function harness({storage=new Map(), claimed=true, submit, fetch, nativeId=NATIVE, project='/fictional/project', storeSet, startup={surface:'desktop',isInteractive:true}, surfaces=['desktop'], surfaceRead}={}) {
-  const hooks=new Map(), timers=[], calls=[], submissions=[], passed=[];
+  const hooks=new Map(), timers=[], calls=[], submissions=[], passed=[], eventWaiters=new Set();
   let failIdentity=false,failSurfaces=false,roster=surfaces;
   let native=nativeId, cwd=project, now=100000, failStore=false, generation=GENERATION;
   const claim={request_id:REQUEST,attempt_id:ATTEMPT,native_id:nativeId,generation:GENERATION,envelope:ENVELOPE,expires_at:1000};
@@ -25,6 +25,7 @@ async function harness({storage=new Map(), claimed=true, submit, fetch, nativeId
     prompt:{submit:async value=>{submissions.push(value);return submit?submit(value):{text:value.text};}},
     http:{fetch:async(url,init)=>{
       const body=JSON.parse(init.body); calls.push({url,init,body});
+      if(url.endsWith('/event'))for(const observer of [...eventWaiters])if(observer.kind===body.kind)observer.notify(body);
       if(fetch){const custom=await fetch(url,body,init);if(custom)return custom;}
       let value;
       if(url.endsWith('/enroll'))value={...response(),token:'fictional-watch-service-token',enrollment_id:ENROLLMENT};
@@ -38,8 +39,19 @@ async function harness({storage=new Map(), claimed=true, submit, fetch, nativeId
   register((name,handler)=>{hooks.set(name,handler);return {catch(){}};});
   async function call(name,value){const handler=hooks.get(name);return handler?handler($,value,async forwarded=>{passed.push({name,value:forwarded});return {};}):{};}
   const command=(command,args='',origin={kind:'composer'})=>call('command.run',{command,args,origin});
+  // turn hooks await durable storage; HTTP delivery continues independently.
+  const waitForEvent=kind=>{
+    const existing=calls.find(c=>c.url.endsWith('/event')&&c.body.kind===kind);
+    if(existing)return Promise.resolve(existing.body);
+    return new Promise((resolve,reject)=>{
+      const cleanup=()=>{clearTimeout(deadline);eventWaiters.delete(observer);};
+      const observer={kind,notify:value=>{cleanup();resolve(value);}};
+      const deadline=setTimeout(()=>{cleanup();reject(Error('Expected WATCH '+kind+' HTTP event within 2000 ms.'));},2000);
+      eventWaiters.add(observer);
+    });
+  };
   await call('session.start',{cwd,...startup});
-  return {$,storage,claim,calls,submissions,timers,passed,command,call,
+  return {$,storage,claim,calls,submissions,timers,passed,command,call,waitForEvent,
     enroll:()=>command('watch-connect','8793:fictional_pair_code_1234'),
     tick:async()=>{const t=timers.filter(t=>!t.cancelled).at(-1);if(t)await t.fn();await drain();},
     setNative(value){native=value;},setCwd(value){cwd=value;},setNow(value){now=value;},
@@ -642,9 +654,28 @@ test('peer full attribution binds only its main turn and never owner or altered 
 test('peer missing conflicting aborted or nonanswer completions remain unknown',async()=>{
   for(const event of [{answer:'No marker'},{answer:ANSWER+'\nWATCH_REPLY '+REQUEST},{answer:'WATCH_REPLY '+ATTEMPT},{answer:ANSWER,isAborted:true},{answer:ANSWER,reason:'error'}]) {
     const h=await peerHarness();await h.tick();await h.call('turn.start',{text:PEER_ENVELOPE,turnId:'peer-main'});
-    await h.call('turn.complete',{turnId:'peer-main',isAborted:false,reason:'answer',...event});await drain();
+    await h.call('turn.complete',{turnId:'peer-main',isAborted:false,reason:'answer',...event});
+    assert.equal(runtimeRows(h.storage)[0][1].requests[REQUEST].phase,'unknown');
+    await h.tick();await h.waitForEvent('unknown');
     assert(!h.events().some(e=>e.kind==='answered'));assert(h.events().some(e=>e.kind==='unknown'));
   }
+});
+
+test('peer unknown receipt survives a pending started ACK and reaches HTTP after release',async()=>{
+  let releaseStarted;
+  const startedAck=new Promise(resolve=>{releaseStarted=()=>resolve(responseJSON({request_id:REQUEST,state:'awaiting_reply'}));});
+  const h=await peerHarness({fetch:(url,body)=>url.endsWith('/event')&&body.kind==='started'?startedAck:null});
+  try{
+    await h.tick();await h.call('turn.start',{text:PEER_ENVELOPE,turnId:'peer-main'});await h.waitForEvent('started');
+    await h.call('turn.complete',{turnId:'peer-main',answer:'No marker',isAborted:false,reason:'answer'});await drain();
+    const receipt=runtimeRows(h.storage)[0][1].requests[REQUEST];
+    assert.equal(receipt.phase,'unknown');assert(receipt.events.some(e=>e.kind==='unknown'));
+    assert(!h.events().some(e=>e.kind==='unknown'),'fixed scheduler drains cannot deliver through a held ACK');
+    assert(!h.events().some(e=>e.kind==='answered'));
+    releaseStarted();await h.tick();const unknown=await h.waitForEvent('unknown');
+    assert.equal(unknown.request_id,REQUEST);assert.equal(unknown.attempt_id,ATTEMPT);
+    assert(!h.events().some(e=>e.kind==='answered'));assert.equal(h.submissions.length,1);
+  }finally{releaseStarted();}
 });
 
 test('pending peer admission keeps heartbeats and cannot accept a second owner claim',async()=>{
