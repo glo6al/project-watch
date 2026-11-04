@@ -3479,7 +3479,10 @@ class H(BaseHTTPRequestHandler):
                 self.close_connection = True
                 return self.send(503, b'{"error":"Claude mod messaging unavailable."}', 'application/json')
             import claude_mod
-            return claude_mod.handle_http(self, MESSAGING)
+            def snapshot():
+                with LOCK:
+                    return {aid: dict(item) for aid, item in AGENTS.items()}
+            return claude_mod.handle_http(self, MESSAGING, snapshot)
         if self.path.startswith('/bridge/v2/'):
             if MESSAGING is None:
                 self.close_connection = True
@@ -3555,6 +3558,28 @@ class H(BaseHTTPRequestHandler):
             return self.send(200, KEY.encode())
         if not self.keyed(self.headers.get('X-Live-Room-Key', '')):
             return self.send(403, b'forbidden')
+        if route in ('/claude-mod-setup', '/claude-mod-setup-status', '/claude-mod-revoke'):
+            if MESSAGING is None:
+                return self.send(503, b'{"error":"Claude setup unavailable."}', 'application/json')
+            import claude_mod
+            try:
+                if route == '/claude-mod-setup':
+                    if d != {'peer_receive': True} or type(d.get('peer_receive')) is not bool:
+                        claude_mod.schema(d, ())
+                    out = MESSAGING.mods.setup_code(PORT, peer_receive=bool(d))
+                elif route == '/claude-mod-revoke':
+                    claude_mod.schema(d, ())
+                    out = MESSAGING.mods.revoke()
+                else:
+                    claude_mod.schema(d, ())
+                    with LOCK:
+                        agents = {aid: dict(item) for aid, item in AGENTS.items()}
+                    out = MESSAGING.mods.setup_status(agents)
+            except claude_mod.ModError as error:
+                return self.send(error.status, json.dumps({'error': str(error), 'error_code': error.code}).encode(), 'application/json')
+            except (OSError, ValueError, sqlite3.Error):
+                return self.send(503, b'{"error":"Claude setup unavailable."}', 'application/json')
+            return self.send(200, json.dumps(out).encode(), 'application/json')
         if route == '/claude-mod-pair':
             if MESSAGING is None:
                 return self.send(503, b'{"error":"Claude mod messaging unavailable."}', 'application/json')
@@ -3897,6 +3922,12 @@ def shared_directory_snapshot(store):
                 and not agent.get('observed') and not agent.get('stale')):
             result[aid] = {'capability': 'reachable' if ready and desktop else 'unavailable',
                            'reason': '' if ready and desktop else 'Codex desktop or queue transport is unavailable.'}
+    for aid, agent in active.items():
+        if aid.startswith('c:'):
+            peer_ready, entry, reason = store.mods.peer_capability(aid, agent)
+            if entry:
+                result[aid] = dict(capability='reachable' if peer_ready else 'unavailable', reason=reason,
+                                   supported_transport='claude_mod', mod_enrollment=entry['id'], project=entry['project'])
     # MCP channels follow the current native conversation after an in-process
     # switch. Descriptor identity and a listening socket cannot prove targeting.
     result['__claude_transport__'] = {'capability': 'unavailable', 'reason': claude_channel.PEER_IDENTITY_REASON}

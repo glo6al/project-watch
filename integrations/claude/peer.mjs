@@ -121,7 +121,7 @@ export function safeResult(method,value){
       if(!isUuid(r.native_id)||!['reachable','unverified','unavailable'].includes(r.capability))throw fail();
       Object.assign(result,{native_id:r.native_id,capability:r.capability,reason:textField(r.reason,300)});
       if(r.last_seen!==undefined)result.last_seen=timestamp(r.last_seen);
-      if(r.supported_transport!==undefined){if(!['codex_queue','claude_channel'].includes(r.supported_transport))throw fail();result.supported_transport=r.supported_transport}
+      if(r.supported_transport!==undefined){if(!['codex_queue','claude_channel','claude_mod'].includes(r.supported_transport))throw fail();result.supported_transport=r.supported_transport}
       return result;
     }),next_cursor:cursor(value.next_cursor),directory:{complete:value.directory.complete,reasons:value.directory.reasons.map(r=>textField(r,200)),refreshed_at:timestamp(value.directory.refreshed_at)}};
   }

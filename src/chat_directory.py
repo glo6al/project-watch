@@ -503,22 +503,29 @@ class ChatDirectory:
             capability, reason = 'unavailable', 'Chat metadata scan is incomplete; identity is not verified.'
         if provider == 'codex' and self._index and self._index['uncertain']:
             capability, reason = 'unavailable', 'Codex title metadata is unverifiable; exact name and revision cannot be confirmed.'
-        instance = facts.get('instance_id') if provider == 'claude' else None
-        if provider == 'claude' and capability == 'reachable' and not _uuid(instance):
+        mod_transport = provider == 'claude' and facts.get('supported_transport') == 'claude_mod'
+        enrollment = facts.get('mod_enrollment') if mod_transport else None
+        instance = facts.get('instance_id') if provider == 'claude' and not mod_transport else None
+        if mod_transport and capability == 'reachable' and not _uuid(enrollment):
+            capability, reason = 'unavailable', 'Claude official plugin enrollment is not verified.'
+        if provider == 'claude' and not mod_transport and capability == 'reachable' and not _uuid(instance):
             capability, reason = 'unavailable', 'Claude channel instance identity is not verified.'
         if provider == 'claude' and capability == 'reachable' and facts.get('project') != project:
             capability, reason = 'unavailable', 'Claude channel project does not match the selected chat.'
         identity = {'path': path, 'device': s['token'][0], 'inode': s['token'][1]}
         if _uuid(instance):
             identity['instance_id'] = instance
-        base_key = (provider, ident, project, title, s['token'], instance, path)
+        if _uuid(enrollment):
+            identity['mod_enrollment'] = enrollment
+        transport = 'codex_queue' if provider == 'codex' else 'claude_mod' if mod_transport else 'claude_channel'
+        base_key = (provider, ident, project, title, s['token'], instance, enrollment, transport, path)
         base_cache = s.get('base_cache')
         if not base_cache or base_cache[0] != base_key:
             base = {'agent_id': aid, 'native_id': ident, 'provider': provider, 'name': title,
                          'project_id': _hash(['watch-project-v1', project]), 'project_label': os.path.basename(project) or project,
                          'project': project, 'identity': identity,
-                         'supported_transport': 'codex_queue' if provider == 'codex' else 'claude_channel',
-                         'identity_revision': _hash([provider, ident, project, title, identity])}
+                         'supported_transport': transport,
+                         'identity_revision': _hash([provider, ident, project, title, identity] + ([transport] if mod_transport else []))}
             base_cache = s['base_cache'] = (base_key, base)
         result = dict(base_cache[1], capability=capability, reason=reason)
         if _timestamp(s['last_seen']):

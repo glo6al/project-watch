@@ -343,9 +343,16 @@ class MessagingStore:
             reason = str(error)
         codex = not reason and agent.startswith('x:')
         queue_reason = reason
+        claude_setup = None
+        if isinstance(agent, str) and agent.startswith('c:'):
+            status = self.mods.setup_status(agents)
+            ready, entry, _ = self.mods.capability(agent, agents.get(agent, {}))
+            state = ('connected' if ready else 'setup_needed' if not status['authorized']
+                     else 'disconnected' if entry else 'waiting')
+            claude_setup = dict(authorized=status['authorized'], state=state, peer_receive=status['peer_receive'])
         if not reason and not codex:
-            ready, _, _ = self.mods.capability(agent, agents[agent])
-            queue_reason = '' if ready else CLAUDE_OWNER_UNAVAILABLE
+            queue_reason = ('' if ready else 'Waiting for this Claude chat to load or reconnect the WATCH plugin.'
+                            if status['authorized'] else 'Set up Claude once in WATCH to connect eligible local chats.')
         elif codex and (self.worker_failed or not (self.available if self.codex_available is None else self.codex_available)):
             queue_reason = self.reason or 'Codex queue transport is unavailable.'
         if codex and not queue_reason:
@@ -360,11 +367,14 @@ class MessagingStore:
             control_reason = 'Live controls support local parent Codex desktop chats only.'
         elif not reason and sys.platform != 'darwin':
             control_reason = 'Codex desktop controls require macOS.'
-        return {'agent': agent, 'actions': {
+        result = {'agent': agent, 'actions': {
             'queue': {'available': not bool(queue_reason), 'reason': queue_reason, 'mode': 'queue'},
             'steer': {'supported': not bool(control_reason), 'reason': control_reason, 'mode': 'new_instruction'},
             'interrupt': {'supported': not bool(control_reason), 'reason': control_reason, 'mode': 'interrupt'},
             'promote_queued': {'available': False, 'reason': 'Promoting an existing queued message is unavailable.', 'mode': 'queued_promotion'}}}
+        if claude_setup is not None:
+            result['claude_setup'] = claude_setup
+        return result
 
     def owner_action(self, action, agent, text, request_id, agents):
         """The authenticated owner gateway. Replay checks precede new-send eligibility.

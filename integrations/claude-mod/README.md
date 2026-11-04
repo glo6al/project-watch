@@ -1,57 +1,80 @@
-# WATCH owner messaging mod
+# WATCH messaging plugin
 
-This local plugin uses Claude Code's official mod APIs to connect one existing conversation to WATCH's owner composer and Officer. It receives a complete authenticated owner request from WATCH and calls `$.prompt.submit({text: envelope, asUser: false})`. Claude retains plugin attribution and uses the conversation's current model, sign-in, project context, tools and native permissions.
+This WATCH-maintained plugin connects existing local Claude Code conversations to WATCH's owner composer, Officer and optional shared agent messaging. Install it once for your user account, authorize WATCH once, and eligible chats register automatically after loading the plugin. Each chat keeps its own native UUID, project, service connection and request receipts. Chat names are display labels, never routing authority.
 
-It is maintained by WATCH and is not an Anthropic product or endorsement. This is an owner-only adapter. It does not enable WATCH peer delivery, create conversations, call a separate model, intercept permission decisions, or read Claude account credentials.
+It uses Claude Code's official mod APIs, including `$.prompt.submit({text: envelope, asUser: false})`. Claude retains plugin attribution and uses the existing conversation's model, sign-in, tools, permissions and project context. This is not an Anthropic product or endorsement. Peer receiving requires explicit WATCH authorization and a compatible current connection. It does not interrupt Claude, create conversations, answer native permissions, or read Claude account credentials. It does not call a separate model.
 
-## Install in the intended existing project
+## Install once for your user account
 
-Keep this repository at a stable local path. Use a Claude Code executable with mod support (tested with **2.1.309**). Your terminal's `claude` can be older than the executable bundled with Desktop; check `claude --version` and use the supported executable before installing.
+Use a Claude Code executable with mod support (the native compatibility target is **2.1.309**). Your terminal's `claude` may be older than Desktop's bundled executable; check `claude --version` and use a supported executable before installation. Keep this repository at a stable local path.
 
-In a terminal, run these plugin-management commands from the intended existing chat's project folder. They manage the plugin without starting a conversation:
+Run these commands in a terminal. They manage the plugin without starting another conversation:
 
 ```sh
-cd /absolute/path/to/your/project
 claude plugin marketplace add /absolute/path/to/agent-watch/integrations/claude-mod --scope user
-claude plugin install watch-owner@watch-local --scope local
+claude plugin install watch-owner@watch-local --scope user
 ```
 
-Then run `/reload-plugins` in the existing Claude chat and confirm its native UUID with `/status`. These slash commands run in the chat; the installation commands above run in the terminal, since Desktop's `/plugin` screen does not install a local folder from those arguments.
+**User scope enables the plugin across your local projects on this computer.** It is not a per-chat or per-project installation. Existing project/local overrides can take precedence; inspect the native plugin manager if an older local version remains enabled. Preserve unrelated plugins and settings.
 
-Select that exact chat in WATCH, choose the agent as the message recipient, then choose **Connect Claude**. Enter the single-use `/watch-connect <port>:<pair-code>` command WATCH displays into that chat. The code expires after five minutes and is pinned to the observed conversation UUID and project. Preserve unrelated plugins and settings through native plugin management. Do not launch another Claude session as an installation substitute.
+In each already-open Claude chat you want available, run `/reload-plugins` once to load the installed plugin. New local chats load it at startup. Claude does not expose a supported command to force-load a new plugin into every already-running chat at once. Cloud sessions do not load your local user settings.
 
-`/watch-status` shows connection state without the service token. `/watch-disconnect` stops polling and revokes readiness. `/watch-connect` without arguments explicitly reconnects the saved enrollment with a fresh connection generation. A plugin reload also reconnects an enrollment that was active, retaining prior receipts without resubmitting any prompt.
+## Authorize WATCH once
 
-WATCH issues its own scoped service token. The mod stores it in its plugin store under a key specific to the native conversation UUID. It never places the token in model input, status output, URLs, command arguments or logs. The plugin store is shared by this plugin across sessions; it is not a security vault or a transactional lock. The same operating-system account and other installed mods remain trusted.
+1. Open an unlocked WATCH window and choose an eligible Claude chat as the recipient.
+2. Select **Set up Claude**. WATCH creates a single-use code that expires after five minutes.
+3. Run the displayed `/watch-setup <port>:<code>` command in **one** existing local Claude chat that has loaded the plugin.
+
+The setup screen discloses authorization for your messages and agent messages from the shared WATCH MCP. Replies to agents are visible to every connected shared client across projects and providers; do not include secrets. This explicitly authorizes the plugin to register eligible local parent Claude chats with this WATCH installation. It applies across local projects, rather than only the chat where you enter the command. Other loaded chats discover the shared authorization automatically. No separate pairing command is needed for each chat. WATCH enables Send only after the intended chat itself has registered and maintains its connection.
+
+Existing owner-only global authorizations show **Enable agent messaging**. A fresh setup code explicitly replaces the prior automatic authorization; it never silently expands it. Replacement cannot recall native input already queued. Legacy manual pairings remain owner-only and automatic registration does not replace them. Peer receiving also requires the MCP service to be configured separately in the sending client.
+
+Registration uses the official host's current native UUID and canonical project, matched to WATCH's observed eligible chat. Unknown or not-yet-observed chats wait; child, related-parent, cloud, wrong-runtime or mismatched-project identities cannot register. Two chats in the same project remain distinct. Native reloads, WATCH restarts and temporary service outages trigger registration recovery with bounded request rate; backoff can delay reconnection.
+
+Automatic registration runs in interactive terminal sessions and sessions currently attached to Claude Desktop. An unattended headless session does not register automatically. Version 0.3.1 recognizes Desktop attachment separately from the host's terminal-interaction flag.
+
+`/watch-status` reports setup/connection state without secrets. `/watch-disconnect` intentionally opts this chat out, including after reload; `/watch-connect` without arguments re-enables it. Temporary native lifecycle transitions do not count as an owner opt-out. Legacy per-chat `/watch-connect <port>:<pair-code>` enrollment remains compatible; an existing manual enrollment is retained rather than silently replaced by automatic registration.
+
+## Authorization and local trust
+
+WATCH issues a shared registration grant that is accepted directly only by the registration route. Registration returns service credentials for an eligible chat; those credentials can claim that chat's owner deliveries and, when the grant explicitly permits it and the connection negotiates peer protocol 1, shared peer deliveries. They report only matching replies. Possession of the registration grant therefore permits obtaining eligible-chat delivery credentials. It cannot originate owner messages, control an agent, or use peer/native routes. Each registered chat has separate service credentials and a per-runtime membership lease. Service credentials cannot register another chat or invoke owner actions. Owner requests still enter through WATCH's authenticated owner gateway.
+
+WATCH persists hashes of grants and service tokens, not their recoverable plaintext. The plugin stores its registration grant under a shared plugin-store key and keeps delivery state in separate runtime receipt records. Tokens never enter model input, status output, URLs or public logs. This store is shared across sessions and is not a security vault. The same operating-system account and other installed mods remain trusted. Metadata matching does not cryptographically attest a native host's identity.
+
+A second running host for the same native UUID cannot replace a live membership. After a lease expires it can recover that enrollment without resending an attempted prompt. Ordered connection episodes prevent delayed old registration requests from rolling a recovered connection backward. A grant replacement or revocation invalidates its derived service credentials. A lost one-use setup response requires a fresh owner setup code; setup is not claimed to be automatically retry-idempotent.
 
 ## Delivery and recovery
 
-The WATCH server durably reserves each request before returning its full envelope. The mod then persists an attempted request record and envelope digest before invoking the native API once. A busy Claude conversation queues that ordinary input. Heartbeats continue while the submission promise waits for idle; the mod accepts no second claim during that attempt. Distinct owner requests can wait in WATCH's durable queue.
+The delivery pipeline reserves each owner or authorized shared peer request durably before returning its envelope. The plugin persists the attempted receipt before calling the native prompt API once. A busy conversation queues that ordinary input, with heartbeats continuing independently. Different chats and their receipts remain separate.
 
-A native submission receipt means input was admitted or started, not that an answer exists. The mod binds only a main `turn.start` whose full text matches the entire submitted envelope, either raw or inside the exact supported attribution wrapper. It returns an answer only from that same main turn's nonaborted `turn.complete` with reason `answer` and exactly one matching `WATCH_REPLY` marker line. Child agents, tools, background notices, unrelated turns and missing or conflicting markers do not fulfill requests. An unrecognized prompt rewrite cannot be credited as the answer.
+A submission receipt means input was admitted or started, not that an answer exists. Only a corresponding main turn with the entire submitted envelope can bind a reply. Matching accepts the complete raw envelope or Claude Code 2.1.309's exact `watch-owner` attribution wrapper. Only that main turn's nonaborted answer with one exact `WATCH_REPLY` marker fulfills the request. Child agents, tools, unrelated turns, changed input and ambiguous markers do not fulfill it.
 
-An uncertain submission is never automatically retried. A lost claim HTTP response stops polling until reconnect; the server's durable claim still prevents that request being submitted again. A reload marks unfinished local attempts unknown and can replay the same stored completion event after an acknowledgment loss. Replaying status or a retained answer never invokes `prompt.submit` again. If a submit promise is still pending, disconnect does not make its native queue empty and reconnect is held until that promise settles.
+An uncertain claim or submission is never automatically retransmitted. Registration recovery retires the uncertain generation so a distinct future message can proceed. Original request, attempt, origin and enrollment identities are retained. Peer messages use `WATCH_PEER_REQUEST`, explicitly identify untrusted agent content and never claim owner authority. Their answers return through the original shared request, without an additional MCP send or reply chain. Receipt recovery replays retained status or answers, never the prompt. Runtime receipt namespaces prevent a delayed former host from overwriting its successor's receipts. The current owner periodically recovers late receipts; recovery is bounded and fails closed if retained data exceeds its limit. Native hooks do not wait for WATCH network requests before forwarding native events.
 
-Avoid clearing, switching or resuming a conversation until queued WATCH work settles. Such changes after the final UUID check can affect where native queued input runs. Reconnect the intended chat afterward. This is a disclosed lifecycle limitation; no atomic destination or exactly-once provider execution guarantee is claimed.
+Avoid clearing, switching or resuming a conversation until queued WATCH work settles. Such changes after the final UUID check can affect where native queued input runs. The plugin stops its old connection and discovers the current eligible identity, but no atomic destination or exactly-once provider-execution guarantee is claimed. Disconnecting cannot recall native input already admitted.
 
-Service requests use only fixed endpoint paths at the numeric-loopback origin `http://127.0.0.1:<port>`. Pairing supplies a bounded numeric port, not an arbitrary URL. WATCH never redirects. Official `$.http.fetch` itself follows up to five redirects and drops authorization headers on a different-origin redirect; this mod uses no unsupported redirect-control option or private transport.
+Service traffic uses fixed paths at `http://127.0.0.1:<port>`. Setup supplies a bounded numeric port, not an arbitrary host or URL. WATCH does not redirect. Official `$.http.fetch` can follow redirects; no unsupported redirect-control option or private transport is used.
 
-## Offline checks
+## Verification
 
 ```sh
+python3 tests/test_claude_mod.py
+python3 tests/test_claude_global_integration.py
+python3 tests/test_claude_peer_integration.py
 npm --prefix integrations/claude-mod test
+node tests/test_claude_mod_page.js
 claude plugin validate --json integrations/claude-mod
 claude plugin test integrations/claude-mod
 ```
 
-The plugin and native fixtures were validated with Claude Code **2.1.309**. Node functional fixtures mock HTTP, store, clock and prompt admission. The official native test loads this one plugin, exercises its detached `asUser:false` call, verifies plugin provenance and attempted persistence, then fires its own main turn observers through the official test kit. This host omits optional `origin.asUser` for false; the Node fixture additionally checks the actual call argument is explicitly false.
+Node fixtures mock native HTTP/store/clock/prompt APIs. The official native fixture harness mocks Claude's core; it verifies supported API/observer routing rather than live model behavior. A separate integration fixture runs two plugin runtimes sharing one store against the production WATCH HTTP handlers and outbox, verifying one authorization, automatic registration, isolated message/reply correlation and revocation. Native execution in that fixture is mocked. A separate peer integration fixture exercises the actual shared MCP adapter, signed HTTP, SQLite claim ledger and production plugin with native execution mocked. These checks do not establish actual busy queue timing, installation into every open chat, or live global registration.
 
-Correlation accepts only the entire raw envelope or that envelope inside Claude Code 2.1.309's exact `watch-owner` between-turn attribution wrapper; changed body, attribution or surrounding text does not match.
+Version 0.1.1's ordinary owner message and matching reply were separately verified through WATCH's direct composer using per-chat pairing in a disposable Desktop conversation.
 
-The native harness mocks Claude's core. It proves official API acceptance and observer routing with the exact Claude Code 2.1.309 attribution wrapper around the full envelope. Node fixtures cover both raw and wrapped event text. These checks do not prove live REPL preprocessing, actual busy queue timing, retained native transcript, or model behavior. No live installation, enrollment, configuration changes or model calls are part of the offline checks.
-
-An ordinary live request and matching reply were also verified through WATCH's direct composer in an existing disposable Desktop 4.29.0 conversation running Claude Code 2.1.309, using a separate WATCH test instance. WATCH displayed the reply without a manual status update or retransmitting the request. Busy waiting, disconnects, duplicate submissions, and restart handling have offline automated coverage; this live check did not exercise actual busy queue timing or Officer intent interpretation.
+Version 0.3.1's global setup and shared peer round trip were verified in an existing disposable local Desktop chat against an isolated WATCH instance. A Codex-side MCP client sent one fictional question; the Claude plugin submitted it with plugin attribution, observed its matching marked main-turn answer, and returned that answer through the original MCP request. The live host reported noninteractive SDK startup with a current Desktop attachment, confirming the distinction covered by the startup repair. Test access was revoked and the temporary plugin installation removed afterward. This proves that bounded message-and-reply path; it does not establish busy queue timing, loading into every already-open chat, or native cancellation.
 
 ## Disconnect, revoke and remove
 
-Run `/watch-disconnect` and inspect WATCH and native receipts. Disconnect stops future claims; already admitted native input cannot be recalled. The token remains saved for explicit reconnect. To invalidate an old token, complete a fresh pairing from WATCH; successful re-pairing replaces the earlier enrollment. When queued work has settled, uninstall `watch-owner@watch-local`, remove the `watch-local` marketplace if no longer needed, and reload using the native plugin manager. Uninstalling stops the plugin but does not itself invalidate its server token; re-pair first if invalidation is needed. A consumed request or delivered answer is not undone by uninstalling.
+Use **Disconnect automatic Claude connections** in WATCH to revoke the registration grant and its derived service credentials. This does not revoke independent legacy manual connections or cancel native input already queued. A new global authorization requires a fresh setup code. Per-chat `/watch-disconnect` is an opt-out; it does not disconnect other chats.
+
+When pending native work has settled, uninstall `watch-owner@watch-local` at the scope where it was installed, remove the `watch-local` marketplace if no longer needed, and reload through the native plugin manager. Revoke automatic connections first if you need backend credential invalidation: uninstalling alone stops polling but does not revoke saved server credentials. An answered request is not undone by removal.

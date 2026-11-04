@@ -33,6 +33,7 @@ async function fixture(){
   if(mode==='loss'){req.socket.destroy();return}
   const record={origin:'peer',request_id:mode==='mismatched'?randomUUID():p.params.request_id,agent_id:p.params.agent_id||agent,state:'queued',reply:'<untrusted>',error:'',created_at:Date.now()/1000,target:{...target,agent_id:p.params.agent_id||agent},duplicate:false,text_preview:'Please inspect',secret:'SHOULD NOT DISPLAY'};
   const result=p.method==='list_agents'?{agents:[{...target,native_id:native,capability:'unavailable',reason:'No transport',last_seen:Date.now()/1000,supported_transport:'codex_queue',secret:'SHOULD NOT DISPLAY'}],next_cursor:null,directory:{complete:false,reasons:['Scan bounded'],refreshed_at:Date.now()/1000}}:p.method==='list_requests'?{requests:[{...record,request_id:randomUUID()}],next_cursor:null}:record;
+  if(mode==='claude_mod')Object.assign(result.agents[0],{agent_id:'c:'+native,provider:'claude',capability:'reachable',reason:'',supported_transport:'claude_mod'});
   const status=mode==='reject409'||mode==='reject-long'||mode==='reject-control'?409:mode==='reject429'?429:mode==='error500'?500:200;
   const reason=mode==='reject-long'?'x'.repeat(201):mode==='reject-control'?'Invalid\nreason':status===409?'Answer your incoming peer request first.':status===429?'Peer delivery capacity is full.':'Peer service failed.';
   const body=mode==='huge'?'x'.repeat(65537):JSON.stringify(status===200?{result}:{error:reason}),signature=hmac(credential.secret,['watch-bridge-response-v2',String(credential.port),run,n,String(status),hash(body)]);
@@ -162,4 +163,17 @@ test('a relay on another port cannot forward the real proof and obtain a sensiti
   await assert.rejects(new PeerClient({...f.credential,port:relay.address().port}).call('send_message',params),/could not be confirmed/);
   assert.equal(seen.length,1);assert.equal(seen[0].path,'/bridge/v2/challenge');assert.equal(seen[0].raw.includes(params.text),false);assert.equal(f.seen.length,1);assert.equal(f.seen[0].path,'/bridge/v2/challenge');
  }finally{for(const s of sockets)s.destroy();await new Promise(r=>relay.close(r));await f.close()}
+});
+
+
+test('official SDK directory accepts only the explicit Claude mod transport addition',async()=>{
+ const f=await fixture(),client=new Client({name:'fictional Claude mod directory host',version:'1'});let connected=false;
+ try{
+  f.setMode('claude_mod');await client.connect(new StdioClientTransport({command:process.execPath,args:[script,'--credential',f.file],cwd:here,stderr:'pipe'}));connected=true;
+  const response=await client.callTool({name:'list_agents',arguments:{provider:'claude'}});assert.equal(response.isError,undefined);
+  const directory=JSON.parse(response.content[0].text).untrusted_peer_data,row=directory.agents[0];
+  assert.equal(safeResult('list_agents',directory).agents[0].supported_transport,'claude_mod');
+  assert.equal(row.provider,'claude');assert.match(row.agent_id,/^c:/);assert.equal(row.capability,'reachable');assert.equal(row.supported_transport,'claude_mod');assert.equal(row.secret,undefined);
+  for(const transport of ['native_ipc','claude_mod ',['claude_mod'],null])assert.throws(()=>safeResult('list_agents',{...directory,agents:[{...row,supported_transport:transport}]}));
+ }finally{if(connected)await client.close();await f.close()}
 });

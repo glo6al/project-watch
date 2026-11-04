@@ -10,14 +10,17 @@ export function pairing(value) {
 
 export function sessionResponse(value, nativeId) {
   return value?.version === 1 && value.native_id === nativeId && UUID.test(value.generation) &&
-    value.heartbeat_interval_ms === 2000 && value.lease_seconds === 12;
+    value.heartbeat_interval_ms === 2000 && value.lease_seconds === 12 &&
+    [undefined, 0, 1].includes(value.peer_protocol);
 }
 
 export function validClaim(value, state, now) {
-  return value && UUID.test(value.request_id) && UUID.test(value.attempt_id) &&
+  const prefix = value?.origin === 'peer' && state.peer_protocol === 1 ? 'WATCH_PEER_REQUEST ' :
+    value && (value.origin === undefined || value.origin === 'owner') ? 'WATCH_REQUEST ' : null;
+  return prefix !== null && value && UUID.test(value.request_id) && UUID.test(value.attempt_id) &&
     value.native_id === state.native_id && value.generation === state.generation &&
     typeof value.envelope === 'string' && [...value.envelope].length <= 4000 &&
-    value.envelope.startsWith('WATCH_REQUEST ' + value.request_id + '\n') &&
+    value.envelope.startsWith(prefix + value.request_id + '\n') &&
     Number.isFinite(value.expires_at) && value.expires_at > now / 1000;
 }
 
@@ -35,7 +38,39 @@ export function matchingAnswer(answer, id) {
   return markers.length === 1 && markers[0] === 'WATCH_REPLY ' + id;
 }
 
+// The public host roster is small and contains only these supported render surfaces.
+// Unknown/malformed host data stays unknown rather than becoming diagnostic text.
+export function surfaceRoster(value) {
+  const surfaces = ['terminal','desktop','mobile','vscode'];
+  if (!Array.isArray(value) || value.length > surfaces.length || !Array.from(value).every(surface => surfaces.includes(surface))) return null;
+  return [...new Set(value)];
+}
+
 export function publicStatus(state) {
   return {connected:state.connected, native_id:state.data?.native_id || null,
-    pending:state.flight?.request_id || null, error:state.error || '', limitation:LIMITATION};
+    pending:state.flight?.request_id || null, setup:!!state.config, registration:state.connected?'connected':'waiting', error:state.error || '', limitation:LIMITATION,
+    start_seen:state.startSeen === true, startup_interactive:typeof state.startupInteractive === 'boolean' ? state.startupInteractive : null,
+    startup_surface:surfaceRoster([state.startupSurface])?.[0] ?? null, timer_installed:!!state.timer,
+    timer_ticks:Number.isSafeInteger(state.timerTicks) && state.timerTicks >= 0 ? state.timerTicks : 0,
+    current_surfaces:surfaceRoster(state.currentSurfaces)};
+}
+
+export function globalConfiguration(value) {
+  return value?.version === 1 && UUID.test(value.grant_id) && typeof value.grant === 'string' &&
+    /^[a-f0-9]{64}$/.test(value.grant) && Number.isInteger(value.port) && value.port >= 1 && value.port <= 65535 &&
+    Object.keys(value).every(key => ['version','grant_id','grant','port'].includes(key));
+}
+
+export function receiptRecord(value,id) {
+  if (!value || value.request_id !== id || !UUID.test(id) || !UUID.test(value.attempt_id) ||
+      !/^[a-f0-9]{64}$/.test(value.envelope_digest) || !['claimed','pending','submitted','started','answered','unknown','dropped'].includes(value.phase) ||
+      !Array.isArray(value.events) || value.events.length > 8) return false;
+  if (value.completed !== undefined && typeof value.completed !== 'boolean') return false;
+  return value.events.every(event => {
+    if (!event || event.request_id !== id || event.attempt_id !== value.attempt_id) return false;
+    const fields = {submitted:[],started:['turn_id'],answered:['turn_id','answer'],unknown:[],dropped:[]}[event.kind];
+    if (!fields || Object.keys(event).sort().join(',') !== ['request_id','attempt_id','kind',...fields].sort().join(',')) return false;
+    if (fields.includes('turn_id') && (typeof event.turn_id !== 'string' || !event.turn_id.length || event.turn_id.length > 128 || /[\x00-\x1f]/.test(event.turn_id))) return false;
+    return event.kind !== 'answered' || matchingAnswer(event.answer,id);
+  });
 }

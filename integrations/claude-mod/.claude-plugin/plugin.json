@@ -1,6 +1,6 @@
 {
   "name": "watch-owner",
-  "version": "0.1.1",
-  "description": "Relay authenticated WATCH owner requests into this existing Claude conversation.",
+  "version": "0.3.1",
+  "description": "Relay authenticated WATCH owner requests and explicitly enabled shared peer messages into this existing Claude conversation.",
   "author": {"name": "WATCH maintainers"}
 }

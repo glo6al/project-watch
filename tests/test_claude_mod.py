@@ -3,6 +3,7 @@ from concurrent.futures import ThreadPoolExecutor
 import http.client
 import json
 import os
+import sqlite3
 from pathlib import Path
 import sys
 import tempfile
@@ -285,6 +286,198 @@ class ClaudeModTests(unittest.TestCase):
         self.assertEqual(self.http('/claude-mod/connect',dict(native_id=self.sid,project=self.project),token=oldtoken)[0],403)
         self.assertIsNone(self.poll()[1]['claim'])
         self.assertEqual(self.row(payload['request_id'])['state'],'sending')
+
+    def global_setup(self):
+        status, pair = self.http('/claude-mod-setup', {}, owner=True)
+        self.assertEqual(status, 200, pair)
+        self.assertEqual(pair['command'], f'/watch-setup {server.PORT}:'+pair['pair_code'])
+        status, grant = self.http('/claude-mod/setup', {'code':pair['pair_code']})
+        self.assertEqual(status, 200, grant)
+        return pair, grant
+
+    def register_global(self, grant, client=None, seq=0, **overrides):
+        body = dict(native_id=self.sid, project=self.project, client_id=client or uid(), connection_seq=seq)
+        body.update(overrides)
+        status, value = self.http('/claude-mod/register', body, token=grant['grant'])
+        if status == 200:
+            self.token, self.generation = value['token'], value['generation']
+        return status, value, body
+
+    def global_poll(self, client, accept=True):
+        return self.http('/claude-mod/poll', dict(generation=self.generation,native_id=self.sid,
+            project=self.project,accept=accept,client_id=client),token=self.token)
+
+    def test_global_setup_auth_single_use_status_and_secret_classes(self):
+        for path in ('/claude-mod-setup','/claude-mod-setup-status','/claude-mod-revoke'):
+            self.assertEqual(self.http(path,{})[0],403)
+            self.assertEqual(self.http(path,{'forged':True},owner=True)[0],400)
+        pair, grant = self.global_setup()
+        self.assertEqual(self.http('/claude-mod/setup',{'code':pair['pair_code']})[0],403)
+        status, enrollment, body = self.register_global(grant)
+        self.assertEqual(status,200,enrollment)
+        for token in (server.KEY,grant['grant']):
+            self.assertEqual(self.http('/claude-mod/poll',dict(generation=self.generation,native_id=self.sid,
+                project=self.project,accept=True,client_id=body['client_id']),token=token)[0],403)
+        self.assertEqual(self.http('/claude-mod/register',body,token=self.token)[0],403)
+        self.assertEqual(self.http('/claude-mod/connect',dict(native_id=self.sid,project=self.project),token=self.token)[0],409)
+        self.assertEqual(self.poll()[0],400,'Derived poll requires client membership')
+        snapshot=json.dumps(self.store.snapshot())
+        for secret in (pair['pair_code'],grant['grant'],self.token):
+            self.assertNotIn(secret,snapshot)
+        self.assertEqual(self.http('/claude-mod-setup-status',{},owner=True)[1],
+            {'version':1,'authorized':True,'connected_chats':1,'peer_receive':False})
+        self.assertEqual(self.store.owner_capabilities(self.aid,self.agents)['claude_setup'],
+            {'authorized':True,'state':'connected','peer_receive':False})
+        self.assertEqual(self.http('/agent-message',dict(agent=self.aid,question='Forbidden',request_id=uid()),token=grant['grant'])[0],403)
+        for path, data in (('/claude-mod/setup',{'code':pair['pair_code']}),('/claude-mod/register',body)):
+            for headers in ({'Origin':'http://127.0.0.1:'+str(server.PORT)}, {'Host':'localhost:'+str(server.PORT)}):
+                self.assertEqual(self.http(path,data,token=grant['grant'] if path.endswith('register') else None,**headers)[0],403)
+        stored=json.dumps(list(self.store.db.execute('SELECT * FROM claude_mod_grants'))+
+                          list(self.store.db.execute('SELECT * FROM claude_mod_enrollments')))
+        self.assertNotIn(grant['grant'],stored)
+        self.assertNotIn(self.token,stored)
+
+    def test_global_registration_sequence_retry_host_handover_and_receipts(self):
+        _,grant=self.global_setup()
+        status,first,body=self.register_global(grant)
+        self.assertEqual(status,200,first)
+        payload,_=self.request();claim=self.global_poll(body['client_id'])[1]['claim']
+        second,_=self.request('A distinct instruction after an ambiguous claim')
+        with ThreadPoolExecutor(4) as pool:
+            retries=list(pool.map(lambda _:self.http('/claude-mod/register',body,token=grant['grant']),range(8)))
+        self.assertTrue(all(status==200 and value==first for status,value in retries))
+        self.assertEqual(self.row(payload['request_id'])['state'],'queued')
+        before=self.store.mods.authenticate(self.token)['last_seen']
+        self.http('/claude-mod/register',body,token=grant['grant'])
+        self.assertEqual(self.store.mods.authenticate(self.token)['last_seen'],before,'Lost-response retries do not extend readiness')
+        self.assertEqual(self.register_global(grant)[1]['error_code'],'host_conflict')
+        status,new,seqbody=self.register_global(grant,body['client_id'],1)
+        self.assertEqual(status,200,new)
+        self.assertEqual(new['enrollment_id'],first['enrollment_id'])
+        self.assertEqual(new['token'],first['token'])
+        self.assertNotEqual(new['generation'],first['generation'])
+        self.assertEqual(self.row(payload['request_id'])['state'],'unknown')
+        self.assertEqual(self.http('/claude-mod/register',body,token=grant['grant'])[1]['error_code'],'stale_connection')
+        self.assertEqual(self.http('/claude-mod/register',seqbody,token=grant['grant'])[1],new)
+        self.store.db.execute('UPDATE claude_mod_enrollments SET last_seen=0');self.store.db.commit()
+        status,handoff,other=self.register_global(grant,seq=4)
+        self.assertEqual(status,200,handoff)
+        self.assertEqual(handoff['enrollment_id'],first['enrollment_id'])
+        self.assertEqual(self.global_poll(body['client_id'])[0],409)
+        nextclaim=self.global_poll(other['client_id'])[1]['claim']
+        self.assertEqual(nextclaim['request_id'],second['request_id'])
+        self.assertNotEqual(nextclaim['request_id'],claim['request_id'])
+        late=dict(generation=self.generation,native_id=self.sid,client_id=other['client_id'],
+            request_id=claim['request_id'],attempt_id=claim['attempt_id'],kind='answered',turn_id=uid(),
+            answer='WATCH_REPLY '+claim['request_id']+'\nLate exact completion')
+        self.assertEqual(self.http('/claude-mod/event',late,token=self.token)[1]['state'],'answered')
+
+    def test_global_eligibility_drift_stops_claims_preserves_event_recovery(self):
+        _,grant=self.global_setup()
+        for flags in ({'runtime':'Codex'},{'sub':True},{'parent':'c:'+uid()},{'observed':True},{'cwd':'/fictional/wrong'}):
+            server.AGENTS[self.aid]=dict(self.agents[self.aid],**flags)
+            status,value,_=self.register_global(grant)
+            self.assertEqual((status,value['error_code']),(409,'identity_rejected'))
+        server.AGENTS.pop(self.aid)
+        self.assertEqual(self.register_global(grant)[1]['error_code'],'not_observed')
+        server.AGENTS.update(self.agents)
+        _,_,body=self.register_global(grant)
+        first,_=self.request('A completion remains recoverable after eligibility changes')
+        claim=self.global_poll(body['client_id'])[1]['claim']
+        payload,_=self.request()
+        server.AGENTS[self.aid]['parent']='c:'+uid()
+        self.assertIsNone(self.global_poll(body['client_id'])[1]['claim'])
+        self.assertFalse(self.store.owner_capabilities(self.aid,dict(server.AGENTS))['actions']['queue']['available'])
+        self.assertEqual(self.row(payload['request_id'])['state'],'sending')
+        completed=dict(generation=self.generation,native_id=self.sid,client_id=body['client_id'],kind='answered',
+            request_id=first['request_id'],attempt_id=claim['attempt_id'],turn_id=uid(),
+            answer='WATCH_REPLY '+first['request_id']+'\nExact completion after eligibility drift')
+        self.assertEqual(self.http('/claude-mod/event',completed,token=self.token)[1]['state'],'answered')
+        self.assertIsNone(self.global_poll(body['client_id'])[1]['claim'])
+
+    def test_global_revoke_replacement_manual_compatibility_and_no_redirect(self):
+        self.enroll();manual_token=self.token
+        _,grant=self.global_setup()
+        self.assertEqual(self.register_global(grant)[1]['error_code'],'manual_conflict')
+        self.assertEqual(self.http('/claude-mod-revoke',{},owner=True)[0],200)
+        self.assertEqual(self.http('/claude-mod/connect',dict(native_id=self.sid,project=self.project),token=manual_token)[0],200)
+        self.store.db.execute('UPDATE claude_mod_enrollments SET active=0,generation=NULL');self.store.db.commit()
+        _,grant=self.global_setup();_,enrollment,body=self.register_global(grant)
+        payload,_=self.request();claim=self.global_poll(body['client_id'])[1]['claim']
+        queued,_=self.request('Unclaimed on revoke')
+        _,newgrant=self.global_setup()
+        self.assertEqual(self.register_global(grant)[0],403)
+        self.assertEqual(self.global_poll(body['client_id'])[0],403)
+        self.assertEqual(self.row(payload['request_id'])['state'],'unknown')
+        self.assertEqual(self.row(queued['request_id'])['state'],'failed')
+        self.assertEqual(self.register_global(newgrant)[0],200)
+        self.assertIsNone(self.global_poll(self.store.mods.authenticate(self.token)['client_id'])[1]['claim'])
+        self.assertNotEqual(self.store.mods.authenticate(self.token)['id'],enrollment['enrollment_id'])
+
+    def test_global_setup_expiry_mint_without_revocation_and_lost_response_recovery(self):
+        _,grant=self.global_setup();self.register_global(grant)
+        _,pending=self.http('/claude-mod-setup',{},owner=True)
+        self.assertEqual(self.http('/claude-mod-setup-status',{},owner=True)[1]['connected_chats'],1)
+        self.store.db.execute('UPDATE claude_mod_setup_codes SET expires=0');self.store.db.commit()
+        self.assertEqual(self.http('/claude-mod/setup',{'code':pending['pair_code']})[0],403)
+        _,pending=self.http('/claude-mod-setup',{},owner=True)
+        _,lost=self.http('/claude-mod/setup',{'code':pending['pair_code']})
+        self.assertEqual(self.http('/claude-mod/setup',{'code':pending['pair_code']})[0],403)
+        _,replacement=self.global_setup()
+        self.assertEqual(self.register_global(lost)[0],403)
+        self.assertEqual(self.register_global(replacement)[0],200)
+
+    def test_additive_legacy_database_migration_preserves_manual_token_and_requests(self):
+        _,enrollment=self.enroll();payload,_=self.request()
+        old_token=self.token
+        self.store.close()
+        db=sqlite3.connect(self.base/'state'/'officer-messages.sqlite3')
+        legacy=list(db.execute('SELECT id,token_hash,agent,project,generation,last_seen,active FROM claude_mod_enrollments'))
+        db.execute('DROP TABLE claude_mod_enrollments')
+        db.execute('''CREATE TABLE claude_mod_enrollments (id TEXT PRIMARY KEY,token_hash TEXT NOT NULL UNIQUE,
+            agent TEXT NOT NULL,project TEXT NOT NULL,generation TEXT,last_seen REAL NOT NULL,active INTEGER NOT NULL)''')
+        db.executemany('INSERT INTO claude_mod_enrollments VALUES (?,?,?,?,?,?,?)',legacy)
+        db.commit();db.close()
+        self.store=messaging.MessagingStore(str(self.base/'state'),str(self.base/'sessions'))
+        self.store.codex_available=False;server.MESSAGING=self.store
+        entry=self.store.mods.authenticate(old_token)
+        self.assertIsNone(entry['grant_id'])
+        self.assertEqual(entry['id'],enrollment['enrollment_id'])
+        self.reconnect()
+        self.assertEqual(self.poll()[1]['claim']['request_id'],payload['request_id'])
+
+    def test_global_two_chats_same_project_restart_and_stable_registration(self):
+        _,grant=self.global_setup();_,first,body=self.register_global(grant)
+        firstpayload,_=self.request();self.global_poll(body['client_id'])
+        waiting,_=self.request('Survive restart unclaimed')
+        other=uid();server.AGENTS['c:'+other]=dict(self.agents[self.aid])
+        status,second=self.http('/claude-mod/register',dict(body,native_id=other,client_id=uid()),token=grant['grant'])
+        self.assertEqual(status,200,second)
+        self.assertNotEqual(second['token'],first['token'])
+        self.assertNotEqual(second['enrollment_id'],first['enrollment_id'])
+        self.store.close();self.store=messaging.MessagingStore(str(self.base/'state'),str(self.base/'sessions'))
+        self.store.codex_available=False;server.MESSAGING=self.store
+        status,restarted=self.http('/claude-mod/register',body,token=grant['grant'])
+        self.assertEqual(status,200,restarted)
+        self.assertEqual(restarted['enrollment_id'],first['enrollment_id'])
+        self.assertNotEqual(restarted['generation'],first['generation'])
+        self.token,self.generation=restarted['token'],restarted['generation']
+        self.assertEqual(self.row(firstpayload['request_id'])['state'],'unknown')
+        self.assertEqual(self.global_poll(body['client_id'])[1]['claim']['request_id'],waiting['request_id'])
+
+    def test_global_concurrent_membership_and_bounded_strict_identity(self):
+        _,grant=self.global_setup()
+        bodies=[dict(native_id=self.sid,project=self.project,client_id=uid(),connection_seq=0) for _ in range(8)]
+        with ThreadPoolExecutor(4) as pool:
+            results=list(pool.map(lambda body:self.http('/claude-mod/register',body,token=grant['grant']),bodies))
+        self.assertEqual(sum(status==200 for status,_ in results),1)
+        self.assertTrue(all(status==200 or status==409 and value['error_code']=='host_conflict' for status,value in results))
+        self.assertEqual(self.store.db.execute('SELECT COUNT(*) FROM claude_mod_enrollments WHERE active=1').fetchone()[0],1)
+        for seq in (-1,True,1.5,9007199254740992):
+            self.assertEqual(self.http('/claude-mod/register',dict(bodies[0],connection_seq=seq),token=grant['grant'])[0],400)
+        other=uid();server.AGENTS['c:'+other]=dict(self.agents[self.aid])
+        with patch.object(mod,'MAX_ENROLLMENTS',1):
+            self.assertEqual(self.http('/claude-mod/register',dict(bodies[0],native_id=other),token=grant['grant'])[0],429)
 
 
 if __name__=='__main__':unittest.main()

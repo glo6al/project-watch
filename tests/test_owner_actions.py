@@ -94,9 +94,9 @@ class OwnerActionsTests(unittest.TestCase):
         before = self.store.db.total_changes
         with patch.object(messaging.claude_channel,'discover',side_effect=AssertionError('discovery')), patch.object(self.store,'_save',side_effect=AssertionError('request write')):
             status,out,_ = self.request('POST','/agent-message',self.payload(self.cid))
-            self.assertEqual(status,503); self.assertIn('Exact named-chat',out['error'])
+            self.assertEqual(status,503); self.assertIn('Set up Claude once in WATCH',out['error'])
             status,out,_ = self.request('POST','/ask',body)
-            self.assertEqual(status,200); self.assertIn('Exact named-chat',out['error'])
+            self.assertEqual(status,200); self.assertIn('Set up Claude once in WATCH',out['error'])
         self.assertEqual(self.store.db.total_changes,before)
         self.assertEqual(self.store._rows(),[])
 
@@ -107,7 +107,7 @@ class OwnerActionsTests(unittest.TestCase):
         server.officer_ask.__defaults__ = (model,)+old[1:]
         try:
             out = self.request('POST','/ask',{'turns':[{'role':'user','content':'Ask Mira for progress'}],'request_id':str(uuid.uuid4())})[1]
-            self.assertIn('Exact named-chat',out['error'])
+            self.assertIn('Set up Claude once in WATCH',out['error'])
         finally: server.officer_ask.__defaults__ = old
         self.assertEqual(self.store._rows(),[])
 

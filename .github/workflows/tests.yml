@@ -32,6 +32,8 @@ jobs:
       - run: python tests/test_claude_native_input.py
       - run: python tests/test_watch_claude_input.py
       - run: python tests/test_claude_mod.py
+      - run: python tests/test_claude_peer_backend.py
+      - run: python tests/test_claude_global_integration.py
       - run: python tests/test_claude_channel.py
       - run: python tests/test_watch_claude.py
       - run: npm --prefix integrations/claude ci --ignore-scripts --no-audit --no-fund
@@ -41,6 +43,8 @@ jobs:
       - run: python tests/test_claude_integration.py
         if: runner.os != 'Windows'
       - run: python tests/test_peer_integration.py
+        if: runner.os != 'Windows'
+      - run: python tests/test_claude_peer_integration.py
         if: runner.os != 'Windows'
       - run: npm --prefix integrations/claude-mod test
       - run: node tests/test_claude_mod_page.js

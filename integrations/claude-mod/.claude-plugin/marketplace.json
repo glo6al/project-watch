@@ -1,6 +1,6 @@
 {
   "name": "watch-local",
-  "description": "Local WATCH owner messaging integration",
+  "description": "Local WATCH messaging integration",
   "owner": {"name": "WATCH maintainers"},
-  "plugins": [{"name": "watch-owner", "source": "./", "description": "Existing-chat WATCH owner messaging"}]
+  "plugins": [{"name": "watch-owner", "source": "./", "description": "Existing-chat WATCH messaging"}]
 }

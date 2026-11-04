@@ -8,6 +8,8 @@ Use ordinary language: “Ask Atlas how the tests are going.” The agent discov
 
 Names are addresses, not authentication. When names are duplicated, specify the provider or project. The agent must not guess between similar names, pick an unavailable duplicate's namesake, or treat an incomplete directory page as proof of uniqueness. Renaming a chat never redirects a request already sent to its original ID.
 
+For a connected Claude recipient, the plugin submits the complete peer envelope with plugin attribution, waits for its matching main-turn answer, and returns that answer to the original shared request. It does not turn the peer text into an owner instruction.
+
 A pending reply is reported as pending. Later, “Did Atlas answer?” retrieves the same request. The bridge does not wake an idle sender, poll indefinitely, or send the question again because an answer is slow. Unknown, failed, expired, and rejected operations remain distinct from successful delivery. If several earlier questions could match a follow-up, the agent should clarify which one rather than guess.
 
 ## Shared access and authorization
@@ -34,7 +36,11 @@ Availability is reported separately from discovery:
 
 Historical or unloaded Codex chats can appear as unverified. Listing an old transcript does not prove the desktop app can receive a queued message for it. Eligible recent Codex chats still require transport readiness and exact transcript identity checks.
 
-Claude chats are listed by name but cannot currently receive shared WATCH messages. A running Claude Code process can switch conversations with `/clear`, `/resume`, or a fork without restarting its MCP servers. Channel notifications then reach whichever conversation is current, so WATCH refuses peer delivery through that transport. Claude clients can use the shared MCP to discover chats, send to Codex chats shown as reachable, and retrieve replies. A channel descriptor cannot enable shared receiving by declaring itself compatible.
+Claude chats can receive shared messages through the [WATCH Claude plugin](../integrations/claude-mod/README.md) version 0.3.1 or later. Install it once for your user account, reload the intended already-open chats, and authorize agent messaging once in WATCH. Eligibility still depends on that exact chat being connected. Existing owner-only grants and manual pairings are not silently expanded; choose **Enable agent messaging** to replace an owner-only global authorization with explicit peer consent. Legacy manual pairings remain owner-only; automatic registration does not replace them.
+
+The directory reports a compatible, authorized official-plugin connection as `claude_mod`. A chat being visible, a global plugin being installed, or the old channel being connected does not establish receiving readiness. The plugin must load in that chat, register its current native UUID and project, and maintain its connection. An outdated sender MCP adapter must also be updated and reconnected through its client's normal MCP workflow.
+
+The older development channel stays blocked for peer delivery. Its process can switch conversations while keeping its channel alive, so a channel descriptor cannot establish the intended destination. The official plugin uses the native session identity and checks it before submitting input. It retains the documented native queue limitation: switching or clearing after the final check can affect already-queued input. Wait for pending work to settle before changing conversations.
 
 ## Tools and delivery
 
@@ -100,6 +106,14 @@ Update WATCH before configuring the clients, preserve their existing configurati
 Disposable native tests established same-ID resume and a peer reply with the observed persisted settings intact. Further tests showed that switching conversations leaves the channel connected to the original WATCH identity while native Claude uses a different chat. The resume launcher is therefore deferred; no `--resume` option is provided.
 
 Owner Officer messages to a WATCH-launched Claude process retain their existing behavior: they go to the conversation open in that process. After `/clear`, `/resume`, or a fork, close and relaunch before relying on station targeting. Persisted settings reload on launch; session-only grants, added directories, and previous one-off CLI options are not restored automatically. Reachability grants no permission or owner authorization.
+
+## Delivery and limits
+
+A peer envelope identifies its origin, labels any declared sender as unverified, quotes the message, and requests one correlated final reply. The receiver does not start a forwarding chain. Claude and Codex use their existing conversation model, sign-in, project context, tools and permissions.
+
+WATCH reserves the shared request and native submission attempt before returning input to the plugin. Duplicate requests recover the same record; uncertain submissions are not replayed. A received/queued message is not a completed answer. Claude replies require the entire original envelope and its corresponding completed main turn with one matching `WATCH_REPLY` marker. This is not a guarantee that later native steering or mixed input was absent; Codex's separate transcript quarantine checks are not claimed for Claude.
+
+A Claude envelope is limited to 4,000 Unicode code points, including routing instructions and JSON escaping. Some messages within the MCP's 2,000-character text limit can exceed that envelope bound. WATCH rejects them before reservation instead of truncating or submitting them.
 
 ## Rollback and privacy
 
