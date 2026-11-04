@@ -1,55 +1,71 @@
-name: tests
-on: [push, pull_request]
+name: Windows repair proof
+on:
+  push:
+    branches: ['codex/ci-windows-focused-proof']
 permissions:
   contents: read
 jobs:
-  tests:
-    timeout-minutes: 20
-    runs-on: ${{ matrix.os }}
+  windows-proof:
+    runs-on: windows-latest
+    timeout-minutes: 5
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
-        python: ['3.9', '3.x']      # the README promises 3.9 or later
+        python: ['3.9', '3.x']
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
-      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065  # v5
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          fetch-depth: 2
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
         with:
           python-version: ${{ matrix.python }}
-      - name: Run parser and scanner checks
-        timeout-minutes: 10
-        run: >-
-          python -u -X faulthandler -c "import faulthandler, runpy; print('parser checks started', flush=True); faulthandler.dump_traceback_later(60, repeat=True); runpy.run_path('tests/test_parsers.py', run_name='__main__')"
-      - run: python tests/test_officer_messaging.py
-      - run: python tests/test_officer_routing.py
-      - run: python tests/test_owner_actions.py
-      - run: python tests/test_officer_controls.py
-      - run: python tests/test_officer_fulfillment.py
-      - run: python tests/test_peer_bridge.py
-      - run: python tests/test_shared_bridge.py
-      - run: python tests/test_chat_directory.py
-      - run: python tests/test_watch_peer.py
-      - run: python tests/test_codex_desktop_control.py
-      - run: python tests/test_codex_native_input.py
-      - run: python tests/test_codex_model_settings.py
-      - run: python tests/test_native_observation.py
-      - run: python tests/test_claude_native_input.py
-      - run: python tests/test_watch_claude_input.py
-      - run: python tests/test_claude_mod.py
-      - run: python tests/test_claude_peer_backend.py
-      - run: python tests/test_claude_global_integration.py
-      - run: python tests/test_claude_channel.py
-      - run: python tests/test_watch_claude.py
-      - run: npm --prefix integrations/claude ci --ignore-scripts --no-audit --no-fund
-        if: runner.os != 'Windows'
-      - run: npm --prefix integrations/claude test
-        if: runner.os != 'Windows'
-      - run: python tests/test_claude_integration.py
-        if: runner.os != 'Windows'
-      - run: python tests/test_peer_integration.py
-        if: runner.os != 'Windows'
-      - run: python tests/test_claude_peer_integration.py
-        if: runner.os != 'Windows'
-      - run: npm --prefix integrations/claude-mod test
-      - run: node tests/test_claude_mod_page.js
-      - run: node tests/test_page.js      # the page's path helpers, outside a browser
+      - name: Verify reviewed source and normal Windows checkout
+        id: identity
+        timeout-minutes: 2
+        env:
+          SOURCE_PARENT: 'd1e80d9cf7d85624dca94d27a83616e3bb894f1f'
+          HELPER_SHA256: '5d0144094d8de93e15f9a935e59219da5dc8926d191cd8744fdf5bff73c39925'
+          HELPER_TEST_SHA256: '99f85754dcb25acc55982df545ae9ed98d01765912be3086a7030df70b6893db'
+        shell: pwsh
+        run: |
+          @'
+          import hashlib, json, os, subprocess, sys
+          from pathlib import Path
+          def git(*args):
+              return subprocess.check_output(['git', *args])
+          source = os.environ['SOURCE_PARENT']
+          assert len(source) == 40 and all(c in '0123456789abcdef' for c in source)
+          assert git('show', '-s', '--format=%P', 'HEAD').decode().split() == [source]
+          assert git('diff', '--name-only', source, 'HEAD').decode().splitlines() == ['.github/workflows/tests.yml']
+          expected = {
+              'scripts/watch_claude_input.py': os.environ['HELPER_SHA256'],
+              'tests/test_watch_claude_input.py': os.environ['HELPER_TEST_SHA256'],
+          }
+          def text_bytes(value):
+              return value.replace(b'\r\n', b'\n').replace(b'\r', b'\n')
+          verified = {}
+          for name, wanted in expected.items():
+              assert len(wanted) == 64 and all(c in '0123456789abcdef' for c in wanted)
+              blob = git('show', 'HEAD:' + name)
+              assert blob == git('show', source + ':' + name)
+              actual = hashlib.sha256(blob).hexdigest()
+              assert actual == wanted, name + ' reviewed source hash mismatch'
+              assert text_bytes(Path(name).read_bytes()) == text_bytes(blob), name + ' checkout changed beyond newlines'
+              verified[name] = actual
+          page = Path('src/web/index.html').read_bytes()
+          crlf = page.count(b'\r\n')
+          assert crlf > 0, 'Normal Windows checkout did not provide the required CRLF page fixture'
+          print(json.dumps({'source_parent': source, 'verified_source_sha256': verified, 'page_crlf': crlf, 'python': list(sys.version_info[:3])}), flush=True)
+          '@ | python -
+      - name: Entire native input protocol suite
+        if: ${{ !cancelled() && steps.identity.outcome == 'success' }}
+        timeout-minutes: 2
+        run: python -u tests/test_claude_native_input.py
+      - name: Entire helper suite
+        if: ${{ !cancelled() && steps.identity.outcome == 'success' }}
+        timeout-minutes: 2
+        run: python -u tests/test_watch_claude_input.py
+      - name: Full page suite with normal checkout CRLF
+        if: ${{ !cancelled() && steps.identity.outcome == 'success' }}
+        timeout-minutes: 2
+        run: node tests/test_page.js
