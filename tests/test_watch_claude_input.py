@@ -26,24 +26,6 @@ helper = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(helper)
 
 
-class NonWakingTimeoutSocket:
-    """Model a timeout-select that ignores shutdown; blocking reads still wake."""
-    def __init__(self, sock, shutdowns):
-        self.sock, self.shutdowns = sock, shutdowns
-
-    def __getattr__(self, name):
-        return getattr(self.sock, name)
-
-    def shutdown(self, how):
-        mode = self.sock.gettimeout()
-        self.shutdowns.append(mode)
-        if mode is None:
-            self.sock.shutdown(how)
-
-    def close(self):
-        self.sock.close()
-
-
 class Fixture:
     def __init__(self, *, mode='answer', modify=None):
         self.credential = n.HookCredential(str(uuid.uuid4()), b'k' * 32)
@@ -51,6 +33,8 @@ class Fixture:
         self.seen = []
         self.started = threading.Event()
         self.release = threading.Event()
+        self.holding = threading.Event()
+        self.fragmented = threading.Event()
         fixture = self
 
         class Handler(BaseHTTPRequestHandler):
@@ -76,7 +60,8 @@ class Fixture:
                     else:
                         inv = fixture.protocol.accept_invocation(raw, self.headers['X-Watch-Native-Signature'], self.connection)
                         fixture.started.set()
-                        if fixture.mode == 'wait': fixture.release.wait(2)
+                        if fixture.mode == 'wait':
+                            fixture.hold()
                         req = n.parse_json(raw)
                         d = None if fixture.mode == 'fallthrough' else decision()
                         if fixture.mode == 'form': d = {'kind': 'mcp_form_accept', 'content': {'name': '', 'enabled': False, 'count': 0}}
@@ -84,13 +69,30 @@ class Fixture:
                         if fixture.mode == 'bad_signature': sig = '0' * 64
                         if fixture.modify:
                             data, sig = fixture.modify(data, sig, fixture, req, inv)
+                    if fixture.mode == 'fragment_status' and sig:
+                        self.wfile.write(b'HTTP/1.1 200'); self.wfile.flush()
+                        fixture.fragmented.set(); fixture.hold()
+                        self.wfile.write(b' OK\r\nContent-Type: application/json\r\nContent-Length: ' + str(len(data)).encode() +
+                                         b'\r\nX-Watch-Native-Signature: ' + sig.encode() + b'\r\n\r\n' + data)
+                        self.wfile.flush()
+                        return
                     self.send_response(302 if fixture.mode == 'redirect' else 200)
                     self.send_header('Content-Type', 'application/json')
                     self.send_header('Content-Length', str(len(data)))
                     if sig: self.send_header('X-Watch-Native-Signature', sig)
                     if fixture.mode == 'duplicate_header' and sig: self.send_header('X-Watch-Native-Signature', sig)
+                    if (fixture.mode == 'final_close' and sig) or (fixture.mode == 'challenge_close' and not sig):
+                        self.send_header('Connection', 'close'); self.close_connection = True
                     self.end_headers()
-                    self.wfile.write(data)
+                    if fixture.mode in ('fragment_body', 'truncate_body') and sig:
+                        self.wfile.write(data[:5]); self.wfile.flush()
+                        if fixture.mode == 'truncate_body':
+                            self.close_connection = True
+                            return
+                        fixture.fragmented.set(); fixture.hold()
+                        self.wfile.write(data[5:])
+                    else:
+                        self.wfile.write(data)
                     self.wfile.flush()
                 except (OSError, n.InputError):
                     self.close_connection = True
@@ -99,6 +101,11 @@ class Fixture:
         self.port = self.server.server_address[1]
         self.protocol = n.HookProtocol(self.credential, self.port)
         self.thread = threading.Thread(target=lambda: self.server.serve_forever(poll_interval=.02), daemon=True)
+
+    def hold(self):
+        self.holding.set()
+        self.release.wait(2)
+        self.holding.clear()
 
     def __enter__(self):
         self.thread.start()
@@ -206,40 +213,42 @@ class HelperTests(unittest.TestCase):
                 try:
                     t.start()
                     self.assertTrue(f.started.wait(1))
+                    self.assertTrue(f.holding.wait(1))
                     cancelled.set()
                     t.join(1)
                     self.assertFalse(t.is_alive())
                     self.assertEqual(done, [('relinquished_to_native', b'')])
+                    self.assertTrue(f.holding.is_set())
                     self.assertEqual(len(f.seen), 2)  # one attempt only, never re-challenge/resend
                 finally:
                     f.release.set()
                     t.join(3)
                     self.assertFalse(t.is_alive(), 'fixture worker did not clean up')
 
-    def test_connected_blocking_mode_keeps_finite_connect_and_wakes_cancelled_reads(self):
+    def test_nonblocking_owned_io_keeps_finite_connect_and_cancels_held_reads(self):
         for reason in ('deadline', 'cancel', 'parent'):
             with self.subTest(reason=reason), Fixture(mode='wait') as f:
-                shutdowns, connections, modes, done = [], [], [], []
+                connections, sockets, modes, done = [], [], [], []
                 cancelled = threading.Event()
                 class Tracked(helper.http.client.HTTPConnection):
                     def connect(self):
                         connections.append(self)
                         super().connect()
-                        self.sock = NonWakingTimeoutSocket(self.sock, shutdowns)
+                        sockets.append(self.sock)
                     def request(self, *args, **kwargs):
-                        modes.append(self.sock.gettimeout())
+                        modes.append(sockets[-1].gettimeout())
                         return super().request(*args, **kwargs)
                 kwargs = {'timeout': .1} if reason == 'deadline' else {'cancelled': cancelled.is_set} if reason == 'cancel' else {'parent_alive': lambda: not cancelled.is_set()}
                 t = threading.Thread(target=lambda: done.append(f.invoke(connection_factory=Tracked, **kwargs)))
                 try:
-                    t.start(); self.assertTrue(f.started.wait(1))
+                    t.start(); self.assertTrue(f.started.wait(1)); self.assertTrue(f.holding.wait(1))
                     cancelled.set(); t.join(1)
                     self.assertFalse(t.is_alive())
                     self.assertEqual(done, [('relinquished_to_native', b'')])
                     self.assertEqual(len(connections), 1)
                     self.assertTrue(0 < connections[0].timeout <= 75)
-                    self.assertEqual(modes, [None, None])
-                    self.assertEqual(shutdowns, [None])
+                    self.assertEqual(modes, [0.0, 0.0])
+                    self.assertTrue(f.holding.is_set())
                     self.assertEqual(len(f.seen), 2)
                 finally:
                     f.release.set(); t.join(3)
@@ -263,10 +272,11 @@ class HelperTests(unittest.TestCase):
                 errors = io.StringIO()
                 try:
                     with contextlib.redirect_stderr(errors), patch.object(helper.threading, 'Thread', side_effect=tracked):
-                        t.start(); self.assertTrue(f.started.wait(1))
+                        t.start(); self.assertTrue(f.started.wait(1)); self.assertTrue(f.holding.wait(1))
                         failed.set(); t.join(1)
                         self.assertFalse(t.is_alive())
                     self.assertEqual(done, [('relinquished_to_native', b'')])
+                    self.assertTrue(f.holding.is_set())
                     self.assertEqual(len(guards), 1)
                     self.assertFalse(guards[0].is_alive())
                     self.assertEqual(errors.getvalue(), '')
@@ -296,7 +306,7 @@ class HelperTests(unittest.TestCase):
                 done.append(f.invoke(cancelled=cancelled, connection_factory=Tracked))
             t = threading.Thread(target=invoke)
             try:
-                t.start(); self.assertTrue(f.started.wait(1)); self.assertTrue(entered.wait(1))
+                t.start(); self.assertTrue(f.started.wait(1)); self.assertTrue(f.holding.wait(1)); self.assertTrue(entered.wait(1))
                 f.release.set()  # Valid signed response wins I/O while the guard check is in flight.
                 t.join(1)
                 self.assertFalse(t.is_alive())
@@ -322,7 +332,7 @@ class HelperTests(unittest.TestCase):
                 done.append(f.invoke(cancelled=cancelled, connection_factory=Tracked))
             t = threading.Thread(target=invoke)
             try:
-                t.start(); self.assertTrue(f.started.wait(1)); self.assertTrue(watched.wait(1))
+                t.start(); self.assertTrue(f.started.wait(1)); self.assertTrue(f.holding.wait(1)); self.assertTrue(watched.wait(1))
                 self.assertTrue(t.is_alive()); self.assertEqual(done, [])
                 self.assertTrue(70 < connections[0].timeout <= 75)
                 f.release.set(); t.join(1)
@@ -332,6 +342,141 @@ class HelperTests(unittest.TestCase):
             finally:
                 f.release.set(); t.join(3)
                 self.assertFalse(t.is_alive(), 'held-valid fixture worker did not clean up')
+
+    def test_fragmented_status_and_body_cancel_before_peer_release(self):
+        for mode in ('fragment_status', 'fragment_body'):
+            with self.subTest(mode=mode), Fixture(mode=mode) as f:
+                cancelled, done = threading.Event(), []
+                t = threading.Thread(target=lambda: done.append(f.invoke(cancelled=cancelled.is_set)))
+                try:
+                    t.start(); self.assertTrue(f.fragmented.wait(1)); self.assertTrue(f.holding.wait(1))
+                    cancelled.set(); t.join(1)
+                    self.assertFalse(t.is_alive())
+                    self.assertTrue(f.holding.is_set()); self.assertFalse(f.release.is_set())
+                    self.assertEqual(done, [('relinquished_to_native', b'')]); self.assertEqual(len(f.seen), 2)
+                finally:
+                    f.release.set(); t.join(3); self.assertFalse(t.is_alive())
+        with Fixture(mode='truncate_body') as f:
+            self.assertEqual(f.invoke(), ('relinquished_to_native', b''))
+            self.assertEqual(len(f.seen), 2)
+
+    def test_terminal_close_body_survives_logical_detach_but_challenge_close_does_not_disclose(self):
+        with Fixture(mode='final_close') as f:
+            state, output = f.invoke()
+            self.assertEqual(state, 'returned_to_hook_unconfirmed')
+            self.assertEqual(output, n.HookInvocation.create(payload(), str(uuid.uuid4()), time.monotonic() + 60).native_output(decision()))
+            self.assertEqual(len(f.seen), 2)
+        with Fixture(mode='challenge_close') as f:
+            self.assertEqual(f.invoke(), ('relinquished_to_native', b''))
+            self.assertEqual(len(f.seen), 1)
+        for failure in ('response', 'connection'):
+            with self.subTest(cleanup=failure), Fixture() as f:
+                sockets = []
+                class Response(helper.http.client.HTTPResponse):
+                    def close(self):
+                        super().close()
+                        raise OSError('fictional response cleanup failure')
+                class Tracked(helper.http.client.HTTPConnection):
+                    response_class = Response if failure == 'response' else helper.http.client.HTTPResponse
+                    def connect(self):
+                        super().connect(); sockets.append(self.sock)
+                    def close(self):
+                        super().close()
+                        if failure == 'connection': raise OSError('fictional connection cleanup failure')
+                self.assertEqual(f.invoke(connection_factory=Tracked), ('relinquished_to_native', b''))
+                self.assertEqual(len(sockets), 1); self.assertEqual(sockets[0].fileno(), -1)
+
+    def test_partial_write_backpressure_and_readiness_races_preserve_exact_bytes(self):
+        class Wire:
+            def __init__(self):
+                self.sent, self.closed = bytearray(), 0
+                self.expected, self.blocked = b'abcdef', False
+                self.sends = [2, BlockingIOError(), InterruptedError(), 1, 3]
+                self.reads = [BlockingIOError(), InterruptedError(), b'xy', b'']
+            def send(self, data):
+                self_data = bytes(data)
+                if self_data != self.expected[len(self.sent):]: raise AssertionError('accepted prefix was repeated')
+                value = self.sends.pop(0)
+                if isinstance(value, BlockingIOError): self.blocked = True
+                if isinstance(value, Exception): raise value
+                self.sent.extend(data[:value]); return value
+            def recv_into(self, buffer):
+                value = self.reads.pop(0)
+                if isinstance(value, Exception): raise value
+                buffer[:len(value)] = value; return len(value)
+            def close(self): self.closed += 1
+        wire, polls = Wire(), []
+        def ready(readers, writers, errors, timeout):
+            self.assertTrue(0 < timeout <= .025); self.assertEqual(errors, [])
+            polls.append(bool(writers))
+            return ([], [], []) if len(polls) == 1 else (readers, writers, [])
+        adapter = helper._CancellableSocket(wire, lambda: 10)
+        with patch.object(helper.select, 'select', side_effect=ready):
+            adapter.sendall(b'abcdef'); self.assertEqual(bytes(wire.sent), b'abcdef')
+            reader = adapter.makefile('rb')
+            try:
+                self.assertEqual(reader.read(2), b'xy'); self.assertEqual(reader.read(1), b'')
+            finally: reader.close()
+        self.assertEqual(wire.closed, 0, 'response readers only borrow the underlying socket')
+        wire.close(); self.assertEqual(wire.closed, 1)
+        wire = Wire(); cancelled = threading.Event()
+        def check():
+            if cancelled.is_set(): n.reject()
+            return 10
+        def backpressure(readers, writers, errors, timeout):
+            if wire.blocked:
+                cancelled.set()
+                return [], [], []
+            return readers, writers, []
+        with patch.object(helper.select, 'select', side_effect=backpressure):
+            with self.assertRaises(n.InputError): helper._CancellableSocket(wire, check).sendall(b'abcdef')
+        self.assertTrue(wire.blocked)
+        self.assertEqual(bytes(wire.sent), b'ab', 'cancellation never repeats an accepted prefix')
+        wire = Wire(); wire.sends = [0]; wire.expected = b'x'
+        with patch.object(helper.select, 'select', side_effect=lambda r,w,e,t:(r,w,[])):
+            with self.assertRaises(n.InputError): helper._CancellableSocket(wire, lambda:10).sendall(b'x')
+
+    def test_saved_socket_pin_and_peer_eof_fail_closed_without_reopening(self):
+        from types import SimpleNamespace
+        class Wire:
+            def fileno(self): return 7
+            def recv(self, size, flags): return b'x'
+        raw = Wire(); pinned = helper._CancellableSocket(raw, lambda:10)
+        connection = SimpleNamespace(sock=pinned)
+        with patch.object(helper.select, 'select', return_value=([], [], [])):
+            helper._same_socket(connection, pinned, raw)
+            connection.sock = object()
+            with self.assertRaises(n.InputError): helper._same_socket(connection, pinned, raw)
+            connection.sock = pinned
+            with self.assertRaises(n.InputError): helper._same_socket(connection, pinned, Wire())
+        raw.recv = lambda size, flags: b''
+        with patch.object(helper.select, 'select', return_value=([raw], [], [])):
+            with self.assertRaises(n.InputError): helper._same_socket(connection, pinned, raw)
+            def would_block(size, flags): raise BlockingIOError()
+            raw.recv = would_block
+            helper._same_socket(connection, pinned, raw)
+
+    def test_connection_budget_clamps_rounding_without_replenishing_shorter_budget(self):
+        self.assertGreater((53.009 + 75) - 53.009, 75)
+        for elapsed in (0, 10):
+            with self.subTest(elapsed=elapsed), Fixture() as f:
+                current, connections = [53.009], []
+                class Tracked(helper.http.client.HTTPConnection):
+                    def __init__(self, *args, **kwargs):
+                        super().__init__(*args, **kwargs); connections.append(self)
+                def credential(_):
+                    current[0] += elapsed
+                    return f.credential
+                out = io.BytesIO()
+                result = helper.run_hook(io.BytesIO(n.json_bytes(payload())), out, enabled=True,
+                                         credential_path='/fictional/injected-credential', port=f.port,
+                                         credential_loader=credential, clock=lambda:current[0], connection_factory=Tracked)
+                self.assertEqual(result, 'returned_to_hook_unconfirmed'); self.assertTrue(out.getvalue())
+                expected = min(75.0, max(.001, (53.009 + 75) - (53.009 + elapsed)))
+                self.assertEqual(connections[0].timeout, expected)
+                self.assertTrue(0 < connections[0].timeout <= 75)
+                if elapsed: self.assertLess(connections[0].timeout, 66)
+                self.assertEqual(len(f.seen), 2)
 
     def test_invalid_or_unsupported_input_never_contacts_listener(self):
         for p in (dict(payload(), hook_event_name='PermissionRequest'), dict(payload(), tool_name='Bash')):

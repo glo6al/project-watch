@@ -6,6 +6,7 @@ installer or credential creation. Native cancellation/privacy/rotation proofs an
 root-owned integration must precede a production activation path.
 """
 import http.client
+import io
 import os
 from pathlib import Path
 import select
@@ -35,13 +36,94 @@ def _response(response, limit):
     return raw
 
 
-def _same_socket(connection, pinned):
-    if connection.sock is not pinned or pinned.fileno() < 0:
+class _ResponseReader(io.RawIOBase):
+    """A response borrows its exchange's socket; file close never closes it."""
+    def __init__(self, owner):
+        super().__init__()
+        self.owner = owner
+
+    def readable(self):
+        return True
+
+    def readinto(self, buffer):
+        if self.closed:
+            raise ValueError('Response reader is closed.')
+        return self.owner.readinto(buffer)
+
+
+class _CancellableSocket:
+    """Only the invocation thread performs connected I/O or owns the raw close."""
+    def __init__(self, raw, check):
+        self._raw, self._check = raw, check
+        self.detached = False
+
+    @property
+    def raw(self):
+        return self._raw
+
+    def fileno(self):
+        return self.raw.fileno()
+
+    def close(self):
+        # HTTPConnection can detach before a final Connection: close body is read.
+        self.detached = True
+
+    def makefile(self, mode):
+        if mode != 'rb' or self.detached:
+            native.reject()
+        return io.BufferedReader(_ResponseReader(self))
+
+    def _wait(self, writing=False):
+        while True:
+            remaining = self._check()
+            try:
+                readable, writable, _ = select.select([] if writing else [self.raw],
+                                                      [self.raw] if writing else [], [], min(.025, remaining))
+            except InterruptedError:
+                continue
+            self._check()
+            if (writable if writing else readable):
+                return
+
+    def readinto(self, buffer):
+        if not len(buffer):
+            return 0
+        while True:
+            self._wait()
+            self._check()
+            try:
+                return self.raw.recv_into(buffer)
+            except (BlockingIOError, InterruptedError):
+                continue
+
+    def sendall(self, data):
+        if self.detached:
+            native.reject()
+        data, offset = memoryview(data), 0
+        while offset < len(data):
+            self._wait(writing=True)
+            self._check()
+            try:
+                sent = self.raw.send(data[offset:])
+            except (BlockingIOError, InterruptedError):
+                continue
+            if sent <= 0:
+                native.reject()
+            offset += sent
+
+
+def _same_socket(connection, pinned, actual):
+    pinned._check()
+    if connection.sock is not pinned or pinned.raw is not actual or pinned.detached or actual.fileno() < 0:
         native.reject()
-    # HTTPConnection can retain a locally-open socket after the peer sent FIN.
-    ready, _, _ = select.select([pinned], [], [], 0)
-    if ready and pinned.recv(1, socket.MSG_PEEK) == b'':
-        native.reject()
+    ready, _, _ = select.select([actual], [], [], 0)
+    if ready:
+        try:
+            if actual.recv(1, socket.MSG_PEEK) == b'':
+                native.reject()
+        except (BlockingIOError, InterruptedError):
+            pass
+    pinned._check()
 
 
 def exchange(invocation, credential, port, *, clock=time.monotonic,
@@ -49,27 +131,34 @@ def exchange(invocation, credential, port, *, clock=time.monotonic,
              nonce_factory=lambda: os.urandom(32).hex()):
     """One proved socket and one invocation write, without mutation retries.
 
-    The watchdog only cancels this helper's own socket. Native parent/session
-    cancellation still requires a live proof; no process is signalled here.
+    The watchdog latches cancellation; this thread owns all socket I/O and close.
+    Native parent/session cancellation still requires a live proof.
     """
     if type(port) is not int or not 1 <= port <= 65535:
         native.reject()
-    conn = connection_factory('127.0.0.1', port, timeout=max(.001, invocation.deadline - clock()))
+    conn = connection_factory('127.0.0.1', port, timeout=min(75.0, max(.001, invocation.deadline - clock())))
     stop = threading.Event()
     aborted = threading.Event()
     guard = None
-    pinned = None
+    pinned = actual = response = None
+    def remaining():
+        if aborted.is_set() or cancelled():
+            native.reject()
+        left = invocation.deadline - clock()
+        if left <= 0:
+            native.reject()
+        return left
     try:
         if cancelled() or clock() >= invocation.deadline:
             native.reject()
         conn.connect()
-        pinned = conn.sock
-        if pinned is None:
+        actual = conn.sock
+        if actual is None:
             native.reject()
-        # Keep connect finite; the independent watchdog owns connected I/O's
-        # total deadline, including platforms whose timeout-select does not wake.
-        pinned.settimeout(None)
-        conn.auto_open = False  # A connection object must never reconnect after proof.
+        actual.setblocking(False)
+        pinned = _CancellableSocket(actual, remaining)
+        conn.sock = pinned
+        conn.auto_open = False  # A proved connection must never reconnect.
 
         def watch():
             try:
@@ -78,17 +167,7 @@ def exchange(invocation, credential, port, *, clock=time.monotonic,
                         aborted.set()
                         break
             except Exception:
-                aborted.set()  # A failed callback must not strand blocking I/O.
-            finally:
-                if aborted.is_set():
-                    try:
-                        pinned.shutdown(socket.SHUT_RDWR)
-                    except OSError:
-                        pass
-                    try:
-                        pinned.close()
-                    except OSError:
-                        pass
+                aborted.set()  # A failed callback must fail the exchange closed.
         guard = threading.Thread(target=watch, daemon=True)
         guard.start()
         request = native.challenge_request(credential, nonce_factory(), invocation.invocation_id)
@@ -99,7 +178,9 @@ def exchange(invocation, credential, port, *, clock=time.monotonic,
             native.reject()
         challenge = native.parse_json(_response(response, 2048), 2048)
         native.verify_challenge(credential, request, challenge, port)
-        _same_socket(conn, pinned)
+        response.close()
+        response = None
+        _same_socket(conn, pinned, actual)
         if cancelled() or clock() >= invocation.deadline:
             native.reject()
         raw, signature = native.invocation_request(credential, challenge, request, invocation, port)
@@ -114,10 +195,18 @@ def exchange(invocation, credential, port, *, clock=time.monotonic,
     finally:
         stop.set()
         try:
-            conn.close()
+            try:
+                if response is not None:
+                    response.close()
+            finally:
+                conn.close()
         finally:
-            if guard:
-                guard.join(.2)
+            try:
+                if actual is not None:
+                    actual.close()
+            finally:
+                if guard:
+                    guard.join(.2)
     if aborted.is_set() or (guard and guard.is_alive()):
         native.reject()
     return output
