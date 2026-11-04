@@ -220,16 +220,20 @@ async function poll($, state) {
   submit($,state,request,claim.envelope,epoch).catch(()=>{});
 }
 
-async function activate($, state, response) {
+async function activate($, state, response, eligibilityEpoch) {
+  checkEligibility(state,eligibilityEpoch);
   if (!sessionResponse(response,state.data.native_id)) throw Error('Invalid WATCH connection identity.');
   if (await $.session.id() !== state.data.native_id || await $.session.cwd() !== state.data.project) throw Error('Native conversation changed.');
+  checkEligibility(state,eligibilityEpoch);
   state.generation = response.generation;
   // Only this current derived connection can negotiate peer input. Saved receipts and
   // manual owner enrollments cannot enable it after reload or through a service echo.
   state.peerProtocol = state.data.mode === 'derived' && response.peer_protocol === 1 ? 1 : 0;
-  await save($,state,data=>{data.active = true; data.generation = response.generation; data.peer_protocol = state.peerProtocol;});
+  await save($,state,data=>{checkEligibility(state,eligibilityEpoch); data.active = true; data.generation = response.generation; data.peer_protocol = state.peerProtocol;});
+  checkEligibility(state,eligibilityEpoch);
   state.connected = true; state.error = ''; state.failures = 0; state.retryAt = 0;
   if (state.data.mode === 'derived') await recover($,state);
+  checkEligibility(state,eligibilityEpoch);
   for (const request of Object.values(state.data.requests)) {
     if (!['answered','dropped','unknown'].includes(request.phase)) await event($,state,request,'unknown');
   }
@@ -238,13 +242,15 @@ async function activate($, state, response) {
   await flush($,state);
 }
 
-async function connectDerived($, state, id, project, config) {
+async function connectDerived($, state, id, project, config, eligibilityEpoch) {
   state.config = config;
   const response = await post($,state,'register',{native_id:id,project,client_id:state.clientId,connection_seq:state.sequence,peer_protocol:1},
     {port:config.port,token:config.grant});
+  checkEligibility(state,eligibilityEpoch);
   if (!sessionResponse(response,id) || response.grant_id !== config.grant_id || !UUID.test(response.enrollment_id) ||
       !/^[a-f0-9]{64}$/.test(response.token) || response.client_id !== state.clientId || response.connection_seq !== state.sequence) throw Error('Invalid WATCH registration.');
   if (await $.session.id() !== id || await $.session.cwd() !== project) throw Error('Native conversation changed.');
+  checkEligibility(state,eligibilityEpoch);
   const same = state.data?.mode === 'derived' && state.data.native_id === id && state.data.project === project && state.data.enrollment_id === response.enrollment_id;
   if (!same) {
     await state.writes;
@@ -252,6 +258,7 @@ async function connectDerived($, state, id, project, config) {
     // Returning to A after visiting B reuses this runtime's A namespace. Read
     // its retained receipts before any activation write can replace that row.
     const stored = await $.store.get(key);
+    checkEligibility(state,eligibilityEpoch);
     let requests = {}, acknowledged = {};
     if (stored?.mode === 'derived' && stored.native_id === id && stored.project === project &&
         stored.grant_id === config.grant_id && stored.enrollment_id === response.enrollment_id) {
@@ -268,67 +275,105 @@ async function connectDerived($, state, id, project, config) {
     state.flight = null; state.envelope = null;
   }
   state.config = config;
-  await activate($,state,response);
+  await activate($,state,response,eligibilityEpoch);
 }
 
-async function readSurfaces($, state) {
-  try {state.currentSurfaces = surfaceRoster(await $.session.surfaces());}
-  catch {state.currentSurfaces = null;}
-  return state.currentSurfaces;
+// Desktop evidence belongs only to this loaded runtime's exact native identity.
+function invalidateEligibility(state) {
+  state.desktopBinding = null;
+  state.eligibilityEpoch += 1;
+  return state.eligibilityEpoch;
+}
+
+function checkEligibility(state, expected) {
+  if (expected !== undefined && state.eligibilityEpoch !== expected) throw Error('WATCH eligibility changed.');
+}
+
+async function readSurfaces($, state, eligibilityEpoch) {
+  let surfaces = null;
+  try {surfaces = surfaceRoster(await $.session.surfaces());} catch { /* Unknown stays fail-closed. */ }
+  checkEligibility(state,eligibilityEpoch);
+  state.currentSurfaces = surfaces;
+  return surfaces;
 }
 
 async function supervisor($, state) {
-  if (state.supervising || state.connecting || state.networkBusy || state.flushing) return;
+  if (state.supervising || state.connecting || state.networkBusy || state.flushing || state.disconnecting) return;
   state.supervising = true;
-  let now = 0;
+  let now = 0, eligibilityEpoch = state.eligibilityEpoch;
   try {
-    // SDK-hosted Desktop is not a REPL. The current public roster also covers
-    // a Desktop frontend attached after a null startup surface; headless SDK stays off.
-    if (!state.interactive && !(await readSurfaces($,state))?.includes('desktop')) return;
     now = await $.clock.now();
     const id = await $.session.id(), project = await $.session.cwd();
+    checkEligibility(state,eligibilityEpoch);
+    if (state.desktopBinding && (state.desktopBinding.native_id !== id || state.desktopBinding.project !== project)) {
+      // Refresh only at our synchronous invalidation, never after awaited cleanup.
+      eligibilityEpoch = invalidateEligibility(state);
+    }
     const raw = await $.store.get(GLOBAL_KEY);
+    checkEligibility(state,eligibilityEpoch);
     const config = globalConfiguration(raw) ? raw : null;
     const preference = UUID.test(id) ? await $.store.get(preferenceKey(id)) : null;
+    checkEligibility(state,eligibilityEpoch);
     const changed = state.data && (id !== state.data.native_id || project !== state.data.project ||
       (state.data.mode === 'derived' && configurationId(config) !== configurationId(state.config)));
     if (changed || preference?.disconnected === true || !UUID.test(id)) {
+      if (preference?.disconnected === true || !UUID.test(id)) eligibilityEpoch = invalidateEligibility(state);
       suspend($,state);
       if (state.submitting) return;
       if (state.flight) await failRequest($,state,state.flight);
+      checkEligibility(state,eligibilityEpoch);
       state.flight = null; state.envelope = null;
       state.data = null; state.key = null;
       state.retryAt = 0; state.failures = 0;
       if (preference?.disconnected === true || !UUID.test(id)) return;
     }
+    const surfaces = await readSurfaces($,state,eligibilityEpoch);
+    const currentId = await $.session.id(), currentProject = await $.session.cwd();
+    checkEligibility(state,eligibilityEpoch);
+    if (currentId !== id || currentProject !== project) {
+      invalidateEligibility(state);
+      suspend($,state);
+      return;
+    }
+    if (surfaces === null) return;
+    if (surfaces.includes('desktop') && UUID.test(id)) state.desktopBinding = {native_id:id,project};
+    if (!state.interactive && !(state.desktopBinding?.native_id === id && state.desktopBinding.project === project)) return;
     if (now < state.retryAt) return;
     if (!state.connected) {
       if (state.submitting) return;
       if (!state.data) {
         const manual = await $.store.get(legacyKey(id));
+        checkEligibility(state,eligibilityEpoch);
         if (manual?.native_id === id && manual.project === project && manual.active) {state.data = manual; state.key = legacyKey(id);}
       }
       if (state.data?.mode === 'derived' || (!state.data && config)) {
         if (!config || state.rejectedGrant === configurationId(config) || state.rejectedIdentity === JSON.stringify([id,project,configurationId(config)])) return;
-        await connectDerived($,state,id,project,config);
+        await connectDerived($,state,id,project,config,eligibilityEpoch);
       } else {
         const stored = state.data ?? await $.store.get(legacyKey(id));
+        checkEligibility(state,eligibilityEpoch);
         if (!stored || stored.native_id !== id || stored.project !== project || !stored.active) return;
         state.key = legacyKey(id); state.data = stored;
-        await activate($,state,await post($,state,'connect',{native_id:id,project}));
+        const response = await post($,state,'connect',{native_id:id,project});
+        checkEligibility(state,eligibilityEpoch);
+        await activate($,state,response,eligibilityEpoch);
       }
       return;
     }
     if (state.data.mode === 'derived' && now >= state.recoverAt) {
       await recover($,state); state.recoverAt = now + 10000;
+      checkEligibility(state,eligibilityEpoch);
     }
     await flush($,state);
+    checkEligibility(state,eligibilityEpoch);
     await poll($,state);
   } catch (error) {
+    if (state.eligibilityEpoch !== eligibilityEpoch) return;
     stop(state);
     if (error.status === 403 && state.config) state.rejectedGrant = configurationId(state.config);
     if (error.code === 'identity_rejected') {
       const id = await $.session.id().catch(()=>null), project = await $.session.cwd().catch(()=>null);
+      if (state.eligibilityEpoch !== eligibilityEpoch) return;
       state.rejectedIdentity = JSON.stringify([id,project,configurationId(state.config)]);
     }
     state.error = error.message === 'WATCH recovery data limit.' ? 'WATCH recovery data limit reached; automatic claims stopped.' :
@@ -338,19 +383,24 @@ async function supervisor($, state) {
 }
 
 async function explicitDisconnect($, state) {
-  const id = await $.session.id();
-  if (UUID.test(id)) await $.store.set(preferenceKey(id),{version:1,disconnected:true});
-  const data = state.data;
-  suspend($,state);
-  if (data && data.mode !== 'derived') await save($,state,()=>{data.active = false;});
+  state.disconnecting += 1;
+  invalidateEligibility(state);
+  try {
+    const id = await $.session.id();
+    if (UUID.test(id)) await $.store.set(preferenceKey(id),{version:1,disconnected:true});
+    const data = state.data;
+    suspend($,state);
+    if (data && data.mode !== 'derived') await save($,state,()=>{data.active = false;});
+  } finally {state.disconnecting -= 1;}
 }
 
 export function register(on) {
-  const state = {clientId:crypto.randomUUID(),sequence:0,data:null,key:null,config:null,generation:null,connected:false,epoch:0,
+  const state = {clientId:crypto.randomUUID(),sequence:0,data:null,key:null,config:null,generation:null,connected:false,epoch:0,eligibilityEpoch:0,desktopBinding:null,disconnecting:0,
     timer:null,peerProtocol:0,writes:Promise.resolve(),network:Promise.resolve(),networkBusy:false,flushing:false,supervising:false,
     submitting:false,flight:null,envelope:null,error:'',connecting:false,interactive:false,failures:0,retryAt:0,recoverAt:0,
     rejectedGrant:'',rejectedIdentity:'',startSeen:false,startupInteractive:null,startupSurface:null,timerTicks:0,currentSurfaces:null};
   on('session.start',async($,e,next)=>{
+    invalidateEligibility(state);
     state.interactive = e.isInteractive === true;
     state.startSeen = true;
     state.startupInteractive = typeof e.isInteractive === 'boolean' ? e.isInteractive : null;
@@ -373,7 +423,7 @@ export function register(on) {
     return next(e);
   });
   on('command.run',async($,e,next)=>{
-    if (TRANSITIONS.has(e.command)) {suspend($,state); return next(e);}
+    if (TRANSITIONS.has(e.command)) {invalidateEligibility(state); suspend($,state); return next(e);}
     if (e.command === 'watch-status') {await readSurfaces($,state); return {text:JSON.stringify(publicStatus(state))};}
     if (!['watch-connect','watch-disconnect','watch-setup'].includes(e.command)) return next(e);
     if (!['composer','bridge'].includes(e.origin?.kind)) return {text:'WATCH connection commands require direct owner input.'};
@@ -383,6 +433,7 @@ export function register(on) {
     }
     if (state.connecting || state.submitting || (state.connected && state.flight && ['pending','claimed','submitted','started'].includes(state.flight.phase))) return {text:'An existing WATCH attempt is unresolved; nothing was resubmitted.'};
     state.connecting = true;
+    invalidateEligibility(state);
     try {
       const id = await $.session.id(), project = await $.session.cwd();
       if (!UUID.test(id)) throw Error('Native identity unavailable.');
@@ -446,5 +497,5 @@ export function register(on) {
     } catch { /* Retained completion can replay without a new prompt. */ }
     return next(e);
   });
-  on('session.end',async($,e,next)=>{suspend($,state); return next(e);});
+  on('session.end',async($,e,next)=>{invalidateEligibility(state); suspend($,state); return next(e);});
 }

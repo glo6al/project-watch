@@ -10,14 +10,18 @@ async function owner(path,body){
  const value=await response.json();assert(response.ok,JSON.stringify(value));return value;
 }
 async function runtime(native,index){
- const hooks=new Map(),timers=[],submissions=[];
- let api;
- const $={session:{id:async()=>native,cwd:async()=>config.project,surfaces:async()=>['desktop']},
+ const hooks=new Map(),timers=[],submissions=[],heartbeats=[];
+ let api,roster=['desktop'];
+ const $={session:{id:async()=>native,cwd:async()=>config.project,surfaces:async()=>clone(roster)},
   store:{keys:async()=>[...storage.keys()],get:async key=>storage.has(key)?clone(storage.get(key)):undefined,set:async(key,value)=>{storage.set(key,clone(value))}},
   command:{register:async()=>{}},clock:{now:async()=>Date.now(),every:(delay,fn)=>{const timer={fn,cancelled:false,cancel(){this.cancelled=true}};timers.push(timer);return timer}},
-  http:{fetch:async(address,init)=>{const response=await fetch(address,init);return {ok:response.ok,status:response.status,headers:{},text:await response.text()}}},
+  http:{fetch:async(address,init)=>{
+   const response=await fetch(address,init),text=await response.text();
+   if(response.ok&&address.endsWith('/poll'))heartbeats.push(JSON.parse(init.body));
+   return {ok:response.ok,status:response.status,headers:{},text};
+  }},
   prompt:{submit:async value=>{
-   assert.equal(value.asUser,false);submissions.push(value.text);
+   assert.equal(value.asUser,false);assert.deepEqual(roster,[],'owner input is admitted while the runtime is backgrounded');submissions.push(value.text);
    const match=/^WATCH_REQUEST ([0-9a-f-]+)\n/.exec(value.text);assert(match);
    assert(value.text.includes(index===0?'Ask fictional Atlas.':'Ask fictional Birch.'),'request reached its intended runtime');
    const turn='fictional-turn-'+index;
@@ -27,7 +31,7 @@ async function runtime(native,index){
    return {text:value.text};
   }}};
  register((name,handler)=>{hooks.set(name,handler);return {catch(){}}});
- api={submissions,call:async(name,value)=>hooks.get(name)?.($,value,async()=>({})),tick:async()=>{for(const t of timers.filter(t=>!t.cancelled))await t.fn()},status:async()=>JSON.parse((await api.call('command.run',{command:'watch-status',args:'',origin:{kind:'composer'}})).text)};
+ api={submissions,heartbeats,setSurfaces:value=>{roster=clone(value)},call:async(name,value)=>hooks.get(name)?.($,value,async()=>({})),tick:async()=>{for(const t of timers.filter(t=>!t.cancelled))await t.fn()},status:async()=>JSON.parse((await api.call('command.run',{command:'watch-status',args:'',origin:{kind:'composer'}})).text)};
  await api.call('session.start',{cwd:config.project,surface:null,isInteractive:false});return api;
 }
 const runtimes=await Promise.all(config.native.map(runtime));
@@ -42,6 +46,16 @@ async function until(check){
  throw Error('Automatic global registration/delivery did not settle');
 }
 await until(async()=>(await Promise.all(runtimes.map(r=>r.status()))).every(r=>r.connected));
+// A local connected flag can outlive the backend lease. Require actual successful
+// production heartbeats from BOTH exact identities after their Desktop detaches.
+const foregroundPolls=runtimes.map(r=>r.heartbeats.length);
+for(const r of runtimes)r.setSurfaces([]);
+await until(async()=>runtimes.every((r,index)=>r.heartbeats.length>=foregroundPolls[index]+3));
+for(const [index,r] of runtimes.entries()){
+ assert(r.heartbeats.slice(foregroundPolls[index]).every(body=>body.native_id===config.native[index]&&body.project===config.project));
+ assert.deepEqual((await r.status()).current_surfaces,[]);
+}
+assert.equal((await owner('/claude-mod-setup-status',{})).connected_chats,2,'both background enrollments retain live backend leases');
 for(let index=0;index<2;index++)await owner('/agent-message',{agent:'c:'+config.native[index],question:index===0?'Ask fictional Atlas.':'Ask fictional Birch.',request_id:crypto.randomUUID()});
 let replies;
 await until(async()=>{
@@ -51,5 +65,6 @@ await until(async()=>{
 });
 assert.deepEqual(replies,['Fictional Atlas reply.','Fictional Birch reply.']);
 assert(runtimes.every(r=>r.submissions.length===1));
+assert.equal((await owner('/claude-mod-setup-status',{})).connected_chats,2,'both background connections remain active after owner replies');
 const revoked=await owner('/claude-mod-revoke',{});assert.equal(revoked.revoked,true);
 console.log(JSON.stringify({authorized_once:true,native_submissions:runtimes.reduce((n,r)=>n+r.submissions.length,0),replies}));
