@@ -139,6 +139,25 @@ class ClaudePeerBackendTests(unittest.TestCase):
         self.assertEqual(answer['request_id'],owner['request_id'])
         self.assertIn(peer_bridge.PEER_WARNING,answer['delivery_warning'])
 
+    def test_compact_escaped_envelope_exact_4000_and_4001_before_reservation(self):
+        self.setup_global()
+        target=self.target();rid=uid();sender='Fictional requester'
+        overhead=len(peer_bridge.shared_envelope(uid(),sender,'','claude','claude_mod'))
+        # Each control character expands to six ASCII codepoints; literal padding fills the exact bound.
+        controls=(4000-overhead)//6
+        text='\x01'*controls+'a'*((4000-overhead)%6)
+        self.assertLess(len(text),2000)
+        self.assertEqual(len(peer_bridge.shared_envelope(uid(),sender,text,'claude','claude_mod')),4000)
+        with self.assertRaisesRegex(peer_bridge.PeerError,'4000'):
+            self.store.shared.send(self.credential,target['agent_id'],target['identity_revision'],text+'a',rid,sender)
+        self.assertEqual(self.store.db.execute('SELECT COUNT(*) FROM shared_bridge_requests').fetchone()[0],0)
+        self.assertEqual(self.store.db.execute('SELECT COUNT(*) FROM requests').fetchone()[0],0)
+        sent=self.store.shared.send(self.credential,target['agent_id'],target['identity_revision'],text,rid,sender)
+        row=self.peer_row(sent['request_id'])
+        self.assertEqual(len(row['envelope']),4000)
+        self.assertEqual(json.loads(row['envelope'].splitlines()[1][len('Message: '):]),text)
+        self.assertEqual(self.global_poll(self.body['client_id'])[1]['claim']['envelope'],row['envelope'])
+
     def test_unicode_envelope_rejected_before_reservation_without_consuming_id(self):
         self.setup_global();rid=uid()
         for text in ('😀'*1000,'\x01'*1000):
