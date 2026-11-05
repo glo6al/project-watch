@@ -4,6 +4,7 @@ import hashlib
 import hmac
 import http.client
 import json
+import math
 import os
 import re
 import secrets
@@ -72,7 +73,23 @@ def receipt(event, provider):
     require(provider in TOOLS and type(event) is dict)
     required = {'hook_event_name', 'session_id', 'tool_use_id', 'tool_name', 'tool_input', 'tool_response'}
     optional = {'cwd', 'transcript_path', 'permission_mode', 'turn_id', 'agent_id', 'agent_type', 'teammate_name', 'model'}
+    if provider == 'claude':
+        optional |= {'prompt_id', 'scratchpad_dir', 'effort', 'mcp_server', 'duration_ms'}
     require(required <= set(event) <= required | optional)
+    if provider == 'claude':
+        for field, maximum in [('prompt_id', 256), ('scratchpad_dir', 4096)]:
+            if field in event: text(event[field], maximum, True)
+        if 'effort' in event:
+            value = event['effort']
+            require(type(value) is dict and set(value) == {'level'})
+            text(value['level'], 64, True)
+        if 'mcp_server' in event:
+            value = event['mcp_server']
+            require(type(value) is dict and set(value) == {'name', 'source'})
+            text(value['name'], 256, True); text(value['source'], 64, True)
+        if 'duration_ms' in event:
+            value = event['duration_ms']
+            require(type(value) in (int, float) and 0 <= value <= 86400000 and math.isfinite(value))
     require(event['hook_event_name'] == 'PostToolUse' and event['tool_name'] == TOOLS[provider])
     source = ident(event['session_id'])
     call = text(event['tool_use_id'], 256, True)
@@ -92,6 +109,8 @@ def receipt(event, provider):
     require(text(args['text'], 2000).strip() and '\x00' not in args['text'])
     if 'declared_sender' in args: require(text(args['declared_sender'], 120, True).strip())
     response = event['tool_response']
+    if provider == 'claude' and type(response) is list:
+        response = {'content': response}
     require(type(response) is dict and {'content'} <= set(response) <= {'content', 'isError'})
     require('isError' not in response or type(response['isError']) is bool and response['isError'] is False)
     content = response['content']

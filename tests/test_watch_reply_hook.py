@@ -28,7 +28,20 @@ def fixture(provider='codex',explicit=False):
     return event,result
 
 
-def set_result(event,result):event['tool_response']['content'][0]['text']=json.dumps(dict(origin='peer',untrusted_peer_data=result))
+def set_result(event,result):
+    response=event['tool_response'];blocks=response if type(response) is list else response['content']
+    blocks[0]['text']=json.dumps(dict(origin='peer',untrusted_peer_data=result))
+
+
+def claude_desktop_fixture():
+    event,result=fixture('claude')
+    event.pop('turn_id');event.pop('model');event['tool_input'].pop('declared_sender')
+    target='x:'+str(uuid.uuid4());event['tool_input']['agent_id']=target
+    result['agent_id']=target;result['target'].update(agent_id=target,provider='codex')
+    event.update(transcript_path='/fictional/transcript',prompt_id=str(uuid.uuid4()),scratchpad_dir='/fictional/scratchpad',
+                 effort={'level':'medium'},mcp_server={'name':'FICTIONAL_SERVER','source':'user'},duration_ms=12)
+    set_result(event,result);event['tool_response']=event['tool_response']['content']
+    return event,result
 
 
 class ParserTests(unittest.TestCase):
@@ -58,6 +71,44 @@ class ParserTests(unittest.TestCase):
         with self.assertRaises(ValueError):hook.receipt(event,'codex')
         event,result=fixture();event['tool_response']={'isError':True,'content':[{'type':'text','text':'Request ID: '+result['request_id']}]}
         with self.assertRaises(ValueError):hook.receipt(event,'codex')
+    def test_claude_desktop_metadata_is_bounded_discarded_and_codex_stays_strict(self):
+        event,result=claude_desktop_fixture();original=copy.deepcopy(event)
+        self.assertEqual(len(event),14);self.assertEqual(set(event['tool_input']),{'agent_id','identity_revision','text'})
+        value=hook.receipt(event,'claude');self.assertEqual(event,original);self.assertNotIn('turn_id',value)
+        old=copy.deepcopy(event)
+        for key in ('prompt_id','scratchpad_dir','effort','mcp_server','duration_ms'):old.pop(key)
+        old['tool_response']={'content':old['tool_response']}
+        self.assertEqual(value,hook.receipt(old,'claude')|{'observed_at':value['observed_at']})
+        for key in ('prompt_id','scratchpad_dir','effort','mcp_server','duration_ms','cwd','transcript_path'):
+            self.assertNotIn(key,value)
+        for key in ('prompt_id','scratchpad_dir','effort','mcp_server','duration_ms'):
+            codex,_=fixture();codex[key]=event[key]
+            with self.assertRaises(ValueError):hook.receipt(codex,'codex')
+        codex,_=fixture();codex['tool_response']=codex['tool_response']['content']
+        with self.assertRaises(ValueError):hook.receipt(codex,'codex')
+
+    def test_claude_desktop_malformed_metadata_arrays_and_results_are_rejected(self):
+        changes=[('prompt_id',None),('prompt_id','x'*257),('scratchpad_dir',{}),('scratchpad_dir','x'*4097),
+                 ('effort',{'level':1}),('effort',{'level':'medium','extra':True}),('effort',{'level':'x'*65}),
+                 ('mcp_server',{'name':'ok','source':False}),('mcp_server',{'name':'x'*257,'source':'user'}),
+                 ('mcp_server',{'name':'ok','source':'bad\nsource'}),('mcp_server',{'name':'ok','source':'user','extra':0}),
+                 ('duration_ms',True),('duration_ms',-1),('duration_ms',float('inf')),('duration_ms',float('nan')),
+                 ('duration_ms',86400001),('duration_ms','12'),('unreviewed',1)]
+        for field,value in changes:
+            with self.subTest(field=field,value=value):
+                event,_=claude_desktop_fixture();event[field]=value
+                with self.assertRaises(ValueError):hook.receipt(event,'claude')
+        for response in [[],[{'type':'text','text':'{}'}]*2,[{'type':'image','text':'{}'}],['{}'],
+                         [{'type':'text','text':{}}],[{'type':'text','text':'{}','isError':True}],
+                         {'content':[{'type':'text','text':'{}'}],'isError':True}]:
+            event,_=claude_desktop_fixture();event['tool_response']=response
+            with self.assertRaises(ValueError):hook.receipt(event,'claude')
+        for change in [lambda r:r.update(duplicate=True),lambda r:r.update(error='fictional tool failure'),
+                       lambda r:r.update(state='failed'),lambda r:r['target'].update(identity_revision='c'*64),
+                       lambda r:r.update(request_id='invalid')]:
+            event,result=claude_desktop_fixture();change(result);set_result(event,result)
+            with self.assertRaises(ValueError):hook.receipt(event,'claude')
+
     def test_bounded_strict_json(self):
         for raw in ['{"x":1,"x":2}','{"x":NaN}','x'*131073]:
             with self.assertRaises(ValueError):hook.decode(raw)
@@ -95,13 +146,23 @@ class TransportTests(unittest.TestCase):
         try:
             with tempfile.TemporaryDirectory() as temp:
                 path=Path(temp).resolve()/'credential.json';path.write_text(json.dumps(config));path.chmod(0o600)
+                for provider,make in [('codex',fixture),('claude',claude_desktop_fixture)]:
+                    event,_=make();original=copy.deepcopy(event);observed.clear()
+                    command=[sys.executable,str(Path(hook.__file__)),'--provider',provider,'--credential-file',str(path)]
+                    result=subprocess.run(command,input=json.dumps(event).encode(),capture_output=True,timeout=10)
+                    self.assertEqual((result.returncode,result.stdout,result.stderr),(0,b'',b''))
+                    self.assertEqual([row[0] for row in observed],['/peer-reply/v1/challenge','/peer-reply/v1/receipt'])
+                    self.assertEqual(observed[0][2],observed[1][2]);self.assertEqual(event,original)
+                    wire=json.dumps(observed[1][1]);self.assertNotIn('FICTIONAL_',wire);self.assertNotIn('/fictional/',wire)
+                    if provider=='claude':
+                        for field in ('turn_id','prompt_id','scratchpad_dir','effort','mcp_server','duration_ms'):self.assertNotIn(field,observed[1][1])
+                        for invalidate in [lambda e:e.update(duration_ms=True),lambda e:e.update(tool_response=[]),
+                                           lambda e:e.update(tool_response={'content':e['tool_response'],'isError':True})]:
+                            invalid=copy.deepcopy(event);invalidate(invalid);observed.clear()
+                            rejected=subprocess.run(command,input=json.dumps(invalid).encode(),capture_output=True,timeout=10)
+                            self.assertEqual((rejected.returncode,rejected.stdout,rejected.stderr),(0,b'',b''));self.assertEqual(observed,[])
                 event,_=fixture()
                 command=[sys.executable,str(Path(hook.__file__)),'--provider','codex','--credential-file',str(path)]
-                result=subprocess.run(command,input=json.dumps(event).encode(),capture_output=True,timeout=10)
-                self.assertEqual((result.returncode,result.stdout,result.stderr),(0,b'',b''))
-                self.assertEqual([row[0] for row in observed],['/peer-reply/v1/challenge','/peer-reply/v1/receipt'])
-                self.assertEqual(observed[0][2],observed[1][2])
-                wire=json.dumps(observed[1][1]);self.assertNotIn('FICTIONAL_',wire);self.assertNotIn('working',wire)
                 bad[0]=True;observed.clear()
                 result=subprocess.run(command,input=json.dumps(event).encode(),capture_output=True,timeout=10)
                 self.assertEqual((result.returncode,result.stdout,result.stderr),(0,b'',b''))
