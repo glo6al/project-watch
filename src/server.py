@@ -3454,7 +3454,7 @@ class H(BaseHTTPRequestHandler):
                 return self.send(400, b'Invalid agent capability query.')
             if MESSAGING is None:
                 return self.send(503, json.dumps({'error': MESSAGING_WHY}).encode(), 'application/json')
-            out = MESSAGING.owner_capabilities(agent, dict(AGENTS))
+            out = owner_target_call('owner_capabilities', agent)
             return self.send(200, json.dumps(out).encode(), 'application/json')
         if u.path == '/agent-messages':
             if not self.keyed(self.headers.get('X-Live-Room-Key', '')):
@@ -3686,7 +3686,7 @@ class H(BaseHTTPRequestHandler):
             try:
                 if set(d) != {'agent', 'question', 'request_id'}:
                     raise MessagingError(400, 'Expected agent, question, and request_id only.')
-                out = MESSAGING.owner_action('queue', d.get('agent'), d.get('question'), d.get('request_id'), dict(AGENTS))
+                out = owner_target_call('owner_action', d.get('agent'), d.get('question'), d.get('request_id'))
             except MessagingError as e:
                 return self.send(e.status, json.dumps({'error': str(e)}).encode(), 'application/json')
             except (OSError, ValueError, sqlite3.Error):
@@ -3991,6 +3991,7 @@ class Server(ThreadingHTTPServer):
 def shared_directory_snapshot(store):
     """Read readiness facts without holding SQLite's lock or exposing transcript text."""
     import claude_channel
+    import claude_mod
     with LOCK:
         active = {aid: dict(agent) for aid, agent in AGENTS.items()}
     ready = (store.available if store.codex_available is None else store.codex_available) and not store.worker_failed
@@ -4009,23 +4010,28 @@ def shared_directory_snapshot(store):
                 and not agent.get('observed') and not agent.get('stale')):
             result[aid] = {'capability': 'reachable' if ready and desktop else 'unavailable',
                            'reason': '' if ready and desktop else 'Codex desktop or queue transport is unavailable.'}
-    for aid, agent in active.items():
-        if aid.startswith('c:'):
-            peer_ready, entry, reason = store.mods.peer_capability(aid, agent)
-            if entry:
-                result[aid] = dict(capability='reachable' if peer_ready else 'unavailable', reason=reason,
-                                   supported_transport='claude_mod', mod_enrollment=entry['id'], project=entry['project'])
+    with store.lock, store.db:
+        store.mods.maintain()
+        entries = [store.mods.get(row[0]) for row in store.db.execute('SELECT id FROM claude_mod_enrollments WHERE active=1')]
+        for entry in entries:
+            aid = entry['agent']
+            item = active.get(aid)
+            veto = aid in active and (not claude_mod.local_parent(aid, item) or item.get('cwd') != entry['project'])
+            peer_ready = not veto and store.mods.peer_ready(entry)
+            result[aid] = dict(capability='reachable' if peer_ready else 'unavailable',
+                               reason='' if peer_ready else 'Agent receiving requires explicit WATCH setup and a compatible live official plugin in this exact Claude chat.',
+                               supported_transport='claude_mod', mod_enrollment=entry['id'], project=entry['project'])
     # MCP channels follow the current native conversation after an in-process
     # switch. Descriptor identity and a listening socket cannot prove targeting.
-    result['__claude_transport__'] = {'capability': 'unavailable', 'reason': claude_channel.PEER_IDENTITY_REASON}
+    result['__claude_transport__'] = {'capability': 'unavailable', 'reason': claude_mod.PEER_UNAVAILABLE}
     return result
 
 
 def configure_shared_directory(store, home):
     import chat_directory
-    import claude_channel
+    import claude_mod
     def factory(policy):
-        live = {'snapshot': {'__claude_transport__': {'capability': 'unavailable', 'reason': claude_channel.PEER_IDENTITY_REASON}}}
+        live = {'snapshot': {'__claude_transport__': {'capability': 'unavailable', 'reason': claude_mod.PEER_UNAVAILABLE}}}
         def capture():
             while not store.stop.is_set():
                 live['snapshot'] = shared_directory_snapshot(store)
@@ -4036,6 +4042,31 @@ def configure_shared_directory(store, home):
             os.path.join(home, '.codex'), os.path.join(home, '.claude', 'projects'), policy=policy,
             codex_sessions=store.sessions_dir, live_snapshot=lambda: live['snapshot'])
     store.shared.directory_factory = factory
+
+
+def owner_target_call(method, agent, *args):
+    """Only an absent exact Claude target gets a private metadata projection."""
+    def invoke(snapshot):
+        if method == 'owner_action':
+            return MESSAGING.owner_action('queue', agent, *args, snapshot)
+        return MESSAGING.owner_capabilities(agent, snapshot)
+    with LOCK:
+        snapshot = {aid: dict(item) for aid, item in AGENTS.items()}
+    if not isinstance(agent, str) or not agent.startswith('c:') or agent in snapshot:
+        return invoke(snapshot)  # Preserve ordinary validation/dedup order and Codex I/O boundaries.
+    proof = None
+    try:
+        MESSAGING.shared.ensure_directory()
+        directory = MESSAGING.shared.directory
+        proof = directory.claude_metadata(agent, None) if directory else None
+    except Exception:
+        pass
+    with MESSAGING.lock:
+        with LOCK:
+            snapshot = {aid: dict(item) for aid, item in AGENTS.items()}
+        if agent not in snapshot and proof and MESSAGING.shared.metadata_current(proof):
+            snapshot[agent] = MESSAGING.mods.metadata_item(proof)
+        return invoke(snapshot)
 
 
 def resolve_native_agent(agent_id):

@@ -14,6 +14,7 @@ import uuid
 
 LEASE, PAIR_TTL, TTL, RETENTION = 12, 300, 900, 86400
 TRANSPORT = 'claude_mod'
+PEER_UNAVAILABLE = 'Agent receiving requires explicit WATCH setup and a compatible live official plugin in this exact Claude chat.'
 MAX_ENROLLMENTS = 256
 
 
@@ -40,9 +41,12 @@ def schema(data, required):
         raise ModError(400, 'Invalid Claude mod request fields.')
 
 
+def project_text(value):
+    return isinstance(value, str) and 0 < len(value) <= 4096 and os.path.isabs(value) and '\x00' not in value
+
+
 def project(value):
-    return (isinstance(value, str) and bool(value) and os.path.isabs(value)
-            and os.path.realpath(value) == value and len(value) <= 4096)
+    return project_text(value) and os.path.realpath(value) == value
 
 
 def local_parent(agent, item):
@@ -53,12 +57,13 @@ def local_parent(agent, item):
 
 
 def eligible(agent, item):
-    return local_parent(agent, item) and project(item.get('cwd'))
+    return local_parent(agent, item) and project_text(item.get('cwd'))
 
 
 class ClaudeMod:
     def __init__(self, store):
         self.store, self.db = store, store.db
+        self.room_snapshot = None
         self.db.execute('''CREATE TABLE IF NOT EXISTS claude_mod_pairs (
             code_hash TEXT PRIMARY KEY, agent TEXT NOT NULL, project TEXT NOT NULL, expires REAL NOT NULL)''')
         self.db.execute('''CREATE TABLE IF NOT EXISTS claude_mod_enrollments (
@@ -129,7 +134,7 @@ class ClaudeMod:
 
     def pair(self, agent, agents, port):
         item = agents.get(agent) if isinstance(agent, str) else None
-        if not eligible(agent, item):
+        if not eligible(agent, item) or not project(item['cwd']):
             raise ModError(400, 'Choose an existing local parent Claude chat with a known project.')
         code, expiry = secrets.token_urlsafe(24), time.time() + PAIR_TTL
         with self.store.lock, self.db:
@@ -169,8 +174,10 @@ class ClaudeMod:
             grant = self.db.execute('SELECT peer_receive FROM claude_mod_grants WHERE active=1').fetchone()
             authorized = bool(grant)
             entries = [self.get(r[0]) for r in self.db.execute('SELECT id FROM claude_mod_enrollments WHERE active=1 AND grant_id IS NOT NULL AND generation IS NOT NULL')]
-            connected = sum(1 for e in entries if not self.store.worker_failed and
-                            (agents is None or eligible(e['agent'], agents.get(e['agent']))
+            connected = sum(1 for e in entries if not self.store.worker_failed and e['last_seen'] > time.time() - LEASE
+                            and self.db.execute('SELECT 1 FROM claude_mod_grants WHERE id=? AND active=1', (e['grant_id'],)).fetchone()
+                            and not self.room_veto(e['agent'], e['project']) and
+                            (agents is None or e['agent'] not in agents or eligible(e['agent'], agents[e['agent']])
                              and agents[e['agent']]['cwd'] == e['project']))
             return dict(version=1, authorized=authorized, connected_chats=connected, peer_receive=bool(grant and grant[0] == 1))
 
@@ -206,7 +213,7 @@ class ClaudeMod:
                         (gid, digest(grant), time.time(), row[1]))
         return dict(version=1, grant_id=gid, grant=grant, port=port)
 
-    def register(self, data, token, agents):
+    def registration_access(self, data, token):
         fields = ('native_id', 'project', 'client_id', 'connection_seq')
         schema(data, fields + (('peer_protocol',) if isinstance(data, dict) and 'peer_protocol' in data else ()))
         protocol = data.get('peer_protocol', 0)
@@ -218,17 +225,30 @@ class ClaudeMod:
         if not grant or not hmac.compare_digest(grant[1], digest(token)):
             raise ModError(403, 'Claude registration access is invalid.', 'access_denied')
         seq = data['connection_seq']
-        if (not ident(data['native_id']) or not ident(data['client_id']) or not project(data['project'])
+        if (not ident(data['native_id']) or not ident(data['client_id']) or not project_text(data['project'])
                 or type(seq) is not int or not 0 <= seq <= 9007199254740991):
             raise ModError(400, 'Invalid Claude registration identity.', 'identity_rejected')
+        return grant
+
+    @staticmethod
+    def metadata_item(proof):
+        return dict(runtime='Claude', cwd=proof['project'], name=proof['name'])
+
+    def register(self, data, token, agents, proof=None):
+        grant = self.registration_access(data, token)
+        protocol, seq = data.get('peer_protocol', 0), data['connection_seq']
         aid, gid = 'c:'+data['native_id'], grant[0]
         item = agents.get(aid) if isinstance(agents, dict) else None
-        if item is not None and not local_parent(aid, item):
-            raise ModError(409, 'This is not an eligible local parent Claude chat and project.', 'identity_rejected')
-        if item is None or not item.get('cwd'):
-            raise ModError(409, 'Waiting for WATCH to observe this local Claude chat.', 'not_observed')
-        if not eligible(aid, item) or item['cwd'] != data['project']:
-            raise ModError(409, 'This is not an eligible local parent Claude chat and project.', 'identity_rejected')
+        if isinstance(agents, dict) and aid in agents:
+            if not local_parent(aid, item):
+                raise ModError(409, 'This is not an eligible local parent Claude chat and project.', 'identity_rejected')
+            if not item.get('cwd'):
+                raise ModError(409, 'Waiting for WATCH to observe this local Claude project.', 'not_observed')
+            if not eligible(aid, item) or item['cwd'] != data['project']:
+                raise ModError(409, 'This is not an eligible local parent Claude chat and project.', 'identity_rejected')
+        elif (not proof or proof['agent'] != aid or proof['project'] != data['project']
+              or not self.store.shared.metadata_current(proof)):
+            raise ModError(409, 'Waiting for verified local Claude parent metadata.', 'not_observed')
         active = self.db.execute('SELECT id FROM claude_mod_enrollments WHERE agent=? AND active=1', (aid,)).fetchone()
         entry = self.get(active[0]) if active else None
         if entry and not entry['grant_id']:
@@ -280,12 +300,19 @@ class ClaudeMod:
     def fields(self, entry, fields):
         return fields + (('client_id',) if entry['grant_id'] else ())
 
+    def room_veto(self, agent, project):
+        """Trusted pure in-memory callback; no discovery or filesystem work."""
+        current = self.room_snapshot() if self.room_snapshot else {}
+        return agent in current and (not local_parent(agent, current[agent]) or current[agent].get('cwd') != project)
+
     def capability(self, agent, item=None):
         with self.store.lock, self.db:
             self.maintain()
             row = self.db.execute('SELECT id FROM claude_mod_enrollments WHERE agent=? AND active=1', (agent,)).fetchone()
             entry = self.get(row[0]) if row else None
             ready = bool(entry and entry['generation'] and entry['last_seen'] > time.time() - LEASE and not self.store.worker_failed)
+            if entry and self.room_veto(agent, entry['project']):
+                ready = False
             if item is not None and entry and (not eligible(agent, item) or item.get('cwd') != entry['project']):
                 ready = False
             return ready, entry, ('' if ready else 'Connect the WATCH official mod in this exact existing Claude chat.')
@@ -293,7 +320,8 @@ class ClaudeMod:
     def peer_ready(self, entry, item=None):
         """Transaction-owned facts only: no lock, filesystem, maintenance or commit."""
         if (not entry or not entry['active'] or not entry['grant_id'] or entry['peer_protocol'] != 1
-                or not entry['generation'] or entry['last_seen'] <= time.time() - LEASE or self.store.worker_failed):
+                or not entry['generation'] or entry['last_seen'] <= time.time() - LEASE or self.store.worker_failed
+                or self.room_veto(entry['agent'], entry['project'])):
             return False
         grant = self.db.execute('SELECT peer_receive FROM claude_mod_grants WHERE id=? AND active=1',
                                 (entry['grant_id'],)).fetchone()
@@ -348,16 +376,27 @@ class ClaudeMod:
             self.maintain()
             entry = self.authenticate(token)
             self.validate_poll(entry, data)
-            candidates = [r for r in self.rows() if data['accept'] and self.peer_row(r)
-                          and r.get('mod_enrollment') == entry['id'] and not r.get('launched') and r['state'] == 'sending']
+            new_rows = [r for r in self.rows() if data['accept'] and r.get('mod_enrollment') == entry['id']
+                        and not r.get('launched') and r['state'] == 'sending']
+            candidates = [r for r in new_rows if self.peer_row(r)]
+        snapshot = agents() if callable(agents) else agents
+        proof = None
+        if new_rows and (not isinstance(snapshot, dict) or entry['agent'] not in snapshot):
+            try:
+                proof = self.store.shared.metadata_target(entry['agent'], entry['project'])
+            except Exception:
+                pass  # Heartbeats and original receipts do not require new-claim evidence.
         prepared = {}
         for row in candidates:
             try:
                 prepared[row['request_id']] = self.store.shared.prepare_mod_claim(row)
             except Exception:
                 prepared[row['request_id']] = None
-        snapshot = agents() if callable(agents) else agents
         with self.store.lock, self.db:
+            snapshot = agents() if callable(agents) else agents  # pure current room vetoes
+            snapshot = dict(snapshot) if isinstance(snapshot, dict) else {}
+            if entry['agent'] not in snapshot and proof and self.store.shared.metadata_current(proof):
+                snapshot[entry['agent']] = self.metadata_item(proof)
             self.maintain()
             # Connection or grant replacement during preparation invalidates this
             # poll; retained original attempts can still recover after reconnect.
@@ -453,8 +492,28 @@ class ClaudeMod:
         return dict(request_id=row['request_id'], state=row['state'], turn_id=row.get('mod_turn', ''))
 
     def call(self, method, data, token='', agents=None, port=None):
+        if callable(agents):
+            self.room_snapshot = agents
         if method == 'poll':
             return self.poll_call(data, token, agents)
+        if method == 'register':
+            with self.store.lock, self.db:
+                self.maintain()
+                self.registration_access(data, token)
+            if not project(data['project']):
+                raise ModError(409, 'The Claude project is not canonical.', 'identity_rejected')
+            snapshot = agents() if callable(agents) else agents
+            aid = 'c:' + data['native_id']
+            proof = None
+            if not isinstance(snapshot, dict) or aid not in snapshot:
+                try:
+                    proof = self.store.shared.metadata_target(aid, data['project'])
+                except Exception:
+                    raise ModError(409, 'Waiting for verified local Claude parent metadata.', 'not_observed') from None
+            with self.store.lock, self.db:
+                self.maintain()
+                current = agents() if callable(agents) else agents  # pure room snapshot only
+                return self.register(data, token, current, proof)
         agents = agents() if callable(agents) else agents
         with self.store.lock, self.db:
             self.maintain()
@@ -462,8 +521,6 @@ class ClaudeMod:
                 return self.enroll(data)
             if method == 'setup':
                 return self.setup(data, port)
-            if method == 'register':
-                return self.register(data, token, agents)
             entry = self.authenticate(token)
             if method == 'connect':
                 if entry['grant_id']:

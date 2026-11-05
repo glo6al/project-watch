@@ -754,6 +754,16 @@ class SharedBridge:
             self.directory_thread = threading.Thread(target=refresh, daemon=True, name='watch-chat-directory')
             self.directory_thread.start()
 
+    def metadata_target(self, agent_id, project):
+        """Transport-independent pinned Claude proof, outside store locks."""
+        self.ensure_directory()
+        if self.directory is None:
+            raise PeerError(409, 'Claude metadata discovery is not available yet.')
+        return self.directory.claude_metadata(agent_id, project)
+
+    def metadata_current(self, proof):
+        return bool(self.directory and self.directory.claude_proof_current(proof))
+
     def _resolve(self, agent_id, revision):
         if self.directory is None:
             raise PeerError(503, 'The chat directory is unavailable.')
@@ -821,7 +831,7 @@ class SharedBridge:
                 active = self.store.db.execute('SELECT id FROM claude_mod_enrollments WHERE agent=? AND active=1', (agent_id,)).fetchone()
                 entry = self.store.mods.get(active[0]) if active else None
                 if not self.store.mods.peer_ready(entry):
-                    raise PeerError(409, claude_channel.PEER_IDENTITY_REASON)
+                    raise PeerError(409, 'Connect the WATCH official plugin with agent receiving enabled. Legacy channel peer delivery is blocked: native conversation identity can change while connected.')
         target = self._resolve(agent_id, identity_revision)
         transport = self._preflight(target)
         now, tid = time.time(), str(uuid.uuid4())

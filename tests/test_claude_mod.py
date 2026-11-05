@@ -480,4 +480,22 @@ class ClaudeModTests(unittest.TestCase):
             self.assertEqual(self.http('/claude-mod/register',dict(bodies[0],native_id=other),token=grant['grant'])[0],429)
 
 
+    def test_registration_missing_project_remains_retryable_same_episode(self):
+        _,grant=self.global_setup()
+        server.AGENTS[self.aid].pop('cwd')
+        status,value,body=self.register_global(grant)
+        self.assertEqual((status,value['error_code']),(409,'not_observed'))
+        server.AGENTS[self.aid]['cwd']=self.project
+        status,value=self.http('/claude-mod/register',body,token=grant['grant'])
+        self.assertEqual(status,200,value)
+        self.assertEqual(value['client_id'],body['client_id'])
+
+    def test_owner_invalid_target_keeps_existing_validation_and_conflict_order(self):
+        status,value=self.http('/agent-message',dict(agent={},question='Fictional question',request_id=uid()),owner=True)
+        self.assertEqual(status,400,value)
+        self.enroll();payload,_=self.request()
+        status,value=self.http('/agent-message',dict(payload,agent={}),owner=True)
+        self.assertEqual(status,409,value)
+
+
 if __name__=='__main__':unittest.main()

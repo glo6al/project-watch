@@ -318,6 +318,113 @@ class DirectoryTests(unittest.TestCase):
         self.assertEqual(final['agents'][0]['agent_id'], aid)
 
 
+    def test_idle_metadata_is_strict_offline_and_independent_of_codex(self):
+        aid, path = self.claude_chat()
+        with open(self.index, 'w') as f: f.write('{broken\n')
+        directory = self.directory()
+        for _ in range(5): directory.refresh(force=True)
+        self.assertFalse(directory.status()['complete'])
+        proof = directory.claude_metadata(aid, self.root)
+        self.assertEqual(proof['agent'], aid)
+        self.assertTrue(directory.claude_proof_current(proof))
+        entry = next(e for e in directory.list_agents()['agents'] if e['agent_id'] == aid)
+        self.assertEqual(entry['capability'], 'unavailable')  # Metadata never proves an online host.
+        for suffix in ['{', '{malformed}\n', json.dumps({'isSidechain': True})+'\n', json.dumps({'sessionId':uid()})+'\n']:
+            with self.subTest(suffix=suffix):
+                with open(path) as source: original = source.read()
+                try:
+                    with open(path, 'a') as f: f.write(suffix)
+                    with self.assertRaises(d.DirectoryError): directory.claude_metadata(aid,self.root)
+                finally:
+                    with open(path, 'w') as f: f.write(original)
+                    directory._claude_selected.clear()
+        with self.assertRaises(d.DirectoryError): directory.claude_metadata(aid,self.root+'/wrong')
+        denied = self.directory(policy={'history_days':'all','project_deny':[self.root]})
+        for _ in range(3): denied.refresh(force=True)
+        with self.assertRaises(d.DirectoryError): denied.claude_metadata(aid,self.root)
+
+    def test_idle_duplicate_coverage_precedes_title_and_content_filters(self):
+        aid, path = self.claude_chat()
+        second = os.path.join(self.claude,'another'); os.mkdir(second)
+        with open(os.path.join(second,aid[2:]+'.jsonl'),'w') as f: f.write('{')
+        directory = self.directory(max_files=1)
+        with self.assertRaises(d.DirectoryError): directory.claude_metadata(aid,self.root)
+        for _ in range(10): directory.refresh(force=True)
+        self.assertEqual(len(directory._claude_candidates(aid[2:])),2)
+        with self.assertRaises(d.DirectoryError): directory.claude_metadata(aid,self.root)
+
+    def test_idle_selected_progress_and_known_rotation_veto(self):
+        aid, path = self.claude_chat()
+        self.append(path, {'type':'assistant','message':{'content':'x'*6000}})
+        for i in range(14): open(os.path.join(self.sessions,str(i)+'.txt'),'w').close()
+        directory = self.directory(max_entries=2,max_bytes=4096)
+        proof = None
+        for _ in range(20):
+            directory.refresh(force=True)
+            try: proof=directory.claude_metadata(aid,self.root); break
+            except d.DirectoryError: pass
+        self.assertIsNotNone(proof,'selected metadata must make bounded progress independent of broad traversal')
+        self.assertTrue(directory.claude_proof_current(proof))
+        replacement=path+'.replacement'
+        with open(replacement,'w') as f: f.write(json.dumps({'sessionId':aid[2:],'cwd':self.root,'isSidechain':True})+'\n')
+        os.replace(replacement,path)
+        for _ in range(4): directory.refresh(force=True)
+        with self.assertRaises(d.DirectoryError): directory.claude_metadata(aid,self.root)
+        self.assertFalse(directory.claude_proof_current(proof),'known replaced or invalid identity must veto an old prepared proof')
+
+    def test_idle_canonical_project_retarget_invalidates_prepared_proof(self):
+        first=os.path.join(self.root,'project-a');second=os.path.join(self.root,'project-b')
+        os.mkdir(first);os.mkdir(second)
+        link=os.path.join(self.root,'project-link');os.symlink(first,link)
+        aid,_=self.claude_chat(project=link)
+        directory=self.directory();self.complete(directory)
+        for rejected_lookup in (True,False):
+            with self.subTest(rejected_lookup=rejected_lookup):
+                os.unlink(link);os.symlink(first,link)
+                old=directory.claude_metadata(aid,first)
+                self.assertTrue(directory.claude_proof_current(old))
+                os.unlink(link);os.symlink(second,link)
+                if rejected_lookup:
+                    with self.assertRaises(d.DirectoryError): directory.claude_metadata(aid,first)
+                else:
+                    new=directory.claude_metadata(aid,second)
+                    self.assertTrue(directory.claude_proof_current(new))
+                self.assertFalse(directory.claude_proof_current(old),
+                                 'old canonical project proof must be invalidated after observed symlink retarget')
+                new=directory.claude_metadata(aid,second)
+                self.assertTrue(directory.claude_proof_current(new))
+
+    def test_idle_broad_canonical_observation_invalidates_without_selected_lookup(self):
+        first=os.path.join(self.root,'broad-a');second=os.path.join(self.root,'broad-b')
+        os.mkdir(first);os.mkdir(second)
+        link=os.path.join(self.root,'broad-link');os.symlink(first,link)
+        aid,_=self.claude_chat(project=link)
+        directory=self.directory()
+        row=next(e for e in self.complete(directory)['agents'] if e['agent_id']==aid)
+        old=directory.claude_metadata(aid,first)
+        os.unlink(link);os.symlink(second,link)
+        with self.assertRaises(d.DirectoryError): directory.resolve(aid,row['identity_revision'],False)
+        directory.refresh(force=True)
+        self.assertFalse(directory.claude_proof_current(old),
+                         'a newer broad canonical observation must invalidate the old project proof')
+        # A separate ordinary directory keeps broad A cached while its selected read learns B.
+        os.unlink(link);os.symlink(first,link)
+        older=self.directory();self.complete(older)
+        os.unlink(link);os.symlink(second,link)
+        current=older.claude_metadata(aid,second)
+        older.refresh(force=True)
+        self.assertTrue(older.claude_proof_current(current),
+                        'reused older broad canonical cache must not veto fresher selected proof')
+
+    def test_idle_requires_positive_native_id_and_safe_file(self):
+        aid,path=self.claude_chat()
+        with open(path,'w') as f: f.write(json.dumps({'type':'custom-title','customTitle':'No ID','cwd':self.root})+'\n')
+        directory=self.directory();self.complete(directory)
+        with self.assertRaises(d.DirectoryError): directory.claude_metadata(aid,self.root)
+        os.unlink(path);os.symlink(self.index,path)
+        with self.assertRaises(d.DirectoryError): directory.claude_metadata(aid,self.root)
+
+
 @unittest.skipIf(os.name == 'nt', 'POSIX native metadata path validation')
 class PerformanceTests(unittest.TestCase):
     setUp = DirectoryTests.setUp

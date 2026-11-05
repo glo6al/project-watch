@@ -6,6 +6,7 @@ from pathlib import Path
 import sqlite3
 import sys
 import threading
+import time
 import unittest
 from unittest.mock import patch
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'src'))
@@ -287,6 +288,130 @@ class ClaudePeerBackendTests(unittest.TestCase):
             self.store.mods.put(row)
         self.assertEqual(self.store.mods.rows(),[])
         self.assertEqual(self.event(dict(request_id=row['request_id'],attempt_id=row['mod_attempt_id']))[0],409)
+
+
+    def test_idle_registration_owner_peer_and_status_without_room(self):
+        self.target();server.AGENTS.clear()
+        self.setup_global()
+        self.assertEqual(server.AGENTS,{})
+        target=self.target()
+        self.assertEqual((target['supported_transport'],target['capability']),('claude_mod','reachable'))
+        self.assertEqual(self.store.mods.setup_status({})['connected_chats'],1)
+        result=self.send();poll=self.global_poll(self.body['client_id'])[1]
+        self.assertIsNotNone(poll['claim'],'verified idle peer must claim without a room member')
+        self.assertEqual(self.event(poll['claim'])[0],200)
+        payload,owner=self.request('Fictional owner idle question')
+        claim=self.global_poll(self.body['client_id'])[1]['claim']
+        self.assertIsNotNone(claim,'verified idle owner request must claim without a room member')
+        self.assertEqual(server.AGENTS,{})
+        self.assertEqual(self.event(claim)[0],200)
+        self.assertEqual(self.store.shared.result(result['request_id'])['state'],'answered')
+        self.assertEqual(self.store.mods.setup_status({})['connected_chats'],1)
+        entry=self.store.mods.get(self.registration['enrollment_id'])
+        self.assertFalse(self.store.mods.peer_ready(dict(entry,last_seen=time.time()-13)),'an expired lease cannot be peer-ready')
+        self.store.db.execute('UPDATE claude_mod_enrollments SET last_seen=0');self.store.db.commit()
+        self.assertEqual(self.store.mods.setup_status({})['connected_chats'],0)
+        self.assertEqual(self.target()['capability'],'unavailable')
+
+    def test_idle_auth_filesystem_boundaries_and_revocation_during_prepare(self):
+        self.target();server.AGENTS.clear()
+        status,setup=self.http('/claude-mod-setup',{'peer_receive':True},owner=True)
+        _,grant=self.http('/claude-mod/setup',{'code':setup['pair_code']})
+        original=self.store.shared.metadata_target
+        realpath=chat_directory.os.path.realpath
+        def outside(path,*args,**kwargs):
+            self.assertFalse(self.store.lock._is_owned(),'filesystem must be outside store lock')
+            self.assertFalse(self.store.db.in_transaction,'filesystem must be outside transaction')
+            return realpath(path,*args,**kwargs)
+        with patch.object(self.store.shared,'metadata_target',side_effect=AssertionError('unauthenticated discovery')):
+            self.assertEqual(self.register_global(dict(grant,grant='0'*64))[0],403)
+        with patch.object(chat_directory.os.path,'realpath',side_effect=outside):
+            self.assertEqual(self.register_global(grant)[0],200)
+        # A fresh client cannot commit against a grant revoked after its pinned read.
+        with self.store.lock,self.store.db:
+            self.store.db.execute('UPDATE claude_mod_enrollments SET active=0,generation=NULL')
+        def revoke(*args):
+            proof=original(*args)
+            self.store.mods.revoke()
+            return proof
+        with patch.object(self.store.shared,'metadata_target',side_effect=revoke):
+            self.assertEqual(self.register_global(grant)[0],403)
+        self.assertEqual(self.store.db.execute('SELECT COUNT(*) FROM claude_mod_enrollments WHERE active=1').fetchone()[0],0)
+
+    def test_idle_registration_preparation_rechecks_host_room_and_metadata(self):
+        self.target();server.AGENTS.clear()
+        _,setup=self.http('/claude-mod-setup',{'peer_receive':True},owner=True)
+        _,grant=self.http('/claude-mod/setup',{'code':setup['pair_code']})
+        original=self.store.shared.metadata_target
+        def competing(*args):
+            proof=original(*args)
+            body=dict(native_id=self.sid,project=self.project,client_id=uid(),connection_seq=0,peer_protocol=1)
+            with self.store.lock,self.store.db:
+                self.store.mods.register(body,grant['grant'],{},proof)
+            return proof
+        with patch.object(self.store.shared,'metadata_target',side_effect=competing):
+            status,value,_=self.register_global(grant,peer_protocol=1)
+            self.assertEqual((status,value['error_code']),(409,'host_conflict'))
+        with self.store.lock,self.store.db:
+            self.store.db.execute('UPDATE claude_mod_enrollments SET active=0,generation=NULL')
+        def room_change(*args):
+            proof=original(*args)
+            server.AGENTS[self.aid]=dict(self.agents[self.aid],sub=True)
+            return proof
+        with patch.object(self.store.shared,'metadata_target',side_effect=room_change):
+            status,value,_=self.register_global(grant,peer_protocol=1)
+            self.assertEqual((status,value['error_code']),(409,'identity_rejected'))
+        server.AGENTS.clear()
+        def metadata_change(*args):
+            proof=original(*args)
+            replacement=self.transcript.with_suffix('.replacement')
+            replacement.write_text(json.dumps(dict(sessionId=self.sid,cwd=self.project,isSidechain=True))+'\n')
+            os.replace(replacement,self.transcript)
+            with self.assertRaises(chat_directory.DirectoryError): self.directory.claude_metadata(self.aid,self.project)
+            return proof
+        with patch.object(self.store.shared,'metadata_target',side_effect=metadata_change):
+            status,value,_=self.register_global(grant,peer_protocol=1)
+            self.assertEqual((status,value['error_code']),(409,'not_observed'))
+        self.assertEqual(self.store.db.execute('SELECT COUNT(*) FROM claude_mod_enrollments WHERE active=1').fetchone()[0],0)
+
+    def test_idle_present_room_vetoes_and_prepare_race(self):
+        self.target();server.AGENTS.clear();self.setup_global()
+        result=self.send()
+        original=self.store.shared.prepare_mod_claim
+        def veto(row):
+            prepared=original(row)
+            server.AGENTS[self.aid]=dict(self.agents[self.aid],parent='c:'+uid())
+            return prepared
+        with patch.object(self.store.shared,'prepare_mod_claim',side_effect=veto):
+            self.assertIsNone(self.global_poll(self.body['client_id'])[1]['claim'])
+        self.assertIsNone(self.store.db.execute('SELECT launched FROM shared_bridge_requests WHERE client_id=?',(result['request_id'],)).fetchone()[0])
+        self.assertEqual(self.target()['capability'],'unavailable')
+        self.assertEqual(self.store.mods.setup_status(dict(server.AGENTS))['connected_chats'],0)
+        with self.assertRaises(peer_bridge.PeerError): self.send('Another fictional question')
+        status,_=self.http('/agent-message',dict(agent=self.aid,question='Owner veto',request_id=uid()),owner=True)
+        self.assertEqual(status,503)
+        server.AGENTS.clear()
+        for flags in [dict(runtime='Codex'),dict(sub=True),dict(observed='process'),dict(cwd='/fictional/wrong')]:
+            server.AGENTS[self.aid]=dict(self.agents[self.aid],**flags)
+            self.assertEqual(self.store.mods.setup_status(dict(server.AGENTS))['connected_chats'],0)
+            self.assertEqual(self.target()['capability'],'unavailable')
+        server.AGENTS.clear()
+
+    def test_idle_owner_only_membership_never_grants_peer_receiving(self):
+        self.target();server.AGENTS.clear();self.setup_global(consent=False,protocol=0)
+        self.assertEqual(self.store.mods.setup_status({})['connected_chats'],1)
+        self.assertEqual(self.target()['capability'],'unavailable')
+        with self.assertRaises(peer_bridge.PeerError): self.send()
+        self.request('Fictional owner-only question')
+        self.assertIsNotNone(self.global_poll(self.body['client_id'])[1]['claim'])
+
+    def test_idle_missing_receiver_is_truthful_and_metadata_is_not_liveness(self):
+        target=self.target();server.AGENTS.clear()
+        self.assertEqual(target['capability'],'unavailable')
+        self.assertIn('official plugin',target['reason'])
+        self.assertNotIn('identity can change',target['reason'])
+        with self.assertRaises(peer_bridge.PeerError): self.send()
+        self.assertEqual(self.store.db.execute('SELECT COUNT(*) FROM shared_bridge_requests').fetchone()[0],0)
 
 
 if __name__=='__main__':unittest.main()

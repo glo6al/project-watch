@@ -233,6 +233,11 @@ class ChatDirectory:
         self._files, self._titles, self._entries = {}, {}, {}
         self._index = None
         self._walk = None
+        self._claude_walk = None
+        self._claude_paths, self._claude_next, self._claude_selected = {}, {}, {}
+        self._claude_canonical = {}
+        self._claude_errors = set()
+        self._claude_covered = False
         self._walk_errors = set()
         self._seen = set()
         self._pending = None
@@ -273,8 +278,12 @@ class ChatDirectory:
             p['history_days'] == 'all' or _timestamp(last_seen) and last_seen >= self.now() - p['history_days'] * 86400)
 
     def _paths(self):
+        return self._provider_paths()
+
+    def _provider_paths(self, providers=None, errors=None, include_old=False):
+        errors = self._walk_errors if errors is None else errors
         for provider, root in (('codex', self.codex_sessions), ('claude', self.claude_root)):
-            if provider not in self.policy['providers']:
+            if provider not in self.policy['providers'] or providers is not None and provider not in providers:
                 continue
             stack = [(root, 0)]
             while stack:
@@ -291,13 +300,108 @@ class ChatDirectory:
                                     ident = item.name[:-6] if provider == 'claude' else item.name[-42:-6]
                                     recent = (self.policy['history_days'] == 'all' or item.stat(follow_symlinks=False).st_mtime >=
                                               self.now() - self.policy['history_days'] * 86400)
-                                    if recent and _uuid(ident) and (provider != 'claude' or depth == 1):
+                                    if (recent or include_old) and _uuid(ident) and (provider != 'claude' or depth == 1):
                                         candidate = provider, item.path, ident
                             # Traversal steps have their own bound, not a double file charge.
                             yield candidate
                 except OSError:
                     if os.path.lexists(folder):
-                        self._walk_errors.add('Some metadata directories could not be read.')
+                        errors.add('Some metadata directories could not be read.')
+
+    def _advance_claude_coverage(self):
+        """Bounded filename coverage, independent of transcript/title parsing."""
+        if self._claude_walk is None:
+            self._claude_errors, self._claude_next = set(), {}
+            self._claude_steps = 0
+            self._claude_walk = self._provider_paths(('claude',), self._claude_errors, include_old=True)
+        deadline = time.monotonic() + self.max_scan_seconds / 2
+        for _ in range(self.max_files * 4):
+            if time.monotonic() >= deadline:
+                break
+            try:
+                candidate = next(self._claude_walk)
+            except StopIteration:
+                with self.lock:
+                    self._claude_paths = self._claude_next
+                    self._claude_covered = not self._claude_errors
+                    self._claude_walk = None
+                break
+            self._claude_steps += 1
+            if self._claude_steps > self.max_entries * 4:
+                self._claude_errors.add('Claude traversal exceeds safe bounds.')
+                self._claude_covered = False
+                self._claude_walk.close()
+                self._claude_walk = None
+                break
+            if candidate is not None:
+                _, path, ident = candidate
+                with self.lock:
+                    self._claude_next.setdefault(ident, set()).add(path)
+
+    def _claude_candidates(self, ident):
+        with self.lock:
+            if not self._claude_covered or self._claude_errors:
+                return set()
+            return set(self._claude_paths.get(ident, ())) | set(self._claude_next.get(ident, ()))
+
+    def _observe_claude_project(self, path, canonical):
+        # Only an actual realpath read advances this observation, never a reused project_cache.
+        observed = time.monotonic()
+        with self.lock:
+            previous = self._claude_canonical.get(path)
+            if (previous is None and len(self._claude_canonical) < self.max_entries
+                    or previous is not None and observed >= previous[1]):
+                self._claude_canonical[path] = canonical, observed
+        return observed
+
+    def claude_metadata(self, agent_id, project):
+        """Fresh exact parent identity proof; never calls live transport or enumerates."""
+        if not isinstance(agent_id, str) or not agent_id.startswith('c:') or not _uuid(agent_id[2:]):
+            raise DirectoryError(409, 'Claude metadata identity is not verified.')
+        ident = agent_id[2:]
+        paths = self._claude_candidates(ident)
+        if len(paths) != 1:
+            raise DirectoryError(409, 'Claude identity coverage is incomplete or ambiguous.')
+        path = next(iter(paths))
+        with self._file_lock(path):
+            # Progress for this selected path cannot depend on broad provider traversal.
+            _, done = self._read_chat_locked('claude', path, ident, self.max_bytes, self._claude_selected, True)
+            state = self._claude_selected.get(path)
+            if (not done or not state or not state.get('done') or state.get('invalid') or state.get('uncertain')
+                    or state.get('partial') or state.get('pending') or state.get('skip') or not state.get('native_id_verified')):
+                raise DirectoryError(409, 'Claude parent metadata is incomplete or unverified.')
+            raw = state['meta'].get('project')
+            if not _text(raw, 4096) or not os.path.isabs(raw):
+                raise DirectoryError(409, 'Claude project metadata is not verified.')
+            canonical = os.path.realpath(raw)
+            # Keep newly observed project identity even when the caller expected another one.
+            canonical_at = self._observe_claude_project(path, canonical)
+            if (project is not None and (canonical != project or os.path.realpath(project) != project)
+                    or not self._eligible(canonical, state['last_seen'])):
+                raise DirectoryError(409, 'Claude project is outside the selected identity or eligibility policy.')
+            if self._claude_candidates(ident) != {path}:
+                raise DirectoryError(409, 'Claude identity coverage changed.')
+            return dict(agent=agent_id, project=canonical, name=state['meta'].get('name') or 'Claude',
+                        identity=dict(path=path, device=state['token'][0], inode=state['token'][1]), metadata_project=raw, checked_at=state['checked_at'], canonical_at=canonical_at)
+
+    def claude_proof_current(self, proof):
+        """Pure cached check usable at final DB gates; no filesystem or transport."""
+        if not isinstance(proof, dict) or self._claude_candidates(proof['agent'][2:]) != {proof['identity']['path']}:
+            return False
+        path = proof['identity']['path']
+        selected = self._claude_selected.get(path)
+        canonical = self._claude_canonical.get(path)
+        if selected is None or canonical is None or canonical[0] != proof['project'] or canonical[1] < proof['canonical_at']:
+            return False
+        for state in (selected, self._files.get(path)):
+            if state is None or state.get('checked_at', 0) < proof['checked_at']:
+                continue  # An older broad snapshot is not a veto on a fresher selected read.
+            if (state['token'] != (proof['identity']['device'], proof['identity']['inode'])
+                    or not state.get('done') or not state.get('native_id_verified')
+                    or any(state.get(k) for k in ('invalid', 'uncertain', 'partial', 'pending', 'skip'))
+                    or state['meta'].get('project') != proof['metadata_project']):
+                return False
+        return True
 
     def _file_lock(self, path):
         return self.file_locks[hash(path) % len(self.file_locks)]
@@ -317,7 +421,7 @@ class ChatDirectory:
                      'uncertain': False, 'meta': {}, 'invalid': False, 'done': False}
             states[path] = state
         state['changed'] = state.get('stamp') != stamp
-        state.update(size=st.st_size, mtime=st.st_mtime_ns, last_seen=st.st_mtime, stamp=stamp)
+        state.update(size=st.st_size, mtime=st.st_mtime_ns, last_seen=st.st_mtime, stamp=stamp, checked_at=time.monotonic())
         return fd, st, state
 
     @staticmethod
@@ -454,6 +558,8 @@ class ChatDirectory:
                     s['invalid'] = True
                 if d.get('sessionId') is not None and d['sessionId'] != ident:
                     s['invalid'] = True
+                elif d.get('sessionId') == ident:
+                    s['native_id_verified'] = True
                 if d.get('type') == 'custom-title':
                     title = d.get('customTitle')
                     s['meta']['name'] = title.strip() if _text(title, MAX_TITLE) else None
@@ -483,6 +589,8 @@ class ChatDirectory:
         project_cache = s.get('project_cache')
         if fresh_project or not project_cache or project_cache[0] != project:
             project_cache = s['project_cache'] = (project, os.path.realpath(project))
+            if provider == 'claude':
+                self._observe_claude_project(path, project_cache[1])
         project = project_cache[1]
         if not self._eligible(project, s['last_seen']):
             return None
@@ -504,6 +612,8 @@ class ChatDirectory:
         if provider == 'codex' and self._index and self._index['uncertain']:
             capability, reason = 'unavailable', 'Codex title metadata is unverifiable; exact name and revision cannot be confirmed.'
         mod_transport = provider == 'claude' and facts.get('supported_transport') == 'claude_mod'
+        if mod_transport and (not s.get('native_id_verified') or self._claude_candidates(ident) != {path}):
+            capability, reason = 'unavailable', 'Claude parent metadata identity or uniqueness is not verified.'
         enrollment = facts.get('mod_enrollment') if mod_transport else None
         instance = facts.get('instance_id') if provider == 'claude' and not mod_transport else None
         if mod_transport and capability == 'reachable' and not _uuid(enrollment):
@@ -571,6 +681,7 @@ class ChatDirectory:
     def refresh(self, force=False):
         """Advance at most one bounded batch. Repeated incomplete calls make progress."""
         with self.refresh_lock:
+            self._advance_claude_coverage()
             now = self.now()
             if not force and not self.work_pending and self._last_attempt is not None and now - self._last_attempt < self.cache_seconds:
                 return self.status()

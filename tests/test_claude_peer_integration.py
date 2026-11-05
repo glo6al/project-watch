@@ -33,10 +33,15 @@ class ClaudePeerIntegration(unittest.TestCase):
                 (claude/'fixture'/(native+'.jsonl')).write_text(json.dumps(dict(type='custom-title',customTitle=name,sessionId=native,cwd=str(project)))+'\n')
             store=officer_messaging.MessagingStore(str(root/'state'),str(codex/'sessions'))
             store.codex_available=False
-            agents={'c:'+native:dict(runtime='Claude',name=name,cwd=str(project)) for native,name in zip(NATIVE,['Atlas','Birch'])}
+            agents={}  # Genuine idle receivers: no room row or activity poke at any phase.
             httpd=server.Server(('127.0.0.1',0),server.H)
             with patch.multiple(server,MESSAGING=store,KEY='fictional-owner-key',PORT=httpd.server_port,AGENTS=agents):
                 store.shared.directory=chat_directory.ChatDirectory(str(codex),str(claude),policy={'providers':['claude'],'history_days':'all'},live_snapshot=lambda:server.shared_directory_snapshot(store),cache_seconds=0)
+                for _ in range(40):
+                    if store.shared.directory.refresh(force=True)['complete']:
+                        break
+                self.assertTrue(store.shared.directory.status()['complete'])
+                self.assertEqual(server.AGENTS,{})
                 with store.lock,store.db:
                     credential=peer_bridge.initialize_service(store.db,{'providers':['claude'],'history_days':'all'})
                 credential['port']=httpd.server_port
@@ -50,8 +55,16 @@ class ClaudePeerIntegration(unittest.TestCase):
                     response=conn.getresponse();body=response.read();conn.close()
                     self.assertEqual(response.status,200,body);setup=json.loads(body)
                     self.assertIs(setup['peer_receive'],True)
-                    process=subprocess.run(['node',str(ROOT/'integrations/claude-mod/tests/peer.integration.mjs')],input=json.dumps(dict(port=httpd.server_port,code=setup['pair_code'],project=str(project),owner_key=server.KEY,native=NATIVE,credential=str(credential_file))),text=True,capture_output=True,timeout=40)
+                    original_call=store.mods.call
+                    def idle_call(*args,**kwargs):
+                        self.assertEqual(server.AGENTS,{})
+                        result=original_call(*args,**kwargs)
+                        self.assertEqual(server.AGENTS,{})
+                        return result
+                    with patch.object(store.mods,'call',side_effect=idle_call):
+                        process=subprocess.run(['node',str(ROOT/'integrations/claude-mod/tests/peer.integration.mjs')],input=json.dumps(dict(port=httpd.server_port,code=setup['pair_code'],project=str(project),owner_key=server.KEY,native=NATIVE,credential=str(credential_file))),text=True,capture_output=True,timeout=40)
                     self.assertEqual(process.returncode,0,process.stdout+'\n'+process.stderr+'\nDirectory: '+json.dumps(store.shared.directory.list_agents()))
+                    self.assertEqual(server.AGENTS,{})
                     result=json.loads(process.stdout)
                     self.assertEqual(result,dict(peer_reply='Cedar is blue.',native_submissions=[1,1],duplicate_recovered=True,owner_reply='Fictional owner reply.'))
                     rows=store._rows();peers=[r for r in rows if r.get('origin')=='peer']
