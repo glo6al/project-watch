@@ -364,6 +364,14 @@ class ChatDirectory:
             raise DirectoryError(409, 'Claude identity coverage is incomplete or ambiguous.')
         path = next(iter(paths))
         with self._file_lock(path):
+            # Reuse completed identity parsing only for a cold selected cache. The
+            # normal fresh open/stat/tail read below still validates this snapshot.
+            broad = self._files.get(path)
+            if (path not in self._claude_selected and len(self._claude_selected) < self.max_entries
+                    and broad and broad.get('provider') == 'claude' and broad.get('ident') == ident
+                    and broad.get('done') and broad.get('native_id_verified')
+                    and not any(broad.get(k) for k in ('invalid', 'uncertain', 'partial', 'pending', 'skip'))):
+                self._claude_selected[path] = copy.deepcopy(broad)
             # Progress for this selected path cannot depend on broad provider traversal.
             _, done = self._read_chat_locked('claude', path, ident, self.max_bytes, self._claude_selected, True)
             state = self._claude_selected.get(path)

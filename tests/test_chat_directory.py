@@ -343,6 +343,79 @@ class DirectoryTests(unittest.TestCase):
         for _ in range(3): denied.refresh(force=True)
         with self.assertRaises(d.DirectoryError): denied.claude_metadata(aid,self.root)
 
+    def large_cold_claude(self, project=None):
+        aid,path=self.claude_chat(project=project)
+        self.append(path,{'type':'assistant','message':{'content':'x'*600000}})
+        directory=self.directory(max_bytes=2097152)
+        self.complete(directory)
+        self.assertGreater(os.path.getsize(path),524288)
+        self.assertTrue(directory._files[path]['done'])
+        self.assertTrue(directory._files[path]['native_id_verified'])
+        self.assertNotIn(path,directory._claude_selected)
+        return directory,aid,path
+
+    def test_cold_large_claude_first_lookup_reuses_only_verified_broad_progress(self):
+        directory,aid,path=self.large_cold_claude()
+        broad=directory._files[path]
+        try:proof=directory.claude_metadata(aid,self.root)
+        except d.DirectoryError as error:self.fail('Cold first lookup must reuse verified broad metadata: '+str(error))
+        self.assertTrue(directory.claude_proof_current(proof))
+        selected=directory._claude_selected[path]
+        self.assertIsNot(selected,broad);self.assertIsNot(selected['meta'],broad['meta'])
+        self.assertIsNot(selected['parser'],broad['parser'])
+        offset=broad['offset']
+        self.append(path,{'cwd':self.root+'/ordinary-later-cwd'})
+        self.assertEqual(directory.claude_metadata(aid,self.root)['project'],self.root)
+        self.assertIs(directory._claude_selected[path],selected)
+        self.assertEqual(broad['offset'],offset,'selected parsing must not advance the broad cache')
+        with self.assertRaises(d.DirectoryError):directory.claude_metadata(aid,self.root+'/wrong-expected')
+
+    def test_cold_seed_preserves_unsafe_broad_full_cache_and_existing_selected_veto(self):
+        directory,aid,path=self.large_cold_claude();broad=directory._files[path]
+        for field,value in [('provider','codex'),('ident',uid()),('done',False),('native_id_verified',False),
+                            ('invalid',True),('uncertain',True),('partial',True),('pending',b'{'),('skip',True)]:
+            with self.subTest(field=field):
+                previous=broad.get(field);broad[field]=value;directory._claude_selected.clear()
+                with self.assertRaises(d.DirectoryError):directory.claude_metadata(aid,self.root)
+                self.assertEqual(directory._claude_selected[path]['offset'],524288)
+                self.assertEqual(broad[field],value,'selected read must not clear a broad contradiction')
+                broad[field]=previous
+        # Existing bounded progress must continue, never be replaced by an eligible broad seed.
+        selected=directory._claude_selected[path]
+        proof=directory.claude_metadata(aid,self.root)
+        self.assertTrue(directory.claude_proof_current(proof));self.assertIs(directory._claude_selected[path],selected)
+        selected['invalid']=True
+        with self.assertRaises(d.DirectoryError):directory.claude_metadata(aid,self.root)
+        self.assertTrue(selected['invalid']);self.assertIs(directory._claude_selected[path],selected)
+        directory._claude_selected.clear();directory.max_entries=1
+        directory._claude_selected['fictional-full-slot']={}
+        with self.assertRaises(d.DirectoryError):directory.claude_metadata(aid,self.root)
+        self.assertEqual(directory._claude_selected,{'fictional-full-slot':{}})
+
+    def test_cold_seed_always_fresh_reads_tail_inode_truncation_and_canonical_project(self):
+        for change in ('uuid','subagent','partial','replacement','truncate','canonical'):
+            with self.subTest(change=change):
+                if change=='canonical':
+                    first=os.path.join(self.root,'first');second=os.path.join(self.root,'second')
+                    os.mkdir(first);os.mkdir(second);link=os.path.join(self.root,'launch-link');os.symlink(first,link)
+                    directory,aid,path=self.large_cold_claude(project=link)
+                    os.unlink(link);os.symlink(second,link);expected=first
+                else:
+                    directory,aid,path=self.large_cold_claude();expected=self.root
+                    if change=='uuid':self.append(path,{'sessionId':uid()})
+                    elif change=='subagent':self.append(path,{'isSubagent':True})
+                    elif change=='partial':
+                        with open(path,'a') as out:out.write('{"sessionId":')
+                    elif change=='replacement':
+                        replacement=path+'.new'
+                        with open(replacement,'w') as out:out.write(json.dumps({'sessionId':uid(),'cwd':self.root})+'\n')
+                        os.replace(replacement,path)
+                    elif change=='truncate':
+                        with open(path,'w') as out:out.write(json.dumps({'cwd':self.root})+'\n')
+                try:
+                    with self.assertRaises(d.DirectoryError):directory.claude_metadata(aid,expected)
+                finally:os.unlink(path)
+
     def test_idle_duplicate_coverage_precedes_title_and_content_filters(self):
         aid, path = self.claude_chat()
         second = os.path.join(self.claude,'another'); os.mkdir(second)

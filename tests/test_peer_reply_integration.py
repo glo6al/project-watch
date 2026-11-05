@@ -49,6 +49,11 @@ class PeerReplyIntegration(unittest.TestCase):
                 (claude / 'fixture' / (native + '.jsonl')).write_text(json.dumps({
                     'type': 'custom-title', 'customTitle': name,
                     'sessionId': native, 'cwd': str(project)}) + '\n')
+            source_path = claude / 'fixture' / (NATIVE[1] + '.jsonl')
+            with source_path.open('a') as stream:
+                stream.write(json.dumps({'type': 'assistant', 'sessionId': NATIVE[1],
+                    'cwd': str(project), 'message': {'content': 'x' * 600000}}) + '\n')
+            self.assertGreater(source_path.stat().st_size, 524288)
             notices = root / 'codex-notices.jsonl'
             cli = root / 'mock-native-queue'
             cli.write_text('#!' + sys.executable + '\n' +
@@ -134,14 +139,32 @@ class PeerReplyIntegration(unittest.TestCase):
                         'consent_version': 1})
                     hook_file = private_file('reply-hook.json', hook)
                     worker.start()
-                    process = subprocess.run(['node', str(ROOT / 'integrations/claude-mod/tests/reply.integration.mjs')],
-                        input=json.dumps({'port': httpd.server_port, 'code': setup['pair_code'],
-                            'project': str(project), 'native': NATIVE, 'codex_source': CODEX_SOURCE,
-                            'credential': shared_file, 'hook_credential': hook_file,
-                            'hook_script': str(ROOT / 'scripts/watch_reply_hook.py'),
-                            'python': sys.executable, 'codex_notice_file': str(notices)}),
-                        text=True, capture_output=True, timeout=60)
+                    prepare = store.reply_delivery.prepare
+                    cold_source = []
+
+                    def prepare_with_cold_selected_cache(agent, *args, **kwargs):
+                        if agent == 'c:' + NATIVE[1] and not cold_source:
+                            directory = store.shared.directory
+                            with directory._file_lock(str(source_path)):
+                                broad = directory._files[str(source_path)]
+                                self.assertTrue(broad['done'])
+                                self.assertTrue(broad['native_id_verified'])
+                                # A caller already in the room can register without
+                                # warming this separate selected-path cache.
+                                directory._claude_selected.pop(str(source_path), None)
+                                cold_source.append(True)
+                        return prepare(agent, *args, **kwargs)
+
+                    with patch.object(store.reply_delivery, 'prepare', side_effect=prepare_with_cold_selected_cache):
+                        process = subprocess.run(['node', str(ROOT / 'integrations/claude-mod/tests/reply.integration.mjs')],
+                            input=json.dumps({'port': httpd.server_port, 'code': setup['pair_code'],
+                                'project': str(project), 'native': NATIVE, 'codex_source': CODEX_SOURCE,
+                                'credential': shared_file, 'hook_credential': hook_file,
+                                'hook_script': str(ROOT / 'scripts/watch_reply_hook.py'),
+                                'python': sys.executable, 'codex_notice_file': str(notices)}),
+                            text=True, capture_output=True, timeout=60)
                     self.assertEqual(process.returncode, 0, process.stdout + '\n' + process.stderr)
+                    self.assertEqual(cold_source, [True])
                     result = json.loads(process.stdout)
                     self.assertEqual(len(result['cases']), 2)
                     for case, provider in zip(result['cases'], ['codex', 'claude']):
