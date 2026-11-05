@@ -141,7 +141,9 @@ class ClaudeChannelTests(unittest.TestCase):
         self.descriptor.update(version=2, peer_protocol=1, project=self.base)
         self.write_manifest()
         facts = server.shared_directory_snapshot(self.store)
-        self.assertEqual(facts['__claude_transport__'], {'capability': 'unavailable', 'reason': channel.PEER_IDENTITY_REASON})
+        self.assertEqual(facts['__claude_transport__']['capability'], 'unavailable')
+        self.assertIn('official plugin', facts['__claude_transport__']['reason'])
+        self.assertNotIn('identity can change', facts['__claude_transport__']['reason'])
         sender = peer_bridge.enroll(self.store.db, 'Legacy sender', 'codex', str(uuid.uuid4()), self.base, {})
         recipient = peer_bridge.enroll(self.store.db, 'Claude', 'claude', self.sid, self.base,
             {'instance_id': self.instance}, binding='launch')
@@ -159,7 +161,8 @@ class ClaudeChannelTests(unittest.TestCase):
         with self.assertRaises(peer_bridge.PeerError) as rejected:
             self.store.shared.send(auth, self.agent, 'a'*64, 'peer payload', str(uuid.uuid4()))
         self.assertEqual(rejected.exception.status, 409)
-        self.assertEqual(str(rejected.exception), channel.PEER_IDENTITY_REASON)
+        self.assertIn('official plugin', str(rejected.exception))
+        self.assertIn('native conversation identity', str(rejected.exception))
         self.assertEqual(self.calls, [])
 
     def test_reserved_peer_send_fails_without_network_and_prior_peer_reply_still_polls(self):
