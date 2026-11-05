@@ -1115,8 +1115,210 @@ def test_officer():
         server.AGENTS.clear(); server.AGENTS.update(saved[0]); server.LOG[:] = saved[1]; server.BASE = saved[2]
 
 
+def test_session_facts():
+    """Log selection facts are atomic, nullable and never inferred from activity."""
+    from unittest.mock import patch
+    saved = dict(server.AGENTS), list(server.LOG), server.BASE, dict(server.KNOWN_NAMES)
+    sid = '11111111-1111-4111-8111-111111111111'
+    aid = 'x:' + sid
+    stamp = '2026-01-01T00:00:00Z'
+    at = 1767225600.0
+    def rec(settings, kind='turn_context', timestamp=stamp):
+        return {'type': kind, 'timestamp': timestamp, 'payload': settings if kind == 'turn_context' else
+                {'type': 'thread_settings_applied', 'thread_settings': settings}}
+    try:
+        with tempfile.TemporaryDirectory() as tmp:
+            path = os.path.join(tmp, sid + '.jsonl')
+            with open(path, 'w') as f:
+                f.write(json.dumps({'type': 'session_meta', 'payload': {'id': sid}}) + '\n')
+            t = server.CodexTail(path); t.poll()
+            t.handle(rec({'model': 'fixture-a', 'effort': 'high', 'approval_policy': 'never', 'approvals_reviewer': 'user'}), False)
+            a = server.AGENTS[aid]
+            check('turn context records atomic model effort and source clock',
+                  (a.get('model'), a.get('effort'), a.get('model_source'), a.get('model_recorded_at')) ==
+                  ('fixture-a', 'high', 'codex_turn_context', at))
+            check('approval is recorded policy and reviewer metadata', a['perm'] == 'Codex approval policy: never, reviewer: user'
+                  and a['perm_source'] == 'codex_turn_context' and a['perm_recorded_at'] == at)
+            t.handle(rec({'model': 'fixture-a'}, 'event_msg'), False)
+            check('old settings schema clears missing effort even on the same model', a['effort'] is None and a['model_source'] == 'codex_thread_settings_applied')
+            check('nullable facts survive emitted JSON and reconnect record',
+                  json.loads(json.dumps(server.LOG[-1]))['effort'] is None and json.loads(json.dumps(dict(a)))['effort'] is None)
+            t.handle(rec({'model': 'fixture-b', 'reasoning_effort': 'medium'}), False)
+            check('a changed model takes only its own effort', (a['model'], a['effort']) == ('fixture-b', 'medium'))
+            t.handle(rec({'model': 'fixture-b', 'reasoningEffort': 'low', 'effort': 'high'}), False)
+            check('conflicting effort aliases are unknown', a['effort'] is None)
+            t.handle(rec({'effort': 'alien'}), False)
+            for invalid in [None, {}, [], 1, '', ' model', 'bad\nmodel', 'x' * 257]:
+                t.handle(rec({'model': invalid, 'effort': 'alien'}), False)
+            check('invalid model and effort-only records cannot donate effort', a['model'] == 'fixture-b' and a['effort'] is None)
+            for invalid in [None, {}, 2, '', 'bad\teffort', 'x' * 65]:
+                t.handle(rec({'model': 'fixture-b', 'effort': invalid}), False)
+                assert a['effort'] is None
+            check('malformed efforts remain unknown without stringifying objects', a['effort'] is None)
+            t.handle(rec({'model': 'fixture-b', 'approval_policy': None, 'approvals_reviewer': {}}, timestamp='not a timestamp'), False)
+            check('invalid approval and source clocks withdraw instead of inventing facts', a['perm'] is None and a['perm_recorded_at'] is None and a['model_recorded_at'] is None)
+            t.handle(rec({'model': 'fixture-b'}, timestamp=None), False)
+            check('missing timestamp is not replaced with read time', a['model_recorded_at'] is None)
+            t.handle(rec({'model': 'fixture-b', 'reasoningEffort': 'high'}), False)
+            check('camel-case effort alias is supported', a['effort'] == 'high')
+            server.emit(aid, 'tool', True, text=None)
+            check('unrelated text normalization is unchanged', server.LOG[-1]['text'] == '')
+    finally:
+        server.AGENTS.clear(); server.AGENTS.update(saved[0]); server.LOG[:] = saved[1]; server.BASE = saved[2]
+        server.KNOWN_NAMES.clear(); server.KNOWN_NAMES.update(saved[3])
+
+
+def test_session_facts_recovery():
+    """Exercise real startup and replay, including a formerly overlapping head read."""
+    from unittest.mock import patch
+    saved = dict(server.AGENTS), list(server.LOG), server.BASE, dict(server.KNOWN_NAMES)
+    sid = '22222222-2222-4222-8222-222222222222'; aid = 'x:' + sid
+    def line(typ, payload):
+        return (json.dumps({'type': typ, 'timestamp': '2026-01-01T00:00:00Z', 'payload': payload}) + '\n').encode()
+    identity = line('session_meta', {'id': sid})
+    model = lambda name: line('turn_context', {'model': name, 'effort': 'high'})
+    usage = line('event_msg', {'type': 'token_count', 'info': {'last_token_usage': {'total_tokens': 70000}, 'model_context_window': 258000}})
+    padding = lambda n: b'{}\n' * (n // 3)
+    try:
+        with tempfile.TemporaryDirectory() as tmp:
+            path = os.path.join(tmp, sid + '.jsonl')
+            def fresh(data):
+                server.AGENTS.pop(aid, None); server.LOG.clear()
+                with open(path, 'wb') as f: f.write(data)
+                # Isolate metadata recovery from unrelated launch/message history searches.
+                with patch.object(server.Tail, 'backfill'), patch.object(server.Tail, 'backfill_launches'):
+                    return server.CodexTail(path)
+            t = fresh(identity + model('fixture-head') + padding(500000) + model('fixture-middle') + padding(220000))
+            check('startup recovers newer model between the old head and replay windows', server.AGENTS[aid].get('model') == 'fixture-middle')
+            with open(path, 'ab') as f: f.write(model('fixture-live'))
+            t.poll()
+            check('normal replay and new records supersede recovered metadata', server.AGENTS[aid]['model'] == 'fixture-live')
+            t = fresh(identity + model('fixture-a') + padding(210000) + usage + model('fixture-b') + padding(10000))
+            check('startup never reads model metadata beyond its replay frontier', server.AGENTS[aid]['model'] == 'fixture-a')
+            t.poll()
+            check('overlapping former head and tail cannot bind old usage to a future model', server.AGENTS[aid]['model'] == 'fixture-b'
+                  and server.AGENTS[aid]['ctx'] is None and server.AGENTS[aid]['ctxmax'] is None and server.AGENTS[aid]['ctx_model'] is None)
+            quoted = line('response_item', {'type': 'function_call', 'name': 'fake', 'arguments': 'turn_context thread_settings_applied'})
+            t = fresh(identity + quoted + b'{bad turn_context\n' + padding(220000))
+            check('metadata words inside tools and malformed lines replay no historical activity',
+                  'model' not in server.AGENTS[aid] and all(e['kind'] == 'agent' for e in server.LOG))
+            # Both byte ranges and identity reads have explicit limits; no unbounded readline/read.
+            requests = []
+            real_open = open
+            class Reader:
+                def __init__(self, f): self.f = f
+                def __enter__(self): return self
+                def __exit__(self, *args): return self.f.__exit__(*args)
+                def seek(self, *args): return self.f.seek(*args)
+                def read(self, n=-1): requests.append(('read', n)); return self.f.read(n)
+                def readline(self, n=-1): requests.append(('readline', n)); return self.f.readline(n)
+            def observed_open(*args, **kwargs): return Reader(real_open(*args, **kwargs))
+            with open(path, 'wb') as f:
+                f.write(identity + padding(500000) + model('outside-budget') + padding(12210000))
+            server.AGENTS.pop(aid, None); server.LOG.clear()
+            with patch.object(server, 'open', observed_open, create=True), patch.object(server.Tail, 'backfill'), patch.object(server.Tail, 'backfill_launches'):
+                t = server.CodexTail(path)
+            check('metadata beyond bounded coverage remains unknown', 'model' not in server.AGENTS[aid])
+            check('identity and recovery reads are independently bounded', requests[0] == ('readline', server.MAX_REST + 1)
+                  and all(n >= 0 for _, n in requests) and sum(n for method, n in requests if method == 'read') <= 12400002)
+            # A partial first identity completes via ordinary poll, while unknown/guardian identities stay excluded.
+            part = identity[:-2]
+            t = fresh(part)
+            check('incomplete identity exposes no agent or facts', aid not in server.AGENTS)
+            with open(path, 'ab') as f: f.write(identity[-2:] + model('completed-identity'))
+            t.poll()
+            check('ordinary completed first identity is classified by poll', server.AGENTS[aid]['model'] == 'completed-identity')
+            t = fresh(line('session_meta', {'id': sid, 'thread_source': 'guardian_review'}) + model('guardian') + padding(220000))
+            t.poll()
+            check('guardian identity never gains metadata or a station', aid not in server.AGENTS and not server.LOG)
+            for invalid in [b'x' * (server.MAX_REST + 2), b'not json\n', line('session_meta', {'id': 'invalid'})]:
+                t = fresh(invalid + model('unverified') + padding(220000)); t.poll()
+                assert aid not in server.AGENTS
+            check('oversized invalid and unclassifiable identity cannot seed recovered facts', aid not in server.AGENTS)
+            with patch.object(server, 'MAX_REST', 256):
+                t = fresh(identity + line('turn_context', {'model': 'oversized-metadata', 'padding': 'x' * 300}) + padding(220000))
+                check('oversized metadata candidates do not seed facts', 'model' not in server.AGENTS[aid])
+                unfinished = b'{"type":"session_meta","payload":{"thread_source":"guardian_review","padding":"'
+                t = fresh(unfinished); t.poll()
+                with open(path, 'ab') as f: f.write(b'x' * 280)
+                t.poll()
+                check('an oversized unfinished first identity is permanently refused', not t.identity_pending and t.drop_long and t.skip)
+                with open(path, 'ab') as f: f.write(b'"}}\n' + identity + model('not-a-new-identity'))
+                t.poll()
+                check('a later ordinary identity cannot replace discarded guardian identity', aid not in server.AGENTS and not t.meta_done and t.skip)
+                t = fresh(identity[:-1]); t.poll()
+                with open(path, 'ab') as f: f.write(b'\n' + model('first-completed') + b'x' * 300)
+                t.poll()
+                check('a completed first identity survives an unrelated oversized trailing fragment', server.AGENTS[aid]['model'] == 'first-completed')
+            t = fresh(b'\n')
+            with open(path, 'ab') as f: f.write(identity + model('blank-first'))
+            t.poll()
+            check('a blank first record cannot promote a later identity', aid not in server.AGENTS and t.skip)
+            # The 64-candidate bound includes malformed and irrelevant shapes; no exhaustive fallback.
+            t = fresh(identity + model('too-old') + quoted * 65 + padding(220000))
+            check('metadata candidate limit is finite and honest about unknown', 'model' not in server.AGENTS[aid])
+    finally:
+        server.AGENTS.clear(); server.AGENTS.update(saved[0]); server.LOG[:] = saved[1]; server.BASE = saved[2]
+        server.KNOWN_NAMES.clear(); server.KNOWN_NAMES.update(saved[3])
+
+
+def test_session_context_facts():
+    """Capacity belongs to a usage record; Claude history never becomes a limit."""
+    from unittest.mock import patch
+    saved = dict(server.AGENTS), list(server.LOG), server.BASE, dict(server.KNOWN_NAMES)
+    sid = '33333333-3333-4333-8333-333333333333'; aid = 'x:' + sid
+    def record(typ, payload, stamp='2026-01-01T00:00:00Z'):
+        return {'type': typ, 'timestamp': stamp, 'payload': payload}
+    try:
+        with tempfile.TemporaryDirectory() as tmp:
+            path = os.path.join(tmp, sid + '.jsonl')
+            with open(path, 'w') as f: f.write(json.dumps(record('session_meta', {'id': sid})) + '\n')
+            t = server.CodexTail(path); t.poll()
+            t.handle(record('turn_context', {'model': 'fixture-a'}), True)
+            a = server.AGENTS[aid]
+            def usage(total, window=258000, stamp='2026-01-01T00:00:00Z'):
+                t.handle(record('event_msg', {'type': 'token_count', 'info': {'last_token_usage': {'total_tokens': total}, 'model_context_window': window}}, stamp), False)
+            usage(70000)
+            check('usage carries its actual window log model and source timestamp', (a['ctx'], a['ctxmax'], a['ctx_model'], a['ctx_recorded_at']) == (70000, 258000, 'fixture-a', 1767225600.0))
+            usage(70500, stamp='2026-01-01T00:00:01Z')
+            check('suppressed small usage changes retain their original snapshot timestamp', a['ctx'] == 70000 and a['ctx_recorded_at'] == 1767225600.0)
+            usage(70500, 300000, '2026-01-01T00:00:02Z')
+            check('window changes publish the actual count and matching timestamp', (a['ctx'], a['ctxmax'], a['ctx_recorded_at']) == (70500, 300000, 1767225602.0))
+            usage(70600, None)
+            check('unsupported current window clears an older capacity immediately', a['ctxmax'] is None and a['ctx'] == 70600)
+            usage(0)
+            check('zero usage is a genuine recorded count', a['ctx'] == 0 and a['ctxmax'] == 258000)
+            t.handle(record('event_msg', {'type': 'token_count', 'info': None}), False)
+            check('null info is no new usage observation', a['ctx'] == 0 and a['ctxmax'] == 258000)
+            usage('invalid')
+            check('invalid count withdraws timestamp and model binding', a['ctx'] is None and a['ctx_recorded_at'] is None and a['ctx_model'] is None)
+            usage(71000)
+            t.handle(record('turn_context', {'model': 'fixture-b'}), False)
+            check('a recorded model switch clears previous count and capacity', all(a[k] is None for k in ('ctx', 'ctxmax', 'ctx_recorded_at', 'ctx_model')))
+            usage(500, None)
+            check('new model usage cannot inherit previous model capacity', a['ctx'] == 500 and a['ctxmax'] is None and a['ctx_model'] == 'fixture-b')
+            claude_path = os.path.join(tmp, '44444444-4444-4444-8444-444444444444.jsonl')
+            with open(claude_path, 'w'): pass
+            c = server.ClaudeTail(claude_path)
+            c.handle({'type': 'assistant', 'timestamp': '2026-01-01T00:00:00Z', 'effort': 'high', 'message': {'model': 'fixture-claude-a', 'usage': {'input_tokens': 42}}}, True)
+            ca = server.AGENTS[c.aid]
+            check('Claude partial usage remains a lower bound with source facts', ca['ctx'] == 42 and ca['ctxpart'] is True and ca['model_source'] == 'claude_assistant')
+            c.handle({'type': 'system', 'timestamp': '2026-01-01T00:00:01Z', 'subtype': 'compact_boundary', 'compactMetadata': {'trigger': 'auto', 'preTokens': 100000, 'postTokens': 20000}}, True)
+            check('Claude automatic compaction reference remains history not capacity', ca['ctxref'] == 100000 and not ca.get('ctxmax') and ca['ctx'] == 20000)
+            c.handle({'type': 'assistant', 'timestamp': '2026-01-01T00:00:02Z', 'message': {'model': 'fixture-claude-b', 'usage': {'input_tokens': 0, 'cache_creation_input_tokens': 0, 'cache_read_input_tokens': 0, 'output_tokens': 0}}}, True)
+            check('Claude model and usage clear old effort but retain qualified history', ca['effort'] is None and ca['ctx'] == 0 and ca['ctxref'] == 100000 and ca['ctxmax'] is None and ca['ctxpart'] is False)
+            c.handle({'type': 'assistant', 'message': {'model': 'fixture-claude-b', 'usage': {'input_tokens': None}}}, True)
+            check('invalid stated Claude component withdraws count', ca['ctx'] is None)
+    finally:
+        server.AGENTS.clear(); server.AGENTS.update(saved[0]); server.LOG[:] = saved[1]; server.BASE = saved[2]
+        server.KNOWN_NAMES.clear(); server.KNOWN_NAMES.update(saved[3])
+
+
 if __name__ == '__main__':
     test_import_is_quiet()
+    test_session_facts()
+    test_session_facts_recovery()
+    test_session_context_facts()
     test_shell()
     test_user_file_replaces_a_key()
     test_plain_words()

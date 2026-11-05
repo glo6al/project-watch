@@ -344,10 +344,13 @@ def remember_name(aid):
             KNOWN_NAMES[aid] = str(name)[:120]
 
 
+NULLABLE_FACT_TEXT = frozenset(('model', 'effort', 'perm', 'model_source', 'perm_source', 'ctx_model'))
+
+
 def emit(agent, kind, old, ts=None, **kw):
     global BASE
     cap = OLD_CAP if old else LIVE_CAP
-    kw = {k: clip(shown(v) if k in TEXT_KEYS else v, cap) for k, v in kw.items()}
+    kw = {k: clip(shown(v) if k in TEXT_KEYS and not (k in NULLABLE_FACT_TEXT and v is None) else v, cap) for k, v in kw.items()}
     touch_link(agent)                                   # any event from an agent is that agent being seen (see prune_links)
     remember_name(agent)
     with COND:
@@ -550,6 +553,31 @@ def describe(aid, old=False, **kw):
         changed = any(v and a.get(k) != v for k, v in kw.items())
         a.update({k: v for k, v in kw.items() if v and k != '_cleared'})
         if changed:
+            emit(aid, 'agent', old, **a)
+
+
+def fact_text(value, maximum):
+    """Metadata is text, never an object rendered as a label."""
+    return value if (isinstance(value, str) and 0 < len(value) <= maximum and value == value.strip()
+                     and not any(ord(c) < 32 or ord(c) == 127 for c in value)) else None
+
+
+def fact_time(record):
+    """A record's clock, never the time WATCH happened to read it."""
+    try:
+        parsed = datetime.fromisoformat(record['timestamp'].replace('Z', '+00:00'))
+        value = parsed.timestamp() if parsed.tzinfo is not None else 0
+        return value if value > 0 and value < float('inf') else None
+    except (KeyError, TypeError, ValueError, AttributeError, OverflowError, OSError):
+        return None
+
+
+def facts(aid, old=False, **values):
+    """Explicit unknowns survive both live events and reconnect snapshots."""
+    with LINKS_LOCK:
+        a = AGENTS.setdefault(aid, {})
+        if any(k not in a or a[k] != v for k, v in values.items()):
+            a.update(values)
             emit(aid, 'agent', old, **a)
 
 
@@ -1329,54 +1357,42 @@ class Tail:
                 f.seek(self.off - 1)
                 self.skip_partial = f.read(1) != b'\n'
 
-    def fuel(self, old, used, top=None, ref=None, partial=False):
-        """Context in use, as the log records it. `top` is the model's window when the log states it (Codex);
-        `ref` is the size at which this session was last summarised automatically (Claude, which states no window).
-        Usage is sent on when it has moved by a noticeable amount, not on every reply; a changed window or reference
-        is sent at once. `used` is None when the record states no usable count (absent, or present but not a number):
-        the figure shown until now is then withdrawn, since the latest record does not support it, and the page shows
-        nothing rather than a stale number. A valid zero is a count, and is sent as zero, never dropped: a move to or
-        from zero is always sent, whatever the threshold. `partial` says the record stated only some of the parts
-        that make up the count, so the figure is a lower bound, and it is sent with ctxpart=True so the page can say
-        so; a change in that status is sent at once."""
+    def model_fact(self, model, effort, source, recorded_at, old):
+        a = AGENTS.get(self.aid, {})
+        values = dict(model=model, effort=effort, model_source=source, model_recorded_at=recorded_at)
+        if a.get('model') and a['model'] != model:
+            values.update(ctx=None, ctxmax=None, ctxpart=False, ctx_recorded_at=None, ctx_model=None)
+            self.fuel_sent, self.top_sent, self.part_sent = None, None, False
+        facts(self.aid, old, **values)
+
+    def fuel(self, old, used, top=None, ref=None, partial=False, recorded_at=None, capacity=False):
+        """Publish a coherent logged usage snapshot; ref is history, not capacity.
+
+        Smaller usage changes keep the previous snapshot and its original timestamp.
+        A present Codex info record (capacity=True) also withdraws an unsupported window.
+        """
         if not getattr(self, 'aid', None) or getattr(self, 'skip', False):
             return
         used, top, ref = count(used), count(top) or None, count(ref) or None
         partial = bool(partial) and used is not None
-        was = getattr(self, 'fuel_sent', None)       # None: no figure has been sent (or the last one was withdrawn)
-        if used is None or was is None:
-            moved = (used is None) != (was is None)
-        elif (used == 0) != (was == 0):
-            moved = True                              # nothing in use, or something again: never swallowed by the threshold
-        else:
-            moved = abs(used - was) >= max(2000, was * .01)
-        moved = moved or (used is not None and partial != getattr(self, 'part_sent', False))
-        if not (moved or (top and top != getattr(self, 'top_sent', None)) or (ref and ref != getattr(self, 'ref_sent', None))):
+        was = getattr(self, 'fuel_sent', None)
+        moved = ((used is None) != (was is None) if used is None or was is None else
+                 (used == 0) != (was == 0) or abs(used - was) >= max(2000, was * .01))
+        changed_top = capacity and top != getattr(self, 'top_sent', None)
+        changed_ref = ref is not None and ref != getattr(self, 'ref_sent', None)
+        if not (moved or changed_top or changed_ref or
+                (used is not None and partial != getattr(self, 'part_sent', False))):
             return
-        if moved:
-            self.fuel_sent, self.part_sent = used, partial
-        else:                                         # a window or reference sent before any count: the count stays as it was (none)
-            self.fuel_sent, self.part_sent = was, getattr(self, 'part_sent', False)
-        if top:
+        self.fuel_sent, self.part_sent = used, partial
+        values = dict(ctx=used, ctxpart=partial, ctx_recorded_at=recorded_at if used is not None else None,
+                      ctx_model=AGENTS.get(self.aid, {}).get('model') if used is not None else None)
+        if capacity:
             self.top_sent = top
-        if ref:
+            values['ctxmax'] = top
+        if ref is not None:
             self.ref_sent = ref
-        a = AGENTS.setdefault(self.aid, {})
-        if self.fuel_sent is None:
-            a.pop('ctx', None)
-            a.pop('ctxpart', None)
-        else:
-            a['ctx'] = self.fuel_sent
-            if self.part_sent:
-                a['ctxpart'] = True
-            else:
-                a.pop('ctxpart', None)
-        if top:
-            a['ctxmax'] = top
-        if ref:
-            a['ctxref'] = ref
-        # ctx is always present here: a number, or null to withdraw one; ctxpart likewise, true or false
-        emit(self.aid, 'agent', old, **dict(a, ctx=a.get('ctx'), ctxpart=bool(a.get('ctxpart'))))
+            values['ctxref'] = ref
+        facts(self.aid, old, **values)
 
     def backfill(self, needle, exclude=b'\x00', n=30, span=12_000_000):
         """Only the tail of a long log is replayed, which can start after your last message. Look further back
@@ -1603,10 +1619,15 @@ class Tail:
             lines, self.skip_partial = lines[1:], False
         if len(self.rest) > MAX_REST:                           # the complete records before it are kept
             self.rest, self.drop_long = b'', True
+            if getattr(self, 'identity_pending', False) and not lines:
+                self.identity_pending = False       # first identity was discarded; a later record cannot replace it
         if self.partial and getattr(self, 'aid', None) and not getattr(self, 'skip', False):
             self.partial = False
             describe(self.aid, True, partial=True)
         for raw in lines:
+            if getattr(self, 'identity_pending', False):
+                self.classify_first(raw + b'\n')
+                continue
             if not raw.strip():
                 continue
             try:
@@ -1681,8 +1702,8 @@ class ClaudeTail(Tail):
         t, ts, aid, msg = d.get('type'), ts_of(d), self.aid, as_dict(d.get('message'))
         if text_of(d.get('cwd')):                     # metadata reaches the page only as strings; anything else is dropped here
             describe(aid, old, cwd=text_of(d.get('cwd')), branch=text_of(d.get('gitBranch')))
-        if t == 'assistant' and text_of(msg.get('model')):
-            describe(aid, old, model=text_of(msg.get('model')), effort=text_of(d.get('effort')))
+        if t == 'assistant' and fact_text(msg.get('model'), 256):
+            self.model_fact(msg['model'], fact_text(d.get('effort'), 64), 'claude_assistant', fact_time(d), old)
         if t == 'custom-title' and not self.sub:
             describe(aid, old, name=text_of(d.get('customTitle')))
         elif t == 'queue-operation':
@@ -1701,7 +1722,7 @@ class ClaudeTail(Tail):
             pre, post = count(m.get('preTokens')), count(m.get('postTokens'))      # None when not stated: never a stand-in zero
             if not self.backfilling:                # found further back only to learn the size; its place in the log is not shown
                 emit(aid, 'compact', old, ts, pre=pre, post=post, trigger=m.get('trigger'))
-            self.fuel(old, post, ref=pre if m.get('trigger') == 'auto' else None)
+            self.fuel(old, post, ref=pre if m.get('trigger') == 'auto' else None, recorded_at=fact_time(d))
         elif t == 'user' and d.get('isCompactSummary'):
             pass                                    # the summary Claude wrote for itself; not something you said
         elif t == 'user' and not d.get('isMeta'):
@@ -1733,7 +1754,7 @@ class ClaudeTail(Tail):
                 # a component the record states but not as a number makes the whole figure unknown, as does a usage
                 # block that states none of them; a missing component is not a zero, so the ones stated add up to a
                 # figure that is marked partial: a lower bound on the context, not the context
-                self.fuel(old, None if not parts or any(x is None for x in parts) else sum(parts), partial=len(parts) < len(names))
+                self.fuel(old, None if not parts or any(x is None for x in parts) else sum(parts), partial=len(parts) < len(names), recorded_at=fact_time(d))
             for b in msg.get('content') if isinstance(msg.get('content'), list) else []:
                 if not isinstance(b, dict):
                     continue
@@ -1858,8 +1879,9 @@ def desktop_scan():
             d = json.load(open(p, encoding='utf-8'))
             aid = 'c:' + str(d.get('cliSessionId'))
             if aid in AGENTS:
-                describe(aid, perm=('Claude mode: ' + text_of(d.get('permissionMode'))) if text_of(d.get('permissionMode')) else '',
-                         started=int(d.get('createdAt') or 0) / 1000 or None, looked=int(d.get('lastFocusedAt') or 0) / 1000 or None)
+                mode = fact_text(d.get('permissionMode'), 128)
+                facts(aid, perm='Claude mode: ' + mode if mode else None, perm_source='claude_desktop', perm_recorded_at=None)
+                describe(aid, started=int(d.get('createdAt') or 0) / 1000 or None, looked=int(d.get('lastFocusedAt') or 0) / 1000 or None)
         except Exception:
             pass
 
@@ -1883,34 +1905,101 @@ class CodexTail(Tail):
     def __init__(self, path):
         m = re.search(r'([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\.jsonl$', path)
         self.aid = 'x:' + (m.group(1) if m else os.path.basename(path)[:-6])
-        self.skip, self.agent_path, self.parent, self.sticky, self.meta_done, self.beat = False, '', '', set(), False, 0
-        self.cells, self.waits = {}, {}     # a step still running: its cell -> the call that began it; a wait -> the cell it watches
+        self.skip, self.agent_path, self.parent, self.sticky, self.meta_done, self.beat = True, '', '', set(), False, 0
+        self.identity_pending = True
+        self.cells, self.waits = {}, {}
         try:
             with open(path, 'rb') as f:
-                first = f.readline()
-            if first.endswith(b'\n'):
-                d = json.loads(first)
-                if d.get('type') == 'session_meta':
-                    self.meta(as_dict(d.get('payload')))
-        except Exception:
+                first = f.readline(MAX_REST + 1)
+            if first.endswith(b'\n') or len(first) > MAX_REST:
+                self.classify_first(first)
+        except OSError:
             pass
         super().__init__(path)
-        if self.off and not self.skip:          # model and approval settings are written once, near the start
-            try:
-                with open(path, 'rb') as f:
-                    head = f.read(400_000)
-                for raw in [l for l in head.split(b'\n')[:-1] if b'thread_settings_applied' in l][-1:]:
-                    self.handle(json.loads(raw), True)
-            except Exception:
-                pass
+        if self.identity_pending:
+            # An ordinary partial first record must be completed before classifying the file.
+            self.off, self.skip_partial, self.partial = 0, False, False
+        if self.off and not self.skip:
+            self.recover_metadata()
         if not self.skip:
             self.backfill(b'"UserMessage"')
             self.backfill_launches()
 
+    def classify_first(self, raw):
+        self.identity_pending = False
+        if len(raw) > MAX_REST or not raw.endswith(b'\n'):
+            return
+        try:
+            d = json.loads(raw)
+            if isinstance(d, dict) and d.get('type') == 'session_meta' and isinstance(d.get('payload'), dict):
+                self.meta(d['payload'])
+        except (ValueError, TypeError, RecursionError):
+            pass
+
+    @staticmethod
+    def metadata(d):
+        """Only real metadata containers count; quoted tool/user text never does."""
+        if not isinstance(d, dict) or not isinstance(d.get('payload'), dict):
+            return None
+        p = d['payload']
+        if d.get('type') == 'turn_context':
+            return p, 'codex_turn_context'
+        if d.get('type') == 'event_msg' and p.get('type') == 'thread_settings_applied' and isinstance(p.get('thread_settings'), dict):
+            return p['thread_settings'], 'codex_thread_settings_applied'
+        return None
+
+    def apply_metadata(self, d, old):
+        found = self.metadata(d)
+        if found is None or self.skip or not self.meta_done:
+            return
+        settings, source = found
+        model = fact_text(settings.get('model'), 256)
+        if model:
+            efforts = [fact_text(settings[k], 64) for k in ('effort', 'reasoning_effort', 'reasoningEffort') if k in settings]
+            effort = efforts[0] if efforts and all(v == efforts[0] for v in efforts) else None
+            self.model_fact(model, effort, source, fact_time(d), old)
+        if any(k in settings for k in ('approval_policy', 'approvals_reviewer')):
+            bits = [prefix + v for k, prefix in [('approval_policy', 'approval policy: '), ('approvals_reviewer', 'reviewer: ')]
+                    for v in [fact_text(settings.get(k), 128)] if v]
+            facts(self.aid, old, perm='Codex ' + ', '.join(bits) if bits else None,
+                  perm_source=source, perm_recorded_at=fact_time(d))
+
+    def recover_metadata(self):
+        """Bounded metadata-only recovery strictly before the replay frontier."""
+        end = self.off
+        recent = max(0, end - 12_000_000)
+        head_end = min(400_000, recent)
+        ranges = [(0, end)] if recent <= 400_000 else [(0, head_end), (recent, end)]
+        candidates = []
+        try:
+            with open(self.path, 'rb') as f:
+                for start, stop in ranges:
+                    f.seek(max(0, start - 1))
+                    data = f.read(stop - start + (1 if start else 0))
+                    if start:
+                        boundary, data = data[:1], data[1:]
+                    else:
+                        boundary = b'\n'
+                    lines = data.split(b'\n')[:-1]
+                    if boundary != b'\n':
+                        lines = lines[1:]
+                    for raw in lines:
+                        if len(raw) <= MAX_REST and (b'turn_context' in raw or b'thread_settings_applied' in raw):
+                            candidates.append(raw)
+                            if len(candidates) > 64:
+                                del candidates[0]
+            for raw in candidates:
+                try:
+                    self.apply_metadata(json.loads(raw), True)
+                except (ValueError, TypeError, RecursionError):
+                    pass
+        except OSError:
+            pass
+
     def meta(self, m):
-        """Identity comes from the session_meta record. It is applied whenever that record is seen, so a file
-        discovered before its first line was complete is still named and placed correctly afterwards."""
-        if self.meta_done:
+        """Only a bounded first session_meta record establishes identity. An ordinary partial first
+        record is classified once polling receives its newline; later records cannot replace it."""
+        if self.meta_done or not valid_uuid(m.get('id')):
             return
         self.meta_done = True
         if text_of(m.get('id')):                    # identity fields are taken only as strings (see text_of)
@@ -1995,11 +2084,13 @@ class CodexTail(Tail):
     def handle(self, d, old):
         t, p, ts = d.get('type'), as_dict(d.get('payload')), ts_of(d)
         if t == 'session_meta':
-            self.meta(p)
             return
         if self.skip:
             return
         aid, pt = self.aid, p.get('type')
+        if self.metadata(d) is not None:
+            self.apply_metadata(d, old)
+            return
         if t == 'response_item' and pt in ('custom_tool_call', 'function_call'):
             self.call(p, old, ts)
         elif t == 'response_item' and pt in ('custom_tool_call_output', 'function_call_output'):
@@ -2086,14 +2177,10 @@ class CodexTail(Tail):
             info = p.get('info')
             if isinstance(info, dict):              # Codex sometimes writes info: null here, which states nothing and changes nothing;
                 last = info.get('last_token_usage')  # a block that is present but does not state a numeric total withdraws the figure
-                self.fuel(old, last.get('total_tokens') if isinstance(last, dict) else None, top=info.get('model_context_window'))
+                self.fuel(old, last.get('total_tokens') if isinstance(last, dict) else None, top=info.get('model_context_window'),
+                          capacity=True, recorded_at=fact_time(d))
         elif t == 'event_msg' and pt == 'context_compacted':
             emit(aid, 'compact', old, ts, trigger='')       # Codex records that it happened, not the sizes
-        elif t == 'event_msg' and pt == 'thread_settings_applied':
-            s = as_dict(p.get('thread_settings'))
-            bits = [b for b in ('approval policy: %s' % text_of(s.get('approval_policy')) if text_of(s.get('approval_policy')) else '',
-                                'reviewer: %s' % text_of(s.get('approvals_reviewer')) if text_of(s.get('approvals_reviewer')) else '') if b]
-            describe(aid, old, model=text_of(s.get('model')), perm='Codex ' + ', '.join(bits) if bits else '')
         elif t == 'event_msg' and pt == 'turn_aborted':
             emit(aid, 'turn_end', old, ts, how='turn stopped (%s)' % (shown(p.get('reason')) or 'aborted'))
         elif t == 'event_msg' and pt == 'task_started':
