@@ -10,7 +10,35 @@ Names are addresses, not authentication. When names are duplicated, specify the 
 
 For a connected Claude recipient, the plugin submits the complete peer envelope with plugin attribution, waits for its matching main-turn answer, and returns that answer to the original shared request. It does not turn the peer text into an owner instruction.
 
-A pending reply is reported as pending. Later, “Did Atlas answer?” retrieves the same request. The bridge does not wake an idle sender, poll indefinitely, or send the question again because an answer is slow. Unknown, failed, expired, and rejected operations remain distinct from successful delivery. If several earlier questions could match a follow-up, the agent should clarify which one rather than guess.
+A pending reply is reported as pending. With [automatic replies enabled](#automatic-replies-to-the-asking-chat), WATCH notifies the asking chat when its answer is ready, including after that chat finishes its initial turn. Without a registered return route, “Did Atlas answer?” retrieves the same request manually. Neither mode resends a slow question. Unknown, failed, expired, and rejected operations remain distinct from successful delivery. If several earlier questions could match a follow-up, the agent should clarify which one rather than guess.
+
+## Automatic replies to the asking chat
+
+Automatic return is an optional user-level setup for Codex and Claude Code. It does not require separate MCP identities or installation in every chat. Keep the shared MCP connection configured in the sending app. Claude chats receiving completion notices need WATCH plugin 0.4.0 or later, explicit agent-messaging authorization, and a current connection that negotiates reply-notice support. Older plugins continue ordinary messaging without receiving these notices.
+
+Stop WATCH, then run this command from its stable installation directory:
+
+```sh
+python3 scripts/install_reply_hook.py --provider both --setup --accept-native-parent-return
+```
+
+Use `--provider codex` or `--provider claude` to select one app. Setup refuses to change state while WATCH is running. It creates a separate private reply-hook credential and installs only its own `PostToolUse` entries, preserving other hooks and settings. Restart WATCH afterward. In Codex, use **Review hooks** or **Settings → Hooks** to review and trust the installed WATCH reply hook. Installation alone does not establish that a native hook is active. Reconnect the MCP through the app's normal workflow to load updated tool instructions; reload the updated Claude plugin in already-open chats.
+
+This opt-in returns a worker's answer notification to the visible native parent chat reported by its host, including the supervising chat for an internal worker. It does not resume that worker directly. Models, sign-in, tools, project instructions, and native permissions stay with the existing chats. Processing a notice can consume their normal model allowance.
+
+After an actual successful new send, the hook records the returned request ID and native source context. It observes the result without approving tools or changing their arguments. The separate credential authorizes matching that original send to its return chat; shared MCP access and declared sender labels cannot choose a return address. Requests sent before setup are not enrolled retroactively.
+
+When a matching answer is available, WATCH submits one small `WATCH_PEER_REPLY` completion notice to the original eligible chat. It contains the public request ID, rather than the peer answer or a second question. The asking agent calls `get_reply` once for that completion event and shows the result within the original request's scope. This is event-driven retrieval, without repeated checking or a forwarding chain. Replies remain untrusted information and cannot grant permission. Shared reply visibility across connected MCP clients remains unchanged.
+
+Queue acceptance is not proof that the asking model has read or displayed the answer. An offline, untrusted, unsupported, opted-out or changed source can leave automatic delivery unavailable; manual `get_reply` remains available. A busy source receives ordinary queued input, without steering or interruption. An uncertain native attempt is not resent, including after restart. Revoking return access stops future admission but cannot recall a notice already queued.
+
+To disable automatic returns, stop WATCH and remove the owned hooks while revoking their separate access:
+
+```sh
+python3 scripts/install_reply_hook.py --provider both --remove --revoke
+```
+
+Restart WATCH afterward. Shared MCP access, manual reply retrieval, unrelated hooks, and native hook trust remain unchanged.
 
 ## Shared access and authorization
 

@@ -1,9 +1,10 @@
-import {UUID, LIMITATION, TRANSITIONS, pairing, sessionResponse, validClaim, matchingPrompt, matchingAnswer, publicStatus, globalConfiguration, receiptRecord, surfaceRoster} from './protocol.js';
+import {UUID, LIMITATION, TRANSITIONS, pairing, sessionResponse, validClaim, matchingPrompt, matchingAnswer, publicStatus, globalConfiguration, receiptRecord, surfaceRoster, validNoticeClaim, noticeReceipt} from './protocol.js';
 
 const GLOBAL_KEY = 'watch-owner-global-v1';
 const legacyKey = id => 'watch-owner-v1:' + id;
 const preferenceKey = id => 'watch-owner-preferences-v1:' + id;
 const shardPrefix = id => 'watch-owner-runtime-v2:' + id + ':';
+const noticePrefix = id => 'watch-reply-notice-runtime-v1:' + id + ':';
 const MAX_DATA = 4 * 1024 * 1024;
 const copy = value => JSON.parse(JSON.stringify(value));
 const configurationId = value => value ? JSON.stringify([value.grant_id,value.grant,value.port]) : '';
@@ -64,9 +65,9 @@ function identityBody(state, data = state.data, generation = state.generation) {
 }
 
 function stop(state) {
-  if (state.connected) state.sequence += 1;
   state.connected = false;
   state.peerProtocol = 0;
+  state.noticeProtocol = 0;
   state.epoch += 1;
 }
 
@@ -174,8 +175,83 @@ async function recover($, state) {
   await save($, state);
 }
 
+async function saveNotices($,state,change) {
+  const data=state.noticeData,key=state.noticeKey;
+  if (!data || !key) throw Error('Missing WATCH notice context.');
+  const operation=state.writes.then(async()=>{
+    if(change)change(data);
+    for(const [id,r] of Object.entries(data.requests))if(Object.keys(data.requests).length>32 && !r.events.length && r!==state.flight && ['submitted','dropped','unknown'].includes(r.phase))delete data.requests[id];
+    if(JSON.stringify(data).length>MAX_DATA)throw Error('WATCH recovery data limit.');
+    await $.store.set(key,copy(data));
+  });
+  state.writes=operation.catch(()=>{});return operation;
+}
+async function noticeEvent($,state,request,kind) {
+  await saveNotices($,state,()=>{
+    if(['submitted','dropped','unknown'].includes(request.phase))return;
+    request.phase=kind;
+    request.events.push({request_id:request.request_id,attempt_id:request.attempt_id,kind});
+  });
+  flushNotices($,state).catch(()=>{});
+}
+async function flushNotices($,state) {
+  if(state.noticeFlushing || !state.connected || state.noticeProtocol!==1 || !state.noticeData)return;
+  const data=state.noticeData,epoch=state.epoch;state.noticeFlushing=true;
+  try {
+    for(const request of Object.values(data.requests))while(request.events.length && state.connected && state.noticeProtocol===1 && state.noticeData===data && state.epoch===epoch){
+      const value=request.events[0];await post($,state,'event',{...value,...identityBody(state)});
+      if(state.noticeData!==data || state.epoch!==epoch || state.noticeProtocol!==1)return;
+      const hash=await fingerprint(value);
+      await saveNotices($,state,()=>{data.acknowledged[hash]=true;if(request.events[0]===value)request.events.shift();});
+    }
+  } finally {state.noticeFlushing=false;}
+}
+async function recoverNotices($,state) {
+  if(state.noticeProtocol!==1)return;
+  if(state.noticeData && (state.submitting || state.flight?.kind==='peer_reply_notice' || state.noticeFlushing))return;
+  const ordinary=state.data,prefix=noticePrefix(ordinary.native_id),key=prefix+state.clientId;
+  const keys=await $.store.keys();if(!Array.isArray(keys)||keys.length>4096)throw Error('WATCH recovery data limit.');
+  let total=0;const records={},acknowledged={};
+  for(const k of keys){
+    if(typeof k!=='string'||!k.startsWith(prefix))continue;
+    if(!UUID.test(k.slice(prefix.length)))throw Error('Invalid WATCH notice namespace.');
+    const shard=await $.store.get(k);total+=JSON.stringify(shard??null).length;
+    if(total>MAX_DATA)throw Error('WATCH recovery data limit.');
+    if(shard?.kind!=='peer_reply_notice'||shard.native_id!==ordinary.native_id||shard.project!==ordinary.project||shard.grant_id!==ordinary.grant_id||shard.enrollment_id!==ordinary.enrollment_id)continue;
+    if(!shard.requests||!shard.acknowledged||typeof shard.requests!=='object'||Array.isArray(shard.requests)||typeof shard.acknowledged!=='object'||Array.isArray(shard.acknowledged))throw Error('Invalid WATCH notice receipts.');
+    for(const [hash,v] of Object.entries(shard.acknowledged)){if(!/^[a-f0-9]{64}$/.test(hash)||v!==true)throw Error('Invalid WATCH notice ACK.');acknowledged[hash]=true;}
+    for(const [id,r] of Object.entries(shard.requests)){
+      if(!noticeReceipt(r,id))throw Error('Invalid WATCH notice receipt.');
+      if(records[id] && (records[id].attempt_id!==r.attempt_id||records[id].envelope_digest!==r.envelope_digest||records[id].public_request_id!==r.public_request_id))throw Error('Conflicting WATCH notice receipt.');
+      if(!records[id])records[id]=copy(r);
+      else for(const e of r.events)if(!records[id].events.some(v=>JSON.stringify(v)===JSON.stringify(e)))records[id].events.push(copy(e));
+    }
+  }
+  for(const r of Object.values(records)){
+    const terminal=r.events.find(e=>['submitted','dropped','unknown'].includes(e.kind));
+    if(terminal)r.phase=terminal.kind;
+    if(!['submitted','dropped','unknown'].includes(r.phase)){
+      r.phase='unknown';r.events.push({request_id:r.request_id,attempt_id:r.attempt_id,kind:'unknown'});
+    }
+    const pending=[];for(const e of r.events)if(!acknowledged[await fingerprint(e)])pending.push(e);r.events=pending;
+  }
+  state.noticeKey=key;state.noticeData={kind:'peer_reply_notice',native_id:ordinary.native_id,project:ordinary.project,grant_id:ordinary.grant_id,enrollment_id:ordinary.enrollment_id,requests:records,acknowledged};
+  await saveNotices($,state);await flushNotices($,state);
+}
+async function submitNotice($,state,request,envelope,epoch) {
+  try {
+    if(!state.connected||state.noticeProtocol!==1||state.epoch!==epoch||await $.session.id()!==state.data.native_id||await $.session.cwd()!==state.data.project) {await noticeEvent($,state,request,'unknown');return;}
+    if((await $.clock.now())/1000>=request.expires_at){await noticeEvent($,state,request,'dropped');return;}
+    await saveNotices($,state,()=>{request.attempted=true;request.phase='pending';});
+    if(!state.connected||state.noticeProtocol!==1||state.epoch!==epoch||await $.session.id()!==state.data.native_id||await $.session.cwd()!==state.data.project){await noticeEvent($,state,request,'unknown');return;}
+    const result=await $.prompt.submit({text:envelope,asUser:false});
+    await noticeEvent($,state,request,typeof result?.drop==='string'?'dropped':'submitted');
+  }catch{try{await noticeEvent($,state,request,'unknown');}catch{}}
+  finally{state.submitting=false;if(state.flight===request){state.flight=null;state.envelope=null;}}
+}
+
 async function failRequest($, state, request) {
-  try {await event($,state,request,'unknown');} catch { /* Server claim remains attempted. */ }
+  try {if(request.kind==='peer_reply_notice')await noticeEvent($,state,request,'unknown');else await event($,state,request,'unknown');} catch { /* Server claim remains attempted. */ }
 }
 
 async function submit($, state, request, envelope, epoch) {
@@ -202,6 +278,14 @@ async function poll($, state) {
   if (!sessionResponse({...response,heartbeat_interval_ms:2000,lease_seconds:12},state.data.native_id) || response.generation !== state.generation) throw Error('Invalid WATCH poll identity.');
   if (!state.connected || state.epoch !== epoch || !response.claim) return;
   const claim = response.claim;
+  if(claim.kind!==undefined){
+    if(!validNoticeClaim(claim,{...state.data,generation:state.generation,reply_notice_protocol:state.noticeProtocol},await $.clock.now())||!state.noticeData)return;
+    if(state.noticeData.requests[claim.request_id])return;
+    const request={kind:'peer_reply_notice',request_id:claim.request_id,public_request_id:claim.public_request_id,attempt_id:claim.attempt_id,expires_at:claim.expires_at,phase:'claimed',events:[],envelope_digest:await fingerprint(claim.envelope)};
+    await saveNotices($,state,data=>{data.requests[request.request_id]=request;});
+    state.flight=request;
+    state.submitting=true;submitNotice($,state,request,claim.envelope,epoch).catch(()=>{});return;
+  }
   if (state.data.requests[claim.request_id]) {await failRequest($,state,state.data.requests[claim.request_id]); return;}
   const request = {request_id:claim.request_id,attempt_id:claim.attempt_id,expires_at:claim.expires_at,
     generation:state.generation,attempted:false,phase:'claimed',events:[]};
@@ -228,6 +312,8 @@ async function activate($, state, response, eligibilityEpoch) {
   state.generation = response.generation;
   // Only this current derived connection can negotiate peer input. Saved receipts and
   // manual owner enrollments cannot enable it after reload or through a service echo.
+  state.noticeProtocol = state.data.mode==='derived' && response.reply_notice_protocol===1 ? 1 : 0;
+  state.noticeData=null;state.noticeKey=null;
   state.peerProtocol = state.data.mode === 'derived' && response.peer_protocol === 1 ? 1 : 0;
   await save($,state,data=>{checkEligibility(state,eligibilityEpoch); data.active = true; data.generation = response.generation; data.peer_protocol = state.peerProtocol;});
   checkEligibility(state,eligibilityEpoch);
@@ -240,15 +326,25 @@ async function activate($, state, response, eligibilityEpoch) {
   if (!state.submitting && state.flight && ['unknown','dropped','answered'].includes(state.flight.phase)) {state.flight = null; state.envelope = null;}
   state.recoverAt = (await $.clock.now()) + 10000;
   await flush($,state);
+  if(state.noticeProtocol===1)await recoverNotices($,state);
 }
 
 async function connectDerived($, state, id, project, config, eligibilityEpoch) {
   state.config = config;
-  const response = await post($,state,'register',{native_id:id,project,client_id:state.clientId,connection_seq:state.sequence,peer_protocol:1},
-    {port:config.port,token:config.grant});
-  checkEligibility(state,eligibilityEpoch);
-  if (!sessionResponse(response,id) || response.grant_id !== config.grant_id || !UUID.test(response.enrollment_id) ||
-      !/^[a-f0-9]{64}$/.test(response.token) || response.client_id !== state.clientId || response.connection_seq !== state.sequence) throw Error('Invalid WATCH registration.');
+  async function registration(notices=false){
+    // Reserve before I/O, including while not connected: lost commits never reuse a tuple's episode.
+    if(!Number.isSafeInteger(state.sequence+1))throw Error('WATCH connection sequence exhausted.');
+    const sequence=++state.sequence;
+    const body={native_id:id,project,client_id:state.clientId,connection_seq:sequence,peer_protocol:1,...notices?{reply_notice_protocol:1}:{}};
+    const response=await post($,state,'register',body,{port:config.port,token:config.grant});
+    checkEligibility(state,eligibilityEpoch);
+    if(!sessionResponse(response,id)||response.grant_id!==config.grant_id||!UUID.test(response.enrollment_id)||
+       !/^[a-f0-9]{64}$/.test(response.token)||response.client_id!==state.clientId||response.connection_seq!==sequence)throw Error('Invalid WATCH registration.');
+    if(notices && response.reply_notice_protocol!==1)throw Error('Invalid WATCH notice negotiation.');
+    return response;
+  }
+  let response=await registration();
+  if(response.supported_reply_notice_protocol===1)response=await registration(true);
   if (await $.session.id() !== id || await $.session.cwd() !== project) throw Error('Native conversation changed.');
   checkEligibility(state,eligibilityEpoch);
   const same = state.data?.mode === 'derived' && state.data.native_id === id && state.data.project === project && state.data.enrollment_id === response.enrollment_id;
@@ -361,11 +457,12 @@ async function supervisor($, state) {
       return;
     }
     if (state.data.mode === 'derived' && now >= state.recoverAt) {
-      await recover($,state); state.recoverAt = now + 10000;
+      await recover($,state);if(state.noticeProtocol===1)await recoverNotices($,state); state.recoverAt = now + 10000;
       checkEligibility(state,eligibilityEpoch);
     }
     await flush($,state);
     checkEligibility(state,eligibilityEpoch);
+    await flushNotices($,state);
     await poll($,state);
   } catch (error) {
     if (state.eligibilityEpoch !== eligibilityEpoch) return;
@@ -395,8 +492,8 @@ async function explicitDisconnect($, state) {
 }
 
 export function register(on) {
-  const state = {clientId:crypto.randomUUID(),sequence:0,data:null,key:null,config:null,generation:null,connected:false,epoch:0,eligibilityEpoch:0,desktopBinding:null,disconnecting:0,
-    timer:null,peerProtocol:0,writes:Promise.resolve(),network:Promise.resolve(),networkBusy:false,flushing:false,supervising:false,
+  const state = {clientId:crypto.randomUUID(),sequence:-1,data:null,key:null,config:null,generation:null,connected:false,epoch:0,eligibilityEpoch:0,desktopBinding:null,disconnecting:0,
+    timer:null,peerProtocol:0,noticeProtocol:0,noticeData:null,noticeKey:null,noticeFlushing:false,writes:Promise.resolve(),network:Promise.resolve(),networkBusy:false,flushing:false,supervising:false,
     submitting:false,flight:null,envelope:null,error:'',connecting:false,interactive:false,failures:0,retryAt:0,recoverAt:0,
     rejectedGrant:'',rejectedIdentity:'',startSeen:false,startupInteractive:null,startupSurface:null,timerTicks:0,currentSurfaces:null};
   on('session.start',async($,e,next)=>{
@@ -479,7 +576,7 @@ export function register(on) {
   on('turn.start',async($,e,next)=>{
     try {
       const request = state.flight;
-      if (request && !request.turn_id && e.agentId === undefined && matchingPrompt(e.text,state.envelope) && await $.session.id() === state.data.native_id) {
+      if (request && request.kind!=='peer_reply_notice' && !request.turn_id && e.agentId === undefined && matchingPrompt(e.text,state.envelope) && await $.session.id() === state.data.native_id) {
         request.turn_id = e.turnId;
         await event($,state,request,'started',{turn_id:e.turnId});
       }
@@ -489,7 +586,7 @@ export function register(on) {
   on('turn.complete',async($,e,next)=>{
     try {
       const request = state.flight;
-      if (request && e.agentId === undefined && e.turnId === request.turn_id && await $.session.id() === state.data.native_id) {
+      if (request && request.kind!=='peer_reply_notice' && e.agentId === undefined && e.turnId === request.turn_id && await $.session.id() === state.data.native_id) {
         if (!e.isAborted && e.reason === 'answer' && matchingAnswer(e.answer,request.request_id)) await event($,state,request,'answered',{turn_id:e.turnId,answer:e.answer});
         else await event($,state,request,'unknown');
         if (!state.submitting) {state.flight = null; state.envelope = null;}

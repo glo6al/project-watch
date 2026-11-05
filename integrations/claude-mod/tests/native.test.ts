@@ -1,4 +1,5 @@
 import {test, expect, mock} from 'claude-code/testing';
+import {replyNoticeText} from '../hooks/protocol.js';
 
 const NATIVE='11111111-1111-4111-8111-111111111111';
 const GENERATION='22222222-2222-4222-8222-222222222222';
@@ -265,3 +266,40 @@ async function backgroundFixture($,on,changeIdentity){
 
 test('observed SDK Desktop continues exact identity heartbeats through an empty roster',async($,on)=>{await backgroundFixture($,on,false);});
 test('observed SDK Desktop binding cannot transfer to a new identity or back without fresh Desktop evidence',async($,on)=>{await backgroundFixture($,on,true);});
+
+// Official native APIs only. Provider execution is mocked; a notice is admission-ACK-only.
+test('negotiated notice keeps attribution and requires no answer marker or turn tracking',async($,on)=>{
+ const clock=mock.clock(on,{now:100000}),values=new Map([['watch-owner-global-v1',{version:1,grant_id:ENROLLMENT,grant:'a'.repeat(64),port:8793}]]);
+ const events=[],submissions=[],registrations=[];let claimed=false;
+ on('session.id',()=>({value:NATIVE}));on('session.cwd',()=>({value:'/fictional/project'}));on('session.surfaces',()=>({value:['desktop']}));
+ on('store.get',($,e)=>({value:values.get(e.key)}));on('store.keys',()=>({value:[...values.keys()]}));
+ on('store.set',($,e)=>{values.set(e.key,JSON.parse(JSON.stringify(e.value)));return {value:undefined}});
+ on('command.register',()=>({value:undefined}));on('session.start',($,e)=>({cwd:e.cwd}));
+ on('http.fetch',($,e)=>{
+  const body=JSON.parse(e.init.body);let data;
+  const session={version:1,native_id:NATIVE,generation:GENERATION,heartbeat_interval_ms:2000,lease_seconds:12,peer_protocol:1,reply_notice_protocol:1};
+  if(e.url.endsWith('/register')){
+   registrations.push(body);data={...session,supported_reply_notice_protocol:1,reply_notice_protocol:body.reply_notice_protocol??0,grant_id:ENROLLMENT,enrollment_id:ENROLLMENT,token:'b'.repeat(64),client_id:body.client_id,connection_seq:body.connection_seq};
+  }else if(e.url.endsWith('/poll')){
+   const claim=!claimed&&body.accept?{kind:'peer_reply_notice',origin:'reply_notice',request_id:REQUEST,public_request_id:ENROLLMENT,attempt_id:ATTEMPT,native_id:NATIVE,generation:GENERATION,envelope:replyNoticeText(ENROLLMENT),expires_at:1000}:null;
+   if(claim)claimed=true;data={...session,requests:[],claim};
+  }else if(e.url.endsWith('/event')){events.push(body);data={request_id:body.request_id,state:body.kind};}
+  else throw Error('unexpected notice fixture path');
+  return {value:{ok:true,status:200,headers:{},text:JSON.stringify(data)}};
+ });
+ on('prompt.submit',async(core,e)=>{
+  submissions.push({text:e.text,origin:e.origin});
+  const stored=[...values.values()].find(value=>value.kind==='peer_reply_notice');
+  expect(stored.requests[REQUEST].attempted).toBe(true);
+  await $.turn.start({text:e.text,turnId:'notice-main'});
+  await $.turn.complete({turnId:'notice-main',answer:'No marker or reply expected.',isAborted:false,reason:'answer',durationMs:1});
+  return {text:e.text};
+ });
+ on('turn.start',($,e)=>({turnId:e.turnId}));on('turn.complete',($,e)=>({text:e.answer}));
+ await $.session.start({cwd:'/fictional/project',surface:'desktop',isInteractive:true});
+ await clock.advance(2000);await clock.advance(2000);await clock.advance(2000);
+ expect(registrations.length).toBe(2);expect(registrations[0].reply_notice_protocol).toBe(undefined);expect(registrations[1].connection_seq>registrations[0].connection_seq).toBe(true);
+ expect(submissions.length).toBe(1);expect(submissions[0].origin.kind).toBe('plugin');expect(submissions[0].origin.asUser===true).toBe(false);
+ expect(events.length).toBe(1);expect(events[0].kind).toBe('submitted');
+ expect([...values.entries()].some(([key,value])=>key.startsWith('watch-owner-runtime-v2:')&&value.requests?.[REQUEST])).toBe(false);
+});

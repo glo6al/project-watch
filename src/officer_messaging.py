@@ -140,6 +140,8 @@ class MessagingStore:
             self.db.commit()
             self.peers = peer_bridge.PeerBridge(self)
             self.shared = peer_bridge.SharedBridge(self)
+            import peer_reply_delivery
+            self.reply_delivery = peer_reply_delivery.ReplyDelivery(self)
         except BaseException:
             if self.db is not None:
                 self.db.close()
@@ -782,6 +784,9 @@ class MessagingStore:
             return 'unknown', 'Official-mod requests are dispatched only by their atomic claim.'
         if row.get('runtime') == 'claude':
             return self._send_claude(row)
+        return self._queue_codex(row, outgoing_message(row))
+
+    def _queue_codex(self, row, message):
         try:
             st = self._metadata(row['path'], row['agent'][2:])
             if (st.st_ino, st.st_dev) != (row['inode'], row['device']) or st.st_size < row['cursor']:
@@ -789,7 +794,7 @@ class MessagingStore:
         except (OSError, MessagingError):
             return 'failed', 'The target transcript changed before sending; nothing was sent.'
         try:
-            proc = subprocess.Popen([self.cli, 'queue', '--thread', row['agent'][2:], '--message', outgoing_message(row)],
+            proc = subprocess.Popen([self.cli, 'queue', '--thread', row['agent'][2:], '--message', message],
                                     stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         except OSError:
             return 'failed', 'Codex could not be launched; nothing was sent.'
@@ -1017,6 +1022,8 @@ class MessagingStore:
                     self._save(row)
             except sqlite3.OperationalError:
                 self.db.rollback()
+
+        self.reply_delivery.tick()
 
     def _run(self):
         while not self.stop.is_set():

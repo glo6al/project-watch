@@ -190,6 +190,8 @@ The queue runs through the target agent’s existing account and may consume its
 
 One optional WATCH MCP connection per client exposes eligible named Codex and Claude chats across projects. Agents can resolve names, send a message, and retrieve its reply without per-chat enrollment or a new dashboard panel. Receiving is supported for reachable Codex chats and eligible Claude chats connected through the WATCH plugin with agent messaging authorized. A loaded Claude chat can receive while absent from the live room when its existing local identity is verified and its authenticated plugin lease is current. An offline or unloaded chat remains unavailable. Older Claude connections remain owner-only until upgraded; the legacy channel cannot receive peer messages. Service access and reply history are shared; declared sender names are not authenticated identities. Messages grant no new owner authority and cannot invoke steering or interruption. See [shared bridge setup and limitations](docs/PEER_BRIDGE.md).
 
+Optional automatic replies return to the chat that asked. Enable the native reply hook once per user account in each sending app; Claude return recipients also need the WATCH plugin's reply-notice support. WATCH sends a short completion notice, and the asking agent retrieves that exact answer once. Internal worker sends return to their supervising chat. This uses the chat's normal model allowance and keeps its tools and permissions. Unsupported or disconnected sources retain manual reply recovery. See [automatic reply setup](docs/PEER_BRIDGE.md#automatic-replies-to-the-asking-chat).
+
 ### Steering and interrupting Codex
 
 Tell the Officer “Steer Atlas: focus on the failing tests” or “Interrupt Atlas.” Use the exact name of one agent in the room. These requests act on an existing local Codex desktop conversation without another Send button or a new session. Ordinary questions and messages still use the queue. Wording such as “Tell Atlas to pause its work” stops the current turn; “Tell Atlas to focus on tests right now” steers it. Explicitly deferred requests, such as “After this task, tell Atlas to pause,” stay queued. Pausing does not schedule automatic resumption.
@@ -266,12 +268,15 @@ Early, and in daily use by its author. Every change that touches the key, the ho
     src/iterm-profile.json   the iTerm2 profile watch_tty.py --tab installs
     tests/test_parsers.py    the shell parser, watch.json, one Cursor transcript, terminal escaping, the key and previews (run on every push)
     tests/test_officer_messaging.py  durable requests, queue failures and reply correlation
+    tests/test_peer_reply_delivery.py  immutable return routing and one-way notice attempts
+    tests/test_peer_reply_integration.py  real MCP/hook/HTTP/plugin path with mocked native turns
     tests/test_officer_routing.py    isolated intent interpretation and dispatch retries
     tests/test_officer_controls.py   durable control outcomes and active-turn checks
     tests/test_officer_fulfillment.py  verified pause fulfillment, migration and concurrency
     tests/test_codex_desktop_control.py  bounded desktop bridge and failure handling
     tests/test_page.js       UI logic regressions: routing, drafts, histories, capability checks, requests, navigation, layout state and mutation checks (Node)
     scripts/install_hooks.py adds or removes the Claude Code hooks
+    scripts/install_reply_hook.py installs optional user-level reply observations
     scripts/check_secrets.py refuses to publish a key: names, link text and contents, any size, in the working tree and in what git has staged (the staged copy is what a commit publishes); anything it cannot examine fails it. Run before any commit (the tests run it too)
     docs/ROADMAP.md          what is planned and what is unproven
     docs/WINDOWS.md          installing and trying it on Windows, and what to report

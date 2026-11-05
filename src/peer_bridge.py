@@ -503,6 +503,7 @@ def shared_schema(db):
         client_id TEXT PRIMARY KEY, target TEXT NOT NULL, target_snapshot TEXT NOT NULL,
         payload_hash TEXT NOT NULL, transport_id TEXT NOT NULL UNIQUE,
         credential_id TEXT NOT NULL, created REAL NOT NULL, launched REAL, preview TEXT NOT NULL)''')
+    db.execute('CREATE TABLE IF NOT EXISTS peer_reply_admissions (request_id TEXT PRIMARY KEY,args_sha256 TEXT NOT NULL)')
     db.execute('CREATE INDEX IF NOT EXISTS shared_bridge_requests_target ON shared_bridge_requests(target,created)')
     db.execute('CREATE INDEX IF NOT EXISTS shared_bridge_requests_created ON shared_bridge_requests(created)')
     db.execute('''CREATE TABLE IF NOT EXISTS shared_bridge_nonces (
@@ -628,6 +629,13 @@ def service_credential(db, ident):
     if not is_uuid(ident) or not row or row[1] != 1 or not isinstance(row[0], str) or not HEX.fullmatch(row[0]):
         raise PeerError(403, 'Shared WATCH access is unavailable.')
     return {'id': ident, 'secret': row[0]}
+
+
+def receipt_fingerprint(agent_id, identity_revision, text, declared_sender=None):
+    args = dict(agent_id=agent_id, identity_revision=identity_revision, text=text)
+    if declared_sender is not None:
+        args['declared_sender'] = declared_sender
+    return digest(json.dumps(args, sort_keys=True, separators=(',', ':'), ensure_ascii=False).encode('utf-8'))
 
 
 def shared_envelope(transport_id, declared_sender, text, runtime, transport=None):
@@ -772,6 +780,18 @@ class SharedBridge:
     def metadata_current(self, proof):
         return bool(self.directory and self.directory.claude_proof_current(proof))
 
+    def source_target(self, agent_id):
+        """Resolve an exact source UUID freshly, never by a name or sender label."""
+        self.ensure_directory()
+        if self.directory is None:
+            raise PeerError(409, 'Source chat metadata is unavailable.')
+        with self.directory.lock:
+            old = self.directory._entries.get(agent_id)
+            revision = old['identity_revision'] if old else None
+        if revision is None:
+            raise PeerError(409, 'Source chat metadata is unavailable.')
+        return self.directory.resolve(agent_id, revision, require_reachable=False)
+
     def _resolve(self, agent_id, revision):
         if self.directory is None:
             raise PeerError(503, 'The chat directory is unavailable.')
@@ -884,6 +904,8 @@ class SharedBridge:
             db.execute('INSERT INTO shared_bridge_requests VALUES (?,?,?,?,?,?,?,NULL,?)',
                        (request_id, agent_id, json.dumps(snapshot), payload_hash, tid, credential['id'], now, text[:160]))
             db.execute('INSERT INTO requests VALUES (?,?)', (tid, json.dumps(row)))
+            db.execute('INSERT INTO peer_reply_admissions VALUES (?,?)',
+                       (request_id, receipt_fingerprint(agent_id, identity_revision, text, declared_sender)))
             return self.result(request_id)
 
     def result(self, request_id, *, duplicate=False, include_reply=True):

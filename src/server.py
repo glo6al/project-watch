@@ -3570,6 +3570,11 @@ class H(BaseHTTPRequestHandler):
                 with LOCK:
                     return {aid: dict(item) for aid, item in AGENTS.items()}
             return claude_mod.handle_http(self, MESSAGING, snapshot)
+        if self.path.startswith('/peer-reply/v1/'):
+            if MESSAGING is None:
+                return self.send(503, b'{"error":"Reply notices unavailable."}', 'application/json')
+            import peer_reply_delivery
+            return peer_reply_delivery.handle_http(self, MESSAGING.reply_delivery)
         if self.path.startswith('/bridge/v2/'):
             if MESSAGING is None:
                 self.close_connection = True
@@ -3645,6 +3650,22 @@ class H(BaseHTTPRequestHandler):
             return self.send(200, KEY.encode())
         if not self.keyed(self.headers.get('X-Live-Room-Key', '')):
             return self.send(403, b'forbidden')
+        if route in ('/peer-reply-setup', '/peer-reply-status', '/peer-reply-revoke'):
+            import peer_bridge
+            if MESSAGING is None:
+                return self.send(503, b'{"error":"Reply notices unavailable."}', 'application/json')
+            try:
+                if route == '/peer-reply-setup':
+                    out = MESSAGING.reply_delivery.setup(d, PORT)
+                else:
+                    if d:
+                        raise peer_bridge.PeerError(400, 'Expected an empty request.')
+                    out = MESSAGING.reply_delivery.revoke() if route.endswith('revoke') else MESSAGING.reply_delivery.status()
+            except peer_bridge.PeerError as error:
+                return self.send(error.status, json.dumps({'error': str(error)}).encode(), 'application/json')
+            except (OSError, ValueError, sqlite3.Error):
+                return self.send(503, b'{"error":"Reply notices unavailable."}', 'application/json')
+            return self.send(200, json.dumps(out).encode(), 'application/json')
         if route in ('/claude-mod-setup', '/claude-mod-setup-status', '/claude-mod-revoke'):
             if MESSAGING is None:
                 return self.send(503, b'{"error":"Claude setup unavailable."}', 'application/json')

@@ -71,7 +71,8 @@ class ClaudeMod:
             project TEXT NOT NULL, generation TEXT, last_seen REAL NOT NULL, active INTEGER NOT NULL)''')
         columns = {r[1] for r in self.db.execute('PRAGMA table_info(claude_mod_enrollments)')}
         for name, kind in (('grant_id', 'TEXT'), ('client_id', 'TEXT'), ('connection_seq', 'INTEGER'),
-                           ('peer_protocol', 'INTEGER NOT NULL DEFAULT 0')):
+                           ('peer_protocol', 'INTEGER NOT NULL DEFAULT 0'),
+                           ('reply_notice_protocol', 'INTEGER NOT NULL DEFAULT 0')):
             if name not in columns:
                 self.db.execute(f'ALTER TABLE claude_mod_enrollments ADD COLUMN {name} {kind}')
         self.db.execute('CREATE INDEX IF NOT EXISTS claude_mod_agents ON claude_mod_enrollments(agent,active)')
@@ -146,13 +147,14 @@ class ClaudeMod:
         return dict(agent=agent, port=port, pair_code=code, expires_at=expiry, command=f'/watch-connect {port}:{code}')
 
     def session(self, entry):
-        result = dict(version=1, native_id=entry['agent'][2:], generation=entry['generation'], heartbeat_interval_ms=2000, lease_seconds=LEASE, peer_protocol=entry['peer_protocol'])
+        result = dict(version=1, native_id=entry['agent'][2:], generation=entry['generation'], heartbeat_interval_ms=2000, lease_seconds=LEASE, peer_protocol=entry['peer_protocol'],
+                      reply_notice_protocol=entry['reply_notice_protocol'], supported_reply_notice_protocol=1)
         if entry['grant_id']:
             result.update(grant_id=entry['grant_id'], client_id=entry['client_id'], connection_seq=entry['connection_seq'])
         return result
 
     def get(self, eid):
-        fields = ('id', 'agent', 'project', 'generation', 'last_seen', 'active', 'grant_id', 'client_id', 'connection_seq', 'peer_protocol')
+        fields = ('id', 'agent', 'project', 'generation', 'last_seen', 'active', 'grant_id', 'client_id', 'connection_seq', 'peer_protocol', 'reply_notice_protocol')
         row = self.db.execute('SELECT '+','.join(fields)+' FROM claude_mod_enrollments WHERE id=?', (eid,)).fetchone()
         return dict(zip(fields, row)) if row else None
 
@@ -215,7 +217,9 @@ class ClaudeMod:
 
     def registration_access(self, data, token):
         fields = ('native_id', 'project', 'client_id', 'connection_seq')
-        schema(data, fields + (('peer_protocol',) if isinstance(data, dict) and 'peer_protocol' in data else ()))
+        schema(data, fields + tuple(k for k in ('peer_protocol', 'reply_notice_protocol') if isinstance(data, dict) and k in data))
+        if type(data.get('reply_notice_protocol', 0)) is not int or data.get('reply_notice_protocol', 0) not in (0, 1):
+            raise ModError(400, 'Unsupported reply-notice protocol.')
         protocol = data.get('peer_protocol', 0)
         if type(protocol) is not int or protocol not in (0, 1):
             raise ModError(400, 'Unsupported Claude peer protocol.')
@@ -263,20 +267,20 @@ class ClaudeMod:
                 raise ModError(409, 'This registration episode is stale.', 'stale_connection')
             if not same_client and entry['generation']:
                 raise ModError(409, 'Another Claude host currently owns this chat connection.', 'host_conflict')
-            if same_client and seq == entry['connection_seq'] and protocol != entry['peer_protocol']:
+            if same_client and seq == entry['connection_seq'] and (protocol != entry['peer_protocol'] or data.get('reply_notice_protocol', 0) != entry['reply_notice_protocol']):
                 raise ModError(409, 'This registration episode has a different peer protocol.', 'stale_connection')
             if not (same_client and seq == entry['connection_seq'] and entry['generation']):
                 self.uncertain(entry['id'], 'Claude reconnected after an earlier claim. Delivery remains unknown; it will not resubmit.')
-                self.db.execute('UPDATE claude_mod_enrollments SET generation=?,client_id=?,connection_seq=?,last_seen=?,peer_protocol=? WHERE id=?',
-                                (str(uuid.uuid4()), data['client_id'], seq, time.time(), protocol, entry['id']))
+                self.db.execute('UPDATE claude_mod_enrollments SET generation=?,client_id=?,connection_seq=?,last_seen=?,peer_protocol=?,reply_notice_protocol=? WHERE id=?',
+                                (str(uuid.uuid4()), data['client_id'], seq, time.time(), protocol, data.get('reply_notice_protocol', 0), entry['id']))
         else:
             if self.db.execute('SELECT COUNT(*) FROM claude_mod_enrollments WHERE active=1').fetchone()[0] >= MAX_ENROLLMENTS:
                 raise ModError(429, 'Too many active Claude connections.', 'connection_limit')
             eid = str(uuid.uuid4())
             self.db.execute('''INSERT INTO claude_mod_enrollments
-                (id,token_hash,agent,project,generation,last_seen,active,grant_id,client_id,connection_seq,peer_protocol)
-                VALUES (?,?,?,?,?,?,1,?,?,?,?)''', (eid, digest(service_token), aid, data['project'], str(uuid.uuid4()),
-                                               time.time(), gid, data['client_id'], seq, protocol))
+                (id,token_hash,agent,project,generation,last_seen,active,grant_id,client_id,connection_seq,peer_protocol,reply_notice_protocol)
+                VALUES (?,?,?,?,?,?,1,?,?,?,?,?)''', (eid, digest(service_token), aid, data['project'], str(uuid.uuid4()),
+                                               time.time(), gid, data['client_id'], seq, protocol, data.get('reply_notice_protocol', 0)))
             entry = self.get(eid)
         entry = self.get(entry['id'])
         return dict(self.session(entry), enrollment_id=entry['id'], token=service_token)
@@ -360,7 +364,8 @@ class ClaudeMod:
         return dict(result, enrollment_id=eid, token=token)
 
     def statuses(self, entry):
-        return [dict(request_id=r['request_id'], attempt_id=r['mod_attempt_id'], state=r['state'], turn_id=r.get('mod_turn', ''), error=r.get('error', ''))
+        notices = self.store.reply_delivery.statuses(entry) if hasattr(self.store, 'reply_delivery') and entry['reply_notice_protocol'] == 1 else []
+        return notices + [dict(request_id=r['request_id'], attempt_id=r['mod_attempt_id'], state=r['state'], turn_id=r.get('mod_turn', ''), error=r.get('error', ''))
                 for r in sorted(self.rows(), key=lambda r: r['created']) if r.get('mod_enrollment') == entry['id'] and r.get('mod_attempt_id')][-32:]
 
     def validate_poll(self, entry, data):
@@ -379,9 +384,10 @@ class ClaudeMod:
             new_rows = [r for r in self.rows() if data['accept'] and r.get('mod_enrollment') == entry['id']
                         and not r.get('launched') and r['state'] == 'sending']
             candidates = [r for r in new_rows if self.peer_row(r)]
+            notices = self.store.reply_delivery.candidates(entry['agent']) if hasattr(self.store, 'reply_delivery') and entry['reply_notice_protocol'] == 1 and data['accept'] else []
         snapshot = agents() if callable(agents) else agents
         proof = None
-        if new_rows and (not isinstance(snapshot, dict) or entry['agent'] not in snapshot):
+        if (new_rows or notices) and (not isinstance(snapshot, dict) or entry['agent'] not in snapshot):
             try:
                 proof = self.store.shared.metadata_target(entry['agent'], entry['project'])
             except Exception:
@@ -392,6 +398,12 @@ class ClaudeMod:
                 prepared[row['request_id']] = self.store.shared.prepare_mod_claim(row)
             except Exception:
                 prepared[row['request_id']] = None
+        notice_proofs = {}
+        for row in notices:
+            try:
+                notice_proofs[row['request_id']] = self.store.reply_delivery.prepare(row['source']['agent_id'], row['source'])
+            except Exception:
+                pass
         with self.store.lock, self.db:
             snapshot = agents() if callable(agents) else agents  # pure current room vetoes
             snapshot = dict(snapshot) if isinstance(snapshot, dict) else {}
@@ -401,13 +413,14 @@ class ClaudeMod:
             # Connection or grant replacement during preparation invalidates this
             # poll; retained original attempts can still recover after reconnect.
             entry = self.authenticate(token)
-            return self.poll(entry, data, snapshot, prepared)
+            return self.poll(entry, data, snapshot, prepared, notice_proofs)
 
-    def poll(self, entry, data, agents, prepared):
+    def poll(self, entry, data, agents, prepared, notice_proofs=None):
         self.validate_poll(entry, data)
         self.db.execute('UPDATE claude_mod_enrollments SET last_seen=? WHERE id=?', (time.time(), entry['id']))
         rows = self.rows()
         busy = any(r.get('mod_enrollment') == entry['id'] and r.get('launched') and r['state'] in ('queued', 'awaiting_reply') for r in rows)
+        busy = busy or self.store.reply_delivery.busy(entry['id'])
         claim = None
         item = agents.get(entry['agent']) if isinstance(agents, dict) else None
         can_claim = local_parent(entry['agent'], item) and item.get('cwd') == entry['project']
@@ -439,9 +452,19 @@ class ClaudeMod:
                 if row.get('origin') == 'peer':
                     claim['origin'] = 'peer'
                 break
-        return dict(version=1, native_id=entry['agent'][2:], generation=entry['generation'], peer_protocol=entry['peer_protocol'], claim=claim, requests=self.statuses(entry))
+        if claim is None and data['accept'] and can_claim and not busy:
+            claim = self.store.reply_delivery.claim_in_transaction(entry, notice_proofs or {})
+        return dict(version=1, native_id=entry['agent'][2:], generation=entry['generation'], peer_protocol=entry['peer_protocol'], reply_notice_protocol=entry['reply_notice_protocol'], claim=claim, requests=self.statuses(entry))
 
     def event(self, entry, data):
+        if hasattr(self.store, 'reply_delivery'):
+            self.native(entry, data)
+            try:
+                result = self.store.reply_delivery.event_in_transaction(entry, data)
+            except peer_bridge.PeerError as error:
+                raise ModError(error.status, str(error)) from None
+            if result is not None:
+                return result
         kind = data.get('kind')
         extras = {'submitted': (), 'started': ('turn_id',), 'answered': ('turn_id', 'answer'), 'dropped': (), 'unknown': ()}
         if kind not in extras:

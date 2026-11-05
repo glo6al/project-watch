@@ -2,7 +2,7 @@ import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {createHash} from 'node:crypto';
 import {register} from '../hooks/register.js';
-import {matchingPrompt, matchingAnswer, pairing, validClaim} from '../hooks/protocol.js';
+import {matchingPrompt, matchingAnswer, pairing, validClaim, validNoticeClaim, replyNoticeText} from '../hooks/protocol.js';
 
 const NATIVE='11111111-1111-4111-8111-111111111111', GENERATION='22222222-2222-4222-8222-222222222222';
 const REQUEST='33333333-3333-4333-8333-333333333333', ATTEMPT='44444444-4444-4444-8444-444444444444';
@@ -412,7 +412,7 @@ test('one direct-owner setup propagates to two UUIDs sharing one project without
   for(const h of [first,second])assert.equal(h.calls.find(c=>c.url.endsWith('/poll')).body.client_id,h.calls.find(c=>c.url.endsWith('/register')).body.client_id);
 });
 
-test('offline and lost register response retry the same ordered episode with bounded backoff',async()=>{
+test('offline and lost register response reserve higher ordered episodes with bounded backoff',async()=>{
   let attempts=0;
   const h=await harness({storage:new Map([[GLOBAL_KEY,CONFIG]]),claimed:false,fetch:(url,body)=>{
     if(url.endsWith('/register')&&++attempts<3)throw Error('offline or lost response');
@@ -423,7 +423,7 @@ test('offline and lost register response retry the same ordered episode with bou
   h.setNow(105999);await h.tick();assert.equal(attempts,2);
   h.setNow(106000);await h.tick();assert.equal(attempts,3);
   const bodies=h.calls.filter(c=>c.url.endsWith('/register')).map(c=>c.body);
-  assert.deepEqual(bodies,[bodies[0],bodies[0],bodies[0]]);
+  assert.deepEqual(bodies.map(v=>v.connection_seq),[0,1,2]);assert(bodies.every(v=>v.client_id===bodies[0].client_id));
   assert.equal(JSON.parse((await h.command('watch-status')).text).connected,true);
 });
 
@@ -441,7 +441,7 @@ test('ambiguous derived poll advances recovery sequence once and never resubmits
   h.setNow(102000);await h.tick();
   h.setNow(106000);await h.tick();await h.tick();
   const rows=h.calls.filter(c=>c.url.endsWith('/register')).map(c=>c.body);
-  assert.deepEqual(rows.map(row=>row.connection_seq),[0,1,1]);
+  assert.deepEqual(rows.map(row=>row.connection_seq),[0,1,2]);
   assert(rows.every(row=>row.client_id===rows[0].client_id));
   assert.equal(polls,2);assert.equal(h.submissions.length,0);
 });
@@ -976,4 +976,134 @@ test('own awaited identity cleanup cannot absorb a concurrent lifecycle invalida
     assert.equal(registrations(h).length,1,'old cleanup must not bind its still-Desktop identity after session end');
     h.setSurfaces([]);await h.tick();assert.equal(registrations(h).length,1);
   }finally{held=false;gate.release();await pending;}
+});
+
+const NOTICE='66666666-6666-4666-8666-666666666666',PUBLIC='77777777-7777-4777-8777-777777777777';
+const noticeRows=storage=>[...storage.entries()].filter(([key])=>key.startsWith('watch-reply-notice-runtime-v1:'));
+function noticeClaim(extra={}){return {kind:'peer_reply_notice',origin:'reply_notice',request_id:NOTICE,public_request_id:PUBLIC,attempt_id:ATTEMPT,native_id:NATIVE,generation:GENERATION,envelope:replyNoticeText(PUBLIC),expires_at:1000,...extra}}
+function supportedFetch(url,body){return url.endsWith('/register')?responseJSON(registered(body,{peer_protocol:1,supported_reply_notice_protocol:1,reply_notice_protocol:body.reply_notice_protocol??0})):null}
+
+test('notice kind requires exact fixed standalone public-ID body and negotiated derived protocol',()=>{
+ const state={native_id:NATIVE,generation:GENERATION,reply_notice_protocol:1};
+ assert(validNoticeClaim(noticeClaim(),state,100000));
+ for(const bad of [{kind:'peer'},{origin:'owner'},{public_request_id:'wrong'},{request_id:'wrong'},{native_id:ATTEMPT},{generation:ATTEMPT},{envelope:'quoted '+replyNoticeText(PUBLIC)},{envelope:replyNoticeText(PUBLIC)+'\nextra'},{expires_at:100}])assert.equal(validNoticeClaim(noticeClaim(bad),state,100000),false);
+ for(const protocol of [undefined,0,true,'1'])assert.equal(validNoticeClaim(noticeClaim(),{...state,reply_notice_protocol:protocol},100000),false);
+ assert.equal(validClaim(noticeClaim(),{...state,peer_protocol:1},100000),false);
+});
+
+test('new registration probes legacy shape then strictly higher notice episode; lost upgrade never reuses tuple',async()=>{
+ let lost=true;
+ const h=await harness({storage:new Map([[GLOBAL_KEY,CONFIG]]),claimed:false,fetch:(url,body)=>{
+  if(url.endsWith('/register')&&body.reply_notice_protocol===1&&lost){lost=false;throw Error('response lost after server commit');}
+  return supportedFetch(url,body);
+ }});
+ await h.tick();assert.equal(JSON.parse((await h.command('watch-status')).text).connected,false);
+ h.setNow(102000);await h.tick();assert.equal(JSON.parse((await h.command('watch-status')).text).connected,true);
+ const bodies=h.calls.filter(c=>c.url.endsWith('/register')).map(c=>c.body);
+ assert.deepEqual(bodies.map(b=>[b.connection_seq,b.reply_notice_protocol??0]),[[0,0],[1,1],[2,0],[3,1]]);
+ assert.deepEqual(Object.keys(bodies[0]).sort(),['client_id','connection_seq','native_id','peer_protocol','project']);
+ assert.equal(h.submissions.length,0);
+});
+
+test('notice persists one attempt before attributed admission and never tracks a model answer',async()=>{
+ let offered=false;
+ const h=await harness({storage:new Map([[GLOBAL_KEY,CONFIG]]),claimed:false,submit:()=>({}),fetch:(url,body)=>{
+  if(url.endsWith('/poll')){const claim=!offered&&body.accept?noticeClaim():null;if(claim)offered=true;return responseJSON({version:1,native_id:NATIVE,generation:GENERATION,reply_notice_protocol:1,claim,requests:[]})}
+  return supportedFetch(url,body);
+ }});
+ await h.tick();await h.tick();await h.waitSubmission();await h.waitForEvent('submitted');
+ await h.drive(()=>noticeRows(h.storage).some(([,v])=>v.requests[NOTICE]?.phase==='submitted'&&!v.requests[NOTICE].events.length),'notice durable ACK');
+ const record=noticeRows(h.storage).find(([,v])=>v.requests[NOTICE])?.[1].requests[NOTICE];assert.equal(record.attempted,true);
+ assert.deepEqual(h.submissions,[{text:replyNoticeText(PUBLIC),asUser:false}]);
+ assert(!runtimeRows(h.storage).some(([,v])=>v.requests?.[NOTICE]));
+ await h.call('turn.start',{turnId:'notice-main',text:wrappedPrompt(replyNoticeText(PUBLIC))});
+ await h.call('turn.complete',{turnId:'notice-main',answer:'No return marker expected',reason:'answer',isAborted:false});
+ h.setNow(112000);await h.tick();await h.tick();
+ assert.equal(h.submissions.length,1);assert.deepEqual(h.events().map(e=>e.kind),['submitted']);
+ assert.equal(JSON.parse((await h.command('watch-status')).text).pending,null);
+});
+
+test('old server ignores isolated retained notice ACK while ordinary delivery still works',async()=>{
+ const oldClient='88888888-8888-4888-8888-888888888888';
+ const key='watch-reply-notice-runtime-v1:'+NATIVE+':'+oldClient;
+ const shard={kind:'peer_reply_notice',native_id:NATIVE,project:'/fictional/project',grant_id:ENROLLMENT,enrollment_id:ENROLLMENT,acknowledged:{},requests:{[NOTICE]:{kind:'peer_reply_notice',request_id:NOTICE,public_request_id:PUBLIC,attempt_id:ATTEMPT,envelope_digest:'a'.repeat(64),phase:'submitted',events:[{request_id:NOTICE,attempt_id:ATTEMPT,kind:'submitted'}]}}};
+ const storage=new Map([[GLOBAL_KEY,CONFIG],[key,copy(shard)]]);
+ const h=await harness({storage,fetch:(url,body)=>{
+  if(url.endsWith('/register')&&Object.keys(body).some(k=>!['native_id','project','client_id','connection_seq','peer_protocol'].includes(k)))return {ok:false,status:400,text:JSON.stringify({error:'legacy register schema'})};
+  return globalFetch(url,body);
+ }});await h.tick();await h.tick();await h.waitSubmission();
+ assert.deepEqual(h.submissions,[{text:ENVELOPE,asUser:false}]);assert(!h.events().some(e=>e.request_id===NOTICE));
+ assert.deepEqual(storage.get(key),shard);
+ assert(!key.startsWith('watch-owner-runtime-v2:'+NATIVE+':'),'old0.3 recovery filter cannot see notices');
+ const h2=await harness({storage,claimed:false,fetch:supportedFetch});await h2.tick();await h2.waitForEvent('submitted');
+ await h2.drive(()=>noticeRows(storage).some(([k,v])=>k!==key&&v.acknowledged&&Object.keys(v.acknowledged).length>0),'recovered notice ACK');
+ assert.equal(h2.submissions.length,0);h2.setNow(112000);await h2.tick();assert.equal(h2.events().filter(e=>e.request_id===NOTICE).length,1);
+});
+
+test('protocol0 or manual connections never admit a typed notice even if server offers one',async()=>{
+ for(const manual of [false,true]){
+  const h=await harness({storage:manual?new Map():new Map([[GLOBAL_KEY,CONFIG]]),claimed:false,fetch:(url,body)=>{
+   if(url.endsWith('/poll'))return responseJSON({version:1,native_id:NATIVE,generation:GENERATION,claim:noticeClaim(),requests:[]});
+   return manual?null:globalFetch(url,body);
+  }});
+  if(manual)await h.enroll();else await h.tick();await h.tick();assert.equal(h.submissions.length,0);assert.equal(h.events().length,0);
+ }
+});
+
+test('busy notice keeps original durable pending attempt through recovery heartbeat then ACKs once',async()=>{
+ let settle,offered=false;const storage=new Map([[GLOBAL_KEY,CONFIG]]);
+ const h=await harness({storage,claimed:false,submit:()=>new Promise(resolve=>{settle=resolve}),fetch:(url,body)=>{
+  if(url.endsWith('/poll')){const claim=!offered&&body.accept?noticeClaim():null;if(claim)offered=true;return responseJSON({version:1,native_id:NATIVE,generation:GENERATION,reply_notice_protocol:1,claim,requests:[]})}
+  return supportedFetch(url,body);
+ }});
+ await h.tick();await h.tick();await h.waitSubmission();h.setNow(112000);await h.tick();
+ const record=noticeRows(storage).find(([,v])=>v.requests[NOTICE])?.[1].requests[NOTICE];
+ assert.equal(record.phase,'pending');assert.equal(record.attempted,true);assert.equal(h.events().length,0);
+ assert(h.calls.filter(c=>c.url.endsWith('/poll')).some(c=>c.body.accept===false));
+ settle({});await h.waitForEvent('submitted');await h.tick();assert.equal(h.submissions.length,1);assert.deepEqual(h.events().map(e=>e.kind),['submitted']);
+});
+
+
+test('dropped or uncertain notice admissions retain terminal ACKs across reload without native resubmission',async()=>{
+ for(const [kind,submit] of [['dropped',()=>({drop:'host unavailable'})],['unknown',()=>{throw Error('ambiguous admission')}]] ){
+  const storage=new Map([[GLOBAL_KEY,CONFIG]]);
+  const options=()=>{let offered=false;return {storage,claimed:false,submit,fetch:(url,body)=>{
+   if(url.endsWith('/poll')){const claim=!offered?noticeClaim():null;offered=true;return responseJSON({version:1,native_id:NATIVE,generation:GENERATION,claim,requests:[]})}
+   return supportedFetch(url,body);
+  }}};
+  const h=await harness(options());await h.tick();await h.tick();await h.waitSubmission();await h.waitForEvent(kind);
+  await h.drive(()=>noticeRows(storage).some(([,v])=>v.requests[NOTICE]?.phase===kind&&!v.requests[NOTICE].events.length),'terminal notice ACK persisted');
+  const h2=await harness(options());await h2.tick();await h2.tick();h2.setNow(112000);await h2.tick();
+  assert.equal(h.submissions.length,1);assert.equal(h2.submissions.length,0);
+  assert(h.events().every(e=>e.kind===kind));assert(h2.events().every(e=>e.kind===kind));
+ }
+});
+
+
+test('one failed notice claim write leaves no flight and reconnect accepts ordinary work',async()=>{
+ let offered=false,failed=0;
+ const h=await harness({storage:new Map([[GLOBAL_KEY,CONFIG]]),storeSet:(key,value)=>{
+  if(key.startsWith('watch-reply-notice-runtime-v1:')&&value.requests[NOTICE]?.phase==='claimed'&&!failed++){throw Error('one-time private write failure')}
+ },fetch:(url,body)=>{
+  if(url.endsWith('/poll')&&!offered){offered=true;return responseJSON({version:1,native_id:NATIVE,generation:GENERATION,claim:noticeClaim(),requests:[]})}
+  return supportedFetch(url,body);
+ }});
+ await h.tick();await h.tick();assert.equal(h.submissions.length,0);assert.equal(failed,1);
+ assert.equal(JSON.parse((await h.command('watch-status')).text).pending,null);
+ h.setNow(102000);await h.tick();await h.tick();await h.waitSubmission();await h.waitForEvent('submitted');
+ assert.deepEqual(h.submissions,[{text:ENVELOPE,asUser:false}]);assert(!h.events().some(e=>e.request_id===NOTICE));
+ assert(h.calls.filter(c=>c.url.endsWith('/poll')).at(-1).body.accept);
+});
+
+test('expired server notice ACK tombstone clears retained acknowledgement before ordinary polling',async()=>{
+ const key='watch-reply-notice-runtime-v1:'+NATIVE+':88888888-8888-4888-8888-888888888888';
+ const event={request_id:NOTICE,attempt_id:ATTEMPT,kind:'submitted'};
+ const shard={kind:'peer_reply_notice',native_id:NATIVE,project:'/fictional/project',grant_id:ENROLLMENT,enrollment_id:ENROLLMENT,acknowledged:{},requests:{[NOTICE]:{kind:'peer_reply_notice',request_id:NOTICE,public_request_id:PUBLIC,attempt_id:ATTEMPT,envelope_digest:'a'.repeat(64),phase:'submitted',events:[event]}}};
+ const h=await harness({storage:new Map([[GLOBAL_KEY,CONFIG],[key,shard]]),fetch:(url,body)=>{
+  if(url.endsWith('/event')&&body.request_id===NOTICE)return responseJSON({request_id:NOTICE,state:'queued',turn_id:''});
+  return supportedFetch(url,body);
+ }});
+ await h.tick();await h.waitForEvent('submitted');await h.tick();await h.waitSubmission();
+ assert.deepEqual(h.submissions,[{text:ENVELOPE,asUser:false}]);assert.equal(h.events().filter(e=>e.request_id===NOTICE).length,1);
+ assert(noticeRows(h.storage).some(([k,v])=>k!==key&&!v.requests[NOTICE].events.length&&Object.keys(v.acknowledged).length===1));
 });
