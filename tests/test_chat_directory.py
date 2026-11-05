@@ -543,7 +543,9 @@ class PerformanceTests(unittest.TestCase):
         aid, path = self.claude_chat()
         self.append(path, {'type': 'assistant', 'message': {'content': 'content ' * 700000}})
         directory = self.directory()
-        status = directory.refresh()
+        # Isolate byte-budget consumption from the separately tested wall-clock bound.
+        with patch.object(d.time, 'monotonic', return_value=0.0):
+            status = directory.refresh()
         self.assertFalse(status['complete'])
         self.assertTrue(directory.work_pending)
         self.assertGreater(directory._files[path]['offset'], 524288)
