@@ -685,6 +685,9 @@ body.stepped #officer:not(.docked){max-height:calc(100dvh - 136px)}body.stepped.
 #officer:not(.docked) #ofAddress{padding:4px 12px 0}#officer:not(.docked) #ofAddress #recipient{padding:0}#officer:not(.docked) #recipient button{padding:4px 7px}#officer:not(.docked) #ofRow{padding:6px 12px;flex:none;flex-wrap:nowrap;align-items:flex-end}#officer:not(.docked) #ofIn{height:44px;min-height:44px}
 #officer.docked #ofTools{padding:4px 0}#officer:not(.docked) #ofBody:has(#responseCard:not([hidden]),#nativeCard:not([hidden]),#claudeSetup:not([hidden])){overflow-y:auto}#officer:not(.docked) #ofBody:has(#responseCard:not([hidden]),#nativeCard:not([hidden]),#claudeSetup:not([hidden])) #ofLog{flex:1 0 80px}
 @media(pointer:coarse),(max-width:580px){#ofTools #nativeCheck,#ofSuggestions summary{min-height:32px}#ofAddress{gap:4px}}
+
+/* Dismissing an unresolved strip notice never changes the message's delivery state. */
+#officer #pendingQueue .pending-dismiss{flex:none;margin-left:auto;align-self:flex-start;min-width:24px;min-height:24px;padding:2px;border:0;background:transparent;color:var(--mute);font:16px/1 system-ui;cursor:pointer}#officer #pendingQueue .pending-dismiss[hidden]{display:none}#officer #pendingQueue .pending-dismiss:hover{color:var(--ink)}#officer #pendingQueue .pending-dismiss:focus-visible{outline:2px solid var(--hl);outline-offset:-2px}@media(pointer:coarse),(max-width:580px){#officer #pendingQueue .pending-dismiss{min-width:32px;min-height:32px}}
 </style>
 </head>
 <body>
@@ -2585,7 +2588,7 @@ function cuMeta(value){return value&&typeof value.id==='string'&&/^turn:[a-zA-Z0
 function cuPendingRows(agent,a,records,controls){
   if(!agent||!a)return [];
   const rows=[],seen=new Set(),labels={sending:'Sending · WATCH',queued:'Queued · WATCH',unknown:'Delivery unknown · WATCH'};
-  for(const r of records.values())if(r.agent===agent&&Object.hasOwn(labels,r.state))rows.push({id:'message:'+r.request_id,label:labels[r.state],unresolved:r.state==='unknown',text:String(r.question||''),note:r.state==='unknown'?'Delivery could not be confirmed. Do not resend.':r.state==='queued'?'Waiting for the agent. This does not steer its current turn.':'Delivery is not yet confirmed.'});
+  for(const r of records.values())if(r.agent===agent&&Object.hasOwn(labels,r.state)&&!(r.state==='unknown'&&r.noticeDismissed===true))rows.push({id:'message:'+r.request_id,request_id:r.request_id,dismissible:r.state==='unknown',label:labels[r.state],unresolved:r.state==='unknown',text:String(r.question||''),note:r.state==='unknown'?'Delivery could not be confirmed. Do not resend.':r.state==='queued'?'Waiting for the agent. This does not steer its current turn.':'Delivery is not yet confirmed.'});
   for(const r of controls.values())if(r.agent===agent&&!r.unavailable&&r.action==='steer'&&['sending','unknown'].includes(r.state)){
     const uncertain=r.state==='unknown'||r.restoredPending;
     rows.push({id:'control:'+r.request_id,label:uncertain?'Steer outcome unknown':'Steer pending',unresolved:!!uncertain,text:String(r.instruction||''),note:uncertain?'The steer outcome could not be confirmed. Do not repeat it.':'Waiting for acknowledgement. Execution is not yet confirmed.'});
@@ -2621,8 +2624,10 @@ function cuPendingPaint(){
   host.hidden=!rows.length;let at=list.firstElementChild;
   for(const r of rows){
     let el=existing.get(r.id);
-    if(!el){el=document.createElement('details');el.dataset.pendingId=r.id;el.innerHTML='<summary><svg aria-hidden="true" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M3 3v11a3 3 0 0 0 3 3h10m-3-3 3 3-3 3M7 5h9M7 9h6"/></svg><b></b><span></span></summary><small></small>'}
+    if(!el){el=document.createElement('details');el.dataset.pendingId=r.id;el.innerHTML='<summary><svg aria-hidden="true" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M3 3v11a3 3 0 0 0 3 3h10m-3-3 3 3-3 3M7 5h9M7 9h6"/></svg><b></b><span></span><button type="button" class="pending-dismiss" aria-label="Dismiss unresolved notice" title="Hide this notice; keep the message in conversation." hidden>×</button></summary><small></small>'}
     txt(el.querySelector('b'),r.label);txt(el.querySelector('span'),r.text);txt(el.querySelector('small'),r.note);
+    const dismiss=el.querySelector('button');dismiss.hidden=!r.dismissible;
+    dismiss.onclick=ev=>{ev.preventDefault();ev.stopPropagation();const message=OFM.records.get(r.request_id);if(!r.dismissible||OFUI.recipient!=='agent'||cuTarget()!==target||message?.agent!==target||message.request_id!==r.request_id||message.state!=='unknown')return;message.noticeDismissed=true;ofMessageSave();cuPendingPaint()};
     if(el!==at)list.insertBefore(el,at);at=el.nextElementSibling;
   }
   if(restoreFocus)ofIn.focus({preventScroll:true});
@@ -2804,7 +2809,7 @@ function ofMessageFulfillment(v){
   if(!v||v.state!=='fulfilled'||v.intent!=='pause'||v.via!=='interrupt'||typeof v.control_request_id!=='string'||!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(v.control_request_id)) return null;
   return {state:'fulfilled',intent:'pause',via:'interrupt',control_request_id:v.control_request_id};
 }
-function ofMessageSave(){if(DEMO) return; try{store.setItem('liveRoomMessages',JSON.stringify([...OFM.records.values()].filter(r=>r.request_id).slice(-100).map(r=>({request_id:r.request_id,agent:r.agent,name:r.name,question:r.question,created:r.created||0,state:r.state,reply:r.reply,error:r.error,delivery_warning:typeof r.delivery_warning==='string'?r.delivery_warning:'',fulfillment:ofMessageFulfillment(r.fulfillment)}))))}catch(err){}}
+function ofMessageSave(){if(DEMO) return; try{store.setItem('liveRoomMessages',JSON.stringify([...OFM.records.values()].filter(r=>r.request_id).slice(-100).map(r=>({request_id:r.request_id,agent:r.agent,name:r.name,question:r.question,created:r.created||0,state:r.state,reply:r.reply,error:r.error,notice_dismissed:r.noticeDismissed===true,delivery_warning:typeof r.delivery_warning==='string'?r.delivery_warning:'',fulfillment:ofMessageFulfillment(r.fulfillment)}))))}catch(err){}}
 function ofMessageNotice(t){if(!OFM.notice){OFM.notice=ofAdd('k','',{id:'status:transport'});CU.nodes.get('status:transport').global=true}OFM.notice.textContent=t;cuPaint()}
 function ofMessagePaint(r){
   const follow=nearEnd(ofLog);
@@ -2818,12 +2823,13 @@ function ofMessagePaint(r){
   if(r.painted!==markup){r.el.innerHTML=markup; r.painted=markup}
   const retry=r.el.querySelector('.message-check'); if(retry){retry.onclick=()=>ofMessagePoll()}cuPaint(follow);
 }
-function ofMessageMerge(rows){
+function ofMessageMerge(rows,{restored=false}={}){
   if(DEMO) return;
   for(const v of rows){if(!v||typeof v.request_id!=='string'||typeof v.agent!=='string'||typeof v.question!=='string') continue;
     let r=OFM.records.get(v.request_id);
     if(!r){r={request_id:v.request_id,agent:v.agent,name:String(v.name||v.agent),question:v.question,created:typeof v.created==='number'&&Number.isFinite(v.created)&&v.created>0?v.created:0}; OFM.records.set(v.request_id,r)}
     if(r.agent!==v.agent||r.question!==v.question)continue;
+    if(restored&&v.notice_dismissed===true)r.noticeDismissed=true;
     Object.assign(r,{state:v.state,reply:v.reply,error:v.error,delivery_warning:typeof v.delivery_warning==='string'?v.delivery_warning:'',fulfillment:ofMessageFulfillment(v.fulfillment)}); ofMessagePaint(r);
   }
   ofMessageSave();
@@ -2870,7 +2876,7 @@ async function ofMessagePoll(){
 }
 function ofMessageLoad(){
   if(DEMO) return;
-  try{const rows=JSON.parse(store.getItem('liveRoomMessages')||'[]'); if(Array.isArray(rows)) ofMessageMerge(rows.slice(-100).map(r=>({...r,state:['sending','queued','awaiting_reply'].includes(r.state)?'unknown':r.state})))}catch(err){}
+  try{const rows=JSON.parse(store.getItem('liveRoomMessages')||'[]'); if(Array.isArray(rows)) ofMessageMerge(rows.slice(-100).map(r=>({...r,state:['sending','queued','awaiting_reply'].includes(r.state)?'unknown':r.state})),{restored:true})}catch(err){}
   try{const rows=JSON.parse(store.getItem('liveRoomControls')||'[]'); if(Array.isArray(rows)) ofControlMerge(rows.slice(-100),{restored:true})}catch(err){}
   ofMessagePoll();
 }

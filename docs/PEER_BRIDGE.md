@@ -2,9 +2,17 @@
 
 The optional WATCH MCP connection exposes a directory of existing named Codex and Claude chats. Configure the connection once in each client. Chats do not need separate bridge credentials or enrollment. There is no new dashboard panel.
 
+Agent-to-agent routing uses native tools within a provider and WATCH only between providers:
+
+- Codex to Codex: use Codex's native chat tools.
+- Claude to Claude: use Claude's native coordination tools when they support the intended chat.
+- Codex to Claude, or Claude to Codex: use WATCH.
+
+If native tools cannot reach a same-provider chat, report that limitation; do not fall back to WATCH. Determine both providers before sending. These are agent routing instructions, not server-side caller authentication: the shared service cannot verify a caller's provider from its shared credential or declared sender label. Existing WATCH requests can still finish and their replies can be recovered. Owner messages sent through the WATCH UI are unaffected. Reconnect the MCP in existing clients to load the updated instructions.
+
 ## Talking to another agent
 
-Use ordinary language: “Ask Atlas how the tests are going.” The agent discovers the intended chat, resolves its name to a stable provider-specific chat ID, sends the question once, and checks the correlated reply. WATCH does not use another model to route the request.
+Use ordinary language: “Ask Atlas how the tests are going.” The agent selects the native or cross-provider route above. For a WATCH message, it discovers the intended chat, resolves its name to a stable provider-specific chat ID, sends the question once, and checks the correlated reply. WATCH does not use another model to route the request.
 
 Names are addresses, not authentication. When names are duplicated, specify the provider or project. The agent must not guess between similar names, pick an unavailable duplicate's namesake, or treat an incomplete directory page as proof of uniqueness. Renaming a chat never redirects a request already sent to its original ID.
 

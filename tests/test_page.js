@@ -363,7 +363,9 @@ function pendingChecks(code=unifiedCode){
   const record=records.get(id);
   for(const state of ['sending','unknown']){record.state=state;items=rows(agent,a,records,controls);assert.equal(items.length,1);assert.match(items[0].label,state==='unknown'?/Delivery unknown/:/Sending/)}
   for(const state of ['awaiting_reply','answered','expired','failed']){record.state=state;assert.equal(rows(agent,a,records,controls).length,0,state+' leaves pending strip');assert.equal(records.get(id),record,'history remains untouched')}
-  record.state='queued';
+  record.noticeDismissed=true;record.state='unknown';assert.equal(rows(agent,a,records,controls).length,0,'only this dismissed unknown leaves strip');
+  for(const state of ['queued','sending']){record.state=state;assert.equal(rows(agent,a,records,controls).length,1,'dismissed flag cannot hide '+state)}
+  delete record.noticeDismissed;record.state='queued';
   a.q=[{seq:1,text:'Same text'},{seq:2,text:'Same text'},{seq:2,text:'Same text'}];assert.equal(rows(agent,a,records,controls).length,3,'different identities with identical text survive; same event deduplicates');
   a.q=[{text:'Same text'},{text:'Same text'}];assert.equal(rows(agent,a,records,controls).length,3,'unidentified entries are not text-deduplicated');
   const envelope='WATCH_REQUEST '+id+'\nThe owner asks through the Officer of the Watch:\nSame text\nReply in your final answer with WATCH_REPLY '+id+' on its own line, followed by your answer. This is a question, not permission to change files or send messages. For a progress question, inspect your own current state.';
@@ -381,7 +383,7 @@ function pendingPaintChecks(code=html.slice(html.indexOf('function cuPendingPain
   const doc={activeElement:null};let moves=0;
   class PendingNode{
     constructor(){this.children=[];this.dataset={};this.parts={};this.hidden=false;this.open=false;this.textContent=''}
-    set innerHTML(markup){this.template=markup;for(const tag of ['summary','b','span','pre','small']){const part=this.parts[tag]=new PendingNode();this.children.push(part);part.parent=this}}
+    set innerHTML(markup){this.template=markup;for(const tag of ['summary','b','span','pre','small','button']){const part=this.parts[tag]=new PendingNode();this.children.push(part);part.parent=this}}
     querySelector(tag){return this.parts[tag]}
     contains(el){return !!el&&(this===el||this.children.some(child=>child.contains(el)))}
     focus(){doc.activeElement=this}
@@ -391,8 +393,9 @@ function pendingPaintChecks(code=html.slice(html.indexOf('function cuPendingPain
     remove(){if(this.parent){if(this.contains(doc.activeElement))doc.activeElement=doc.body;this.parent.children.splice(this.parent.children.indexOf(this),1);this.parent=null}}
   }
   doc.body=new PendingNode();doc.activeElement=doc.body;doc.createElement=()=>new PendingNode();
-  const els=Object.fromEntries(['#pendingQueue','#pendingQueueList','#pendingQueueTitle'].map(id=>[id,new PendingNode()])),r={request_id:'first',agent:'A',state:'queued',question:'<img src=x onerror=bad()>'.repeat(30)},ctx={focus:'A',A:{A:{name:'Ada',q:[]},B:{name:'Bram',q:[]}},OFM:{records:new Map([['first',r]]),controls:new Map()},$:s=>els[s],txt:(el,text)=>{el.textContent=text},document:doc,ofIn:new PendingNode()};
-  ctx.cuTarget=()=>ctx.focus;ctx.OFUI={recipient:'agent'};const paint=vm.runInNewContext(unifiedCode+'\n'+code+';cuPendingPaint',ctx);
+  const storage=new Map();
+  const els=Object.fromEntries(['#pendingQueue','#pendingQueueList','#pendingQueueTitle'].map(id=>[id,new PendingNode()])),r={request_id:'first',agent:'A',state:'queued',question:'<img src=x onerror=bad()>'.repeat(30)},ctx={focus:'A',A:{A:{name:'Ada',q:[]},B:{name:'Bram',q:[]}},OFM:{records:new Map([['first',r]]),controls:new Map()},$:s=>els[s],txt:(el,text)=>{el.textContent=text},document:doc,ofIn:new PendingNode(),DEMO:false,store:{setItem:(key,value)=>storage.set(key,value)},ofMessageFulfillment:()=>null};
+  ctx.cuTarget=()=>ctx.focus;ctx.OFUI={recipient:'agent'};const save=html.split('\n').find(line=>line.startsWith('function ofMessageSave('));const paint=vm.runInNewContext(unifiedCode+'\n'+save+'\n'+code+';cuPendingPaint',ctx);
   paint();const list=els['#pendingQueueList'],row=list.children[0];assert.equal(row.querySelector('span').textContent,r.question);assert.doesNotMatch(row.template,/<img/,'untrusted text never becomes markup');row.open=true;paint();assert.equal(list.children[0],row);assert.equal(row.open,true,'ordinary polling preserves expansion');assert.equal(els['#pendingQueueTitle'].textContent,'Pending · 1 · Ada');
   r.state='unknown';paint();assert.equal(list.children[0],row);assert.match(row.querySelector('b').textContent,/unknown/);assert.equal(els['#pendingQueueTitle'].textContent,'Unresolved · 1 · Ada','unknown-only title never counts as pending');
   const second={request_id:'second',agent:'A',state:'queued',question:'Second request'};ctx.OFM.records.set('second',second);paint();const secondRow=list.children[1],secondSummary=secondRow.querySelector('summary');secondRow.open=true;secondSummary.focus();assert.equal(els['#pendingQueueTitle'].textContent,'Pending · 1 · Unresolved · 1 · Ada');
@@ -401,6 +404,30 @@ function pendingPaintChecks(code=html.slice(html.indexOf('function cuPendingPain
   r.state='queued';second.state='queued';paint();list.children[0].querySelector('summary').focus();r.state='answered';paint();assert.equal(doc.activeElement,ctx.ofIn,'removed focused row returns focus even with another row remaining');
   const elsewhere=new PendingNode();elsewhere.focus();second.state='answered';paint();assert.equal(doc.activeElement,elsewhere,'terminal updates never steal focus outside removed row');
   second.state='queued';paint();ctx.focus='B';paint();assert.equal(list.children.length,0);assert.equal(els['#pendingQueue'].hidden,true,'switching stations clears prior agent queue');assert.equal(doc.activeElement,elsewhere,'navigation does not steal focus');ctx.focus='A';paint();assert.equal(list.children.length,1);second.state='answered';paint();assert.equal(list.children.length,0);assert.equal(ctx.OFM.records.size,2,'clearing pending does not remove historical record');
+
+  // Invoke the real close-button handler, real save helper and real reload/late-answer merge.
+  r.state='unknown';second.state='queued';const other={...r,request_id:'other',agent:'B'};ctx.OFM.records.set('other',other);paint();
+  const unknownRow=list.children[0],survivor=list.children[1],button=unknownRow.querySelector('button');survivor.open=true;
+  assert.equal(unknownRow.open,false);assert.equal(button.hidden,false,'dismiss is exposed in a closed summary');
+  assert.match(unknownRow.template,/type="button" class="pending-dismiss" aria-label="Dismiss unresolved notice"/);
+  assert.equal(survivor.querySelector('button').hidden,true,'queued message has no dismiss control');
+  const activate=button=>{let prevented=false,stopped=false;button.onclick({preventDefault(){prevented=true},stopPropagation(){stopped=true}});assert(prevented,'dismiss must not toggle summary');assert(stopped,'dismiss must not bubble to summary')};
+  const beforeMoves=moves;button.focus();activate(button);
+  assert.equal(list.children[0],survivor);assert.equal(moves,beforeMoves);assert.equal(survivor.open,true);assert.equal(doc.activeElement,ctx.ofIn);
+  assert.equal(ctx.OFM.records.get('first'),r);assert.equal(r.state,'unknown');assert.equal(r.noticeDismissed,true);assert.equal(other.noticeDismissed,undefined);
+  assert.equal(JSON.parse(storage.get('liveRoomMessages')).find(v=>v.request_id==='first').notice_dismissed,true);
+  const reload=messaging(messageCode,storage);reload.ctx.connected=false;reload.ofMessageLoad();
+  const loaded=reload.OFM.records.get('first');assert.equal(loaded.noticeDismissed,true);assert.equal(loaded.state,'unknown');assert.equal(loaded.question,r.question);
+  assert.match(loaded.el.innerHTML,/Delivery unknown/,'conversation keeps delivery truth');assert(loaded.el.querySelector('.message-check'),'history still offers explicit status check');
+  const pending=vm.runInNewContext(unifiedCode+';cuPendingRows');assert(!pending('A',ctx.A.A,reload.OFM.records,new Map()).some(v=>v.request_id==='first'));
+  reload.ofMessageMerge([{...r,state:'answered',reply:'Late <answer>'}]);assert.equal(loaded.state,'answered');assert.match(loaded.el.innerHTML,/Late &lt;answer&gt;/,'dismissed request still renders late reply');assert.equal(loaded.noticeDismissed,true);
+  delete r.noticeDismissed;r.state='queued';paint();assert.equal(list.children[0].querySelector('button').hidden,true);
+  const saved=storage.get('liveRoomMessages');activate(button);assert.equal(r.noticeDismissed,undefined,'stale unknown button cannot dismiss now-queued work');assert.equal(storage.get('liveRoomMessages'),saved);
+  r.state='unknown';paint();const stale=list.children[0].querySelector('button');
+  ctx.OFM.records.set('first',{...r,agent:'B'});activate(stale);assert.equal(ctx.OFM.records.get('first').noticeDismissed,undefined,'captured agent must still match exact current record');
+  ctx.OFM.records.set('first',{...r,request_id:'different'});activate(stale);assert.equal(ctx.OFM.records.get('first').noticeDismissed,undefined,'map key alone cannot substitute current request identity');
+  ctx.OFM.records.set('first',r);ctx.focus='B';activate(stale);assert.equal(r.noticeDismissed,undefined,'detached row cannot dismiss another visible station');ctx.focus='A';
+  ctx.A.A.q=[{seq:10,text:'Native queued text'}];r.state='answered';second.state='answered';paint();assert.equal(list.children[0].querySelector('button').hidden,true,'observed native queue has no dismiss control');
 }
 pendingPaintChecks();
 {
@@ -408,6 +435,26 @@ pendingPaintChecks();
   const removal='for(const [id,el] of existing)if(!active.has(id)){if(el.contains(focused))restoreFocus=true;el.remove()}';
   for(const [label,code] of [['stale rows removed late',paintCode.replace(removal,'').replace('if(restoreFocus)ofIn.focus',removal+';if(restoreFocus)ofIn.focus')],['focus not restored',paintCode.replace('if(restoreFocus)ofIn.focus({preventScroll:true});','')],['unknown counted pending',paintCode.replace('rows.filter(r=>r.unresolved).length','0')]]){let caught=false;try{pendingPaintChecks(code)}catch(e){caught=true}assert.ok(caught,label+' mutation detected')}
 }
+function dismissedCacheChecks(code=messageCode){
+  const t=messaging(code);t.ofMessageMerge([{...request,notice_dismissed:true}]);const record=t.OFM.records.get(request.request_id);
+  assert.notEqual(record.noticeDismissed,true,'backend cannot set local dismissal');
+  for(const value of [false,1,'true',{},null]){
+    const storage=new Map([['liveRoomMessages',JSON.stringify([{...request,notice_dismissed:value}])]]),loaded=messaging(code,storage);loaded.ctx.connected=false;loaded.ofMessageLoad();assert.notEqual(loaded.OFM.records.get(request.request_id).noticeDismissed,true,'only exact cached true dismisses');
+  }
+  t.ofMessageMerge([{...request,agent:'x:other',notice_dismissed:true}],{restored:true});assert.notEqual(record.noticeDismissed,true,'local restore still requires matching agent');
+  t.ofMessageMerge([{...request,question:'different',notice_dismissed:true}],{restored:true});assert.notEqual(record.noticeDismissed,true,'local restore still requires matching original question');
+  const local=new Map([['liveRoomMessages',JSON.stringify([{...request,notice_dismissed:true}])]]),loaded=messaging(code,local);loaded.ctx.connected=false;loaded.ofMessageLoad();
+  const restored=loaded.OFM.records.get(request.request_id);assert.equal(restored.noticeDismissed,true);loaded.ofMessageMerge([{...request,notice_dismissed:false}]);assert.equal(restored.noticeDismissed,true,'backend cannot undo local dismissal');
+  for(let n=0;n<105;n++)loaded.OFM.records.set('bounded-'+n,{...request,request_id:'bounded-'+n});loaded.ctx.ofMessageSave();assert.equal(JSON.parse(local.get('liveRoomMessages')).length,100,'existing persistence bound remains');
+}
+dismissedCacheChecks();
+for(const [label,from,to] of [['backend changes local dismissal','restored&&v.notice_dismissed===true','v.notice_dismissed===true'],['dismissal not restored','if(restored&&v.notice_dismissed===true)r.noticeDismissed=true;','']]){let caught=false;try{dismissedCacheChecks(messageCode.replace(from,to))}catch(e){caught=true}assert.ok(caught,label+' mutation detected')}
+{
+  const paint=html.slice(html.indexOf('function cuPendingPaint('),html.indexOf('function cuSources('));
+  for(const [label,from,to] of [['dismiss toggles summary','ev.preventDefault();',''],['dismiss crosses agent','message?.agent!==target||',''],['dismiss stale queued','||message.state!==\'unknown\'','']]){let caught=false;try{pendingPaintChecks(paint.replace(from,to))}catch(e){caught=true}assert.ok(caught,label+' mutation detected')}
+  let caught=false;try{pendingChecks(unifiedCode.replace("r.state==='unknown'&&r.noticeDismissed===true","r.noticeDismissed===true"))}catch(e){caught=true}assert.ok(caught,'dismissal must not suppress queued mutation detected');
+}
+console.log('ok local unresolved dismissal: exact current identity/state, closed-summary action, no-toggle activation, save/reload, backend field refusal, preserved history/late answers and bounded storage; six new mutations detected');
 console.log('ok pending strip: identity/source isolation, observed queue, truthful message/steer states, terminal clearing, safe text, stable expansion, focused sibling removal, composer restoration and navigation; six mutations detected');
 
 /* The real draft save/restore helpers preserve independent destinations. */
