@@ -177,18 +177,59 @@ class RoutingPolicyTests(unittest.TestCase):
             server.OFFICER_MODEL = 'claude-fictional-manual'
             self.assertEqual(server.officer_model_snapshot()[0], 'claude-fictional-manual')
 
-    def test_default_only_without_saved_choice_and_automatic_is_not_catalog_model(self):
+    def test_default_automatic_and_new_explicit_override_persist_separately(self):
         server.OFFICER_MODEL = 'claude-fictional-manual'
         server.load_officer_model()
         self.assertEqual(server.OFFICER_MODEL, policy.AUTOMATIC)
         self.assertNotIn(policy.AUTOMATIC, [r['id'] for r in server.OFFICER_CATALOG['models']])
         if os.name == 'nt': return
         server.save_officer_model('claude-fictional-manual')
+        self.assertEqual(json.loads(Path(server.officer_model_path()).read_text()),
+                         {'schema_version': 2, 'model': 'claude-fictional-manual'})
         server.load_officer_model()
         self.assertEqual(server.OFFICER_MODEL, 'claude-fictional-manual')
         server.save_officer_model(policy.AUTOMATIC)
         server.load_officer_model()
         self.assertEqual(server.OFFICER_MODEL, policy.AUTOMATIC)
+
+    @unittest.skipIf(os.name == 'nt', 'POSIX Officer persistence boundary')
+    def test_legacy_choices_route_by_job_without_click_or_private_file_write(self):
+        server.save_officer_model(policy.AUTOMATIC)  # Create private temporary settings only.
+        path = Path(server.officer_model_path())
+        for legacy_model in ('claude-haiku-5-5', 'claude-sonnet-5-5'):
+            original = json.dumps({'model': legacy_model}).encode()
+            path.write_bytes(original)
+            server.load_officer_model()
+            self.assertFalse(server.OFFICER_MODEL_ERROR)
+            self.assertEqual(server.OFFICER_MODEL, policy.AUTOMATIC)
+            for job, question, answer_model in (
+                    ('qa', 'What was Bram last recorded doing?', 'claude-haiku-5-5'),
+                    ('summary', 'What did I miss?', 'claude-sonnet-5-5')):
+                calls = []
+                def call(body, **kwargs):
+                    calls.append(copy.deepcopy(body))
+                    return self.answer(json.dumps({'officer_job': job}) if len(calls) == 1 else 'Recorded answer.')
+                result = server.officer_ask([{'role': 'user', 'content': question}], call,
+                                            request_id=str(uuid.uuid4()))
+                self.assertEqual([body['model'] for body in calls], ['claude-haiku-5-5', answer_model])
+                self.assertEqual(result['job'], job)
+                self.assertEqual(path.read_bytes(), original)
+
+    @unittest.skipIf(os.name == 'nt', 'POSIX Officer persistence boundary')
+    def test_invalid_versioned_settings_still_block_instead_of_resetting(self):
+        server.save_officer_model(policy.AUTOMATIC)
+        path = Path(server.officer_model_path())
+        invalid = [{'schema_version': version, 'model': 'claude-haiku-5-5'}
+                   for version in (True, 2.0, '2', 1, 3)]
+        invalid += [{'schema_version': 2}, {'schema_version': 2, 'model': 'claude-haiku-5-5', 'extra': True}]
+        for value in invalid:
+            path.write_text(json.dumps(value))
+            server.OFFICER_MODEL = 'claude-fictional-manual'
+            server.load_officer_model()
+            self.assertTrue(server.OFFICER_MODEL_ERROR)
+            self.assertEqual(server.OFFICER_MODEL, 'claude-fictional-manual')
+            with self.assertRaises(ValueError):
+                server.officer_routing_snapshot()
 
     def test_automatic_is_a_local_selection_and_unavailable_policy_model_blocks(self):
         models = list(server.OFFICER_CATALOG['models'])

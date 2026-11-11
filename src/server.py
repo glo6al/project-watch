@@ -3314,7 +3314,7 @@ def officer_private_model_file(path, create=False):
 
 
 def load_officer_model():
-    """Load a choice without network I/O; no saved choice means Automatic by job."""
+    """Route automatically unless the owner saved a new explicit manual override."""
     global OFFICER_MODEL, OFFICER_MODEL_ERROR
     path = officer_model_path()
     OFFICER_MODEL_ERROR = ''
@@ -3332,9 +3332,16 @@ def load_officer_model():
             value = json.loads(os.read(fd, 4097).decode('utf-8'))
         finally:
             os.close(fd)
-        if not isinstance(value, dict) or set(value) != {'model'} or not isinstance(value['model'], str) or (value['model'] != AUTOMATIC and not OFFICER_MODEL_ID.fullmatch(value['model'])) or KEY_SHAPE_S.search(value['model']) or (OFFICER_KEY and OFFICER_KEY in value['model']):
+        if not isinstance(value, dict):
             raise ValueError()
-        OFFICER_MODEL = value['model']
+        legacy = set(value) == {'model'}
+        if not legacy and (set(value) != {'schema_version', 'model'} or type(value['schema_version']) is not int or value['schema_version'] != 2):
+            raise ValueError()
+        if not isinstance(value['model'], str) or (value['model'] != AUTOMATIC and not OFFICER_MODEL_ID.fullmatch(value['model'])) or KEY_SHAPE_S.search(value['model']) or (OFFICER_KEY and OFFICER_KEY in value['model']):
+            raise ValueError()
+        # Legacy selections predate job routing and do not opt out of it.
+        # Keep the private file untouched; only new explicit choices pin a model.
+        OFFICER_MODEL = AUTOMATIC if legacy else value['model']
     except (OSError, ValueError, UnicodeError):
         OFFICER_MODEL_ERROR = 'Saved Officer model settings are unavailable. Nothing was changed.'
 
@@ -3443,7 +3450,7 @@ def save_officer_model(model):
         try:
             os.fchmod(fd, 0o600)
             with os.fdopen(fd, 'w', encoding='utf-8') as out:
-                json.dump({'model': model}, out)
+                json.dump({'schema_version': 2, 'model': model}, out)
                 out.flush()
                 os.fsync(out.fileno())
         except BaseException:
