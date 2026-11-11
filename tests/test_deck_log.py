@@ -64,16 +64,27 @@ class DeckTests(unittest.TestCase):
 
     def test_offers_queue_while_writer_is_busy(self):
         original = self.store._write
+        entered, release, timed_out = threading.Event(), threading.Event(), threading.Event()
         def delayed(*args):
-            time.sleep(0.01)
+            entered.set()
+            if not release.wait(5):
+                timed_out.set()
             return original(*args)
         with patch.object(self.store, '_write', delayed):
             results = []
-            for n in range(60):
-                results.append(self.store.offer_record(self.record(), [self.prose('burst %d' % n)], capture_epoch=self.epoch))
-                time.sleep(0.001)
-            self.assertTrue(self.store.flush(3))
-        self.assertEqual([r['status'] for r in results], ['queued'] * 60)
+            try:
+                results.append(self.store.offer_record(self.record(), [self.prose('burst 0')], capture_epoch=self.epoch))
+                self.assertTrue(entered.wait(5), 'writer did not reach the barrier')
+                for n in range(1, 60):
+                    results.append(self.store.offer_record(self.record(), [self.prose('burst %d' % n)], capture_epoch=self.epoch))
+                self.assertEqual([r['status'] for r in results], ['queued'] * 60)
+                self.assertFalse(release.is_set(), 'offers must finish before releasing the writer')
+                self.assertFalse(timed_out.is_set(), 'offers waited for the busy writer')
+            finally:
+                release.set()
+            # Disk and ACL checks may be slow; queueing above must not depend
+            # on them completing. Still verify every real write is persisted.
+            self.assertTrue(self.store.flush(30))
         self.assertEqual(len(self.store.search(limit=100)['events']), 60)
         self.assertEqual(self.store.status()['dropped'], 0)
 
