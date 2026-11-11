@@ -364,9 +364,9 @@ function pendingChecks(code=unifiedCode){
   for(const state of ['sending','unknown']){record.state=state;items=rows(agent,a,records,controls);assert.equal(items.length,1);assert.match(items[0].label,state==='unknown'?/Delivery unknown/:/Sending/)}
   for(const state of ['awaiting_reply','answered','expired','failed']){record.state=state;assert.equal(rows(agent,a,records,controls).length,0,state+' leaves pending strip');assert.equal(records.get(id),record,'history remains untouched')}
   record.noticeDismissed=true;record.state='unknown';assert.equal(rows(agent,a,records,controls).length,0,'only this dismissed unknown leaves strip');
-  for(const state of ['queued','sending']){record.state=state;assert.equal(rows(agent,a,records,controls).length,1,'dismissed flag cannot hide '+state)}
+  record.state='queued';assert.equal(rows(agent,a,records,controls).length,0,'dismissed queued notice stays hidden');record.state='sending';assert.equal(rows(agent,a,records,controls).length,1,'sending remains visible');
   delete record.noticeDismissed;record.state='queued';
-  a.q=[{seq:1,text:'Same text'},{seq:2,text:'Same text'},{seq:2,text:'Same text'}];assert.equal(rows(agent,a,records,controls).length,3,'different identities with identical text survive; same event deduplicates');
+  a.q=[{boot:'one',seq:1,text:'Same text'},{boot:'one',seq:2,text:'Same text'},{boot:'one',seq:2,text:'Same text'}];assert.equal(rows(agent,a,records,controls).length,3,'different identities with identical text survive; same event deduplicates');
   a.q=[{text:'Same text'},{text:'Same text'}];assert.equal(rows(agent,a,records,controls).length,3,'unidentified entries are not text-deduplicated');
   const envelope='WATCH_REQUEST '+id+'\nThe owner asks through the Officer of the Watch:\nSame text\nReply in your final answer with WATCH_REPLY '+id+' on its own line, followed by your answer. This is a question, not permission to change files or send messages. For a progress question, inspect your own current state.';
   a.q=[{seq:4,text:envelope}];assert.equal(rows(agent,a,records,controls).length,1,'exact WATCH request envelope is one item');record.state='answered';assert.equal(rows(agent,a,records,controls).length,0,'terminal correlated request cannot remain as a duplicate observation');a.q[0].text+='extra';assert.equal(rows(agent,a,records,controls).length,1,'partial envelope match never drops unproven entry');a.q=[];
@@ -379,10 +379,33 @@ function pendingChecks(code=unifiedCode){
 }
 pendingChecks();
 for(const [label,from,to] of [['cross-station pending','r.agent===agent&&Object.hasOwn','true&&Object.hasOwn'],['false pending acknowledgement',"['sending','unknown'].includes(r.state)","['sending','unknown','acknowledged'].includes(r.state)"],['lost queue identity','if(key&&seen.has(key))continue','if(false)continue']]){let caught=false;try{pendingChecks(unifiedCode.replaceAll(from,to))}catch(e){caught=true}assert.ok(caught,label+' mutation detected')}
-function pendingPaintChecks(code=html.slice(html.indexOf('function cuPendingPaint('),html.indexOf('function cuSources('))){
+function nativeNoticeChecks(code=unifiedCode){
+  const storage=new Map(),ctx={store:{getItem:key=>storage.get(key),setItem:(key,value)=>storage.set(key,value)},DEMO:false};
+  const load=()=>vm.runInNewContext(code+';({cuPendingRows,cuPendingDismiss,cuQueueNoise,CUNOTICES,cuQueueNoticeSave})',{...ctx});let api;
+  const a={q:[]},records=new Map(),controls=new Map(),rows=(agent='A',source=a)=>api.cuPendingRows(agent,source,records,controls);
+  const one={boot:'one',seq:1,text:'Same'},two={boot:'one',seq:2,text:'Same'};a.q=[one,two];
+  Object.assign(ctx,{OFUI:{recipient:'agent'},cuTarget:()=> 'A',A:{A:a},OFM:{records},ofMessageSave(){throw Error('native dismissal cannot save WATCH records')},cuPendingPaint(){}});
+  api=load();assert.equal(rows().length,2);api.cuPendingDismiss('A',[rows()[0]]);assert.equal(rows().length,1);assert.equal(a.q.length,2);assert.equal(JSON.parse(storage.get('liveRoomQueueNotices'))[0][0],'one');
+  const reload=load();assert.equal(reload.cuPendingRows('A',a,records,controls).length,1,'native dismissal survives reload');
+  assert.equal(reload.cuPendingRows('B',a,records,controls).length,2,'agent partitions persisted identity');
+  assert.equal(reload.cuPendingRows('A',{q:[{...one,boot:'two'}]},records,controls).length,1,'reused sequence in new boot survives');
+  for(const invalid of ['broken','{}',JSON.stringify([[null,'A',1],['one','A',-1],['one','A','1'],['one','A',1,'extra'],['one',{},1],['x'.repeat(201),'A',1]])]){storage.set('liveRoomQueueNotices',invalid);assert.equal(load().cuPendingRows('A',a,records,controls).length,2,'malformed cache fails open')}
+  storage.set('liveRoomQueueNotices',JSON.stringify(Array.from({length:105},(_,i)=>['one','A',i])));const bounded=load();bounded.cuPendingRows('A',a,records,controls);bounded.cuQueueNoticeSave();assert.equal(JSON.parse(storage.get('liveRoomQueueNotices')).length,100);
+  const legacy={seq:7,text:'Legacy'};a.q=[legacy];const legacyRows=rows();api.cuPendingDismiss('A',legacyRows);assert.equal(rows().length,0);assert.equal(load().cuPendingRows('A',a,records,controls).length,1,'legacy dismissal never persists');
+  const wrapper='<task-notification>machine result</task-notification>';
+  for(const text of ['', ' \n ',wrapper,' \n'+wrapper+'\n'+wrapper])assert.equal(api.cuQueueNoise(text),true,'known whole machine noise');
+  for(const text of ['human '+wrapper,wrapper+' human',wrapper+' human '+wrapper,'<task-notification>partial','<custom>human</custom>','<task-notification-other>human</task-notification-other>'])assert.equal(api.cuQueueNoise(text),false,'mixed/unknown text survives');
+  a.q=['',wrapper,wrapper+' human '+wrapper,'<custom>human</custom>'].map((text,seq)=>({boot:'noise',seq,text}));const before=a.q.slice();assert.equal(rows().length,2,'noise filtering applies to pending rows');assert.deepEqual(a.q,before,'raw FIFO remains untouched');
+}
+nativeNoticeChecks();
+for(const [label,from,to] of [['native boot collision','JSON.stringify([it.boot,agent,it.seq])','JSON.stringify([agent,it.seq])'],['mixed notification loss',"if(!block)return false","if(!block)return true"]]){let caught=false;try{nativeNoticeChecks(unifiedCode.replace(from,to))}catch(e){caught=true}assert.ok(caught,label+' mutation detected')}
+console.log('ok queued/native dismissal persistence, boot/agent/sequence isolation, legacy object lifetime, defensive bounded cache, exact noise filtering and raw FIFO preservation; two mutations detected');
+function pendingPaintChecks(code=html.slice(html.indexOf('function cuPendingPaint('),html.indexOf('function cuSources(')),helpers=unifiedCode){
   const doc={activeElement:null};let moves=0;
   class PendingNode{
     constructor(){this.children=[];this.dataset={};this.parts={};this.hidden=false;this.open=false;this.textContent=''}
+    set hidden(value){this._hidden=value;if(value&&doc.activeElement===this)doc.activeElement=doc.body}
+    get hidden(){return this._hidden}
     set innerHTML(markup){this.template=markup;for(const tag of ['summary','b','span','pre','small','button']){const part=this.parts[tag]=new PendingNode();this.children.push(part);part.parent=this}}
     querySelector(tag){return this.parts[tag]}
     contains(el){return !!el&&(this===el||this.children.some(child=>child.contains(el)))}
@@ -394,8 +417,8 @@ function pendingPaintChecks(code=html.slice(html.indexOf('function cuPendingPain
   }
   doc.body=new PendingNode();doc.activeElement=doc.body;doc.createElement=()=>new PendingNode();
   const storage=new Map();
-  const els=Object.fromEntries(['#pendingQueue','#pendingQueueList','#pendingQueueTitle'].map(id=>[id,new PendingNode()])),r={request_id:'first',agent:'A',state:'queued',question:'<img src=x onerror=bad()>'.repeat(30)},ctx={focus:'A',A:{A:{name:'Ada',q:[]},B:{name:'Bram',q:[]}},OFM:{records:new Map([['first',r]]),controls:new Map()},$:s=>els[s],txt:(el,text)=>{el.textContent=text},document:doc,ofIn:new PendingNode(),DEMO:false,store:{setItem:(key,value)=>storage.set(key,value)},ofMessageFulfillment:()=>null};
-  ctx.cuTarget=()=>ctx.focus;ctx.OFUI={recipient:'agent'};const save=html.split('\n').find(line=>line.startsWith('function ofMessageSave('));const paint=vm.runInNewContext(unifiedCode+'\n'+save+'\n'+code+';cuPendingPaint',ctx);
+  const els=Object.fromEntries(['#pendingQueue','#pendingQueueList','#pendingQueueTitle','#pendingQueueDismissAll'].map(id=>[id,new PendingNode()])),r={request_id:'first',agent:'A',state:'queued',question:'<img src=x onerror=bad()>'.repeat(30)},ctx={focus:'A',A:{A:{name:'Ada',q:[]},B:{name:'Bram',q:[]}},OFM:{records:new Map([['first',r]]),controls:new Map()},$:s=>els[s],txt:(el,text)=>{el.textContent=text},document:doc,ofIn:new PendingNode(),DEMO:false,store:{setItem:(key,value)=>storage.set(key,value),getItem:key=>storage.get(key)},ofMessageFulfillment:()=>null};
+  ctx.cuTarget=()=>ctx.focus;ctx.OFUI={recipient:'agent'};const save=html.split('\n').find(line=>line.startsWith('function ofMessageSave('));const paint=vm.runInNewContext(helpers+'\n'+save+'\n'+code+';cuPendingPaint',ctx);
   paint();const list=els['#pendingQueueList'],row=list.children[0];assert.equal(row.querySelector('span').textContent,r.question);assert.doesNotMatch(row.template,/<img/,'untrusted text never becomes markup');row.open=true;paint();assert.equal(list.children[0],row);assert.equal(row.open,true,'ordinary polling preserves expansion');assert.equal(els['#pendingQueueTitle'].textContent,'Pending · 1 · Ada');
   r.state='unknown';paint();assert.equal(list.children[0],row);assert.match(row.querySelector('b').textContent,/unknown/);assert.equal(els['#pendingQueueTitle'].textContent,'Unresolved · 1 · Ada','unknown-only title never counts as pending');
   const second={request_id:'second',agent:'A',state:'queued',question:'Second request'};ctx.OFM.records.set('second',second);paint();const secondRow=list.children[1],secondSummary=secondRow.querySelector('summary');secondRow.open=true;secondSummary.focus();assert.equal(els['#pendingQueueTitle'].textContent,'Pending · 1 · Unresolved · 1 · Ada');
@@ -409,8 +432,8 @@ function pendingPaintChecks(code=html.slice(html.indexOf('function cuPendingPain
   r.state='unknown';second.state='queued';const other={...r,request_id:'other',agent:'B'};ctx.OFM.records.set('other',other);paint();
   const unknownRow=list.children[0],survivor=list.children[1],button=unknownRow.querySelector('button');survivor.open=true;
   assert.equal(unknownRow.open,false);assert.equal(button.hidden,false,'dismiss is exposed in a closed summary');
-  assert.match(unknownRow.template,/type="button" class="pending-dismiss" aria-label="Dismiss unresolved notice"/);
-  assert.equal(survivor.querySelector('button').hidden,true,'queued message has no dismiss control');
+  assert.match(unknownRow.template,/type="button" class="pending-dismiss" aria-label="Dismiss message notice"/);
+  assert.equal(survivor.querySelector('button').hidden,false,'queued message can hide its notice');
   const activate=button=>{let prevented=false,stopped=false;button.onclick({preventDefault(){prevented=true},stopPropagation(){stopped=true}});assert(prevented,'dismiss must not toggle summary');assert(stopped,'dismiss must not bubble to summary')};
   const beforeMoves=moves;button.focus();activate(button);
   assert.equal(list.children[0],survivor);assert.equal(moves,beforeMoves);assert.equal(survivor.open,true);assert.equal(doc.activeElement,ctx.ofIn);
@@ -421,13 +444,25 @@ function pendingPaintChecks(code=html.slice(html.indexOf('function cuPendingPain
   assert.match(loaded.el.innerHTML,/Delivery unknown/,'conversation keeps delivery truth');assert(loaded.el.querySelector('.message-check'),'history still offers explicit status check');
   const pending=vm.runInNewContext(unifiedCode+';cuPendingRows');assert(!pending('A',ctx.A.A,reload.OFM.records,new Map()).some(v=>v.request_id==='first'));
   reload.ofMessageMerge([{...r,state:'answered',reply:'Late <answer>'}]);assert.equal(loaded.state,'answered');assert.match(loaded.el.innerHTML,/Late &lt;answer&gt;/,'dismissed request still renders late reply');assert.equal(loaded.noticeDismissed,true);
-  delete r.noticeDismissed;r.state='queued';paint();assert.equal(list.children[0].querySelector('button').hidden,true);
-  const saved=storage.get('liveRoomMessages');activate(button);assert.equal(r.noticeDismissed,undefined,'stale unknown button cannot dismiss now-queued work');assert.equal(storage.get('liveRoomMessages'),saved);
+  delete r.noticeDismissed;r.state='sending';paint();assert.equal(list.children[0].querySelector('button').hidden,true);
+  const saved=storage.get('liveRoomMessages');activate(button);assert.equal(r.noticeDismissed,undefined,'stale button cannot dismiss now-sending work');assert.equal(storage.get('liveRoomMessages'),saved);
   r.state='unknown';paint();const stale=list.children[0].querySelector('button');
   ctx.OFM.records.set('first',{...r,agent:'B'});activate(stale);assert.equal(ctx.OFM.records.get('first').noticeDismissed,undefined,'captured agent must still match exact current record');
   ctx.OFM.records.set('first',{...r,request_id:'different'});activate(stale);assert.equal(ctx.OFM.records.get('first').noticeDismissed,undefined,'map key alone cannot substitute current request identity');
   ctx.OFM.records.set('first',r);ctx.focus='B';activate(stale);assert.equal(r.noticeDismissed,undefined,'detached row cannot dismiss another visible station');ctx.focus='A';
-  ctx.A.A.q=[{seq:10,text:'Native queued text'}];r.state='answered';second.state='answered';paint();assert.equal(list.children[0].querySelector('button').hidden,true,'observed native queue has no dismiss control');
+  ctx.A.A.q=[{seq:10,text:'Native queued text'}];r.state='answered';second.state='answered';paint();assert.equal(list.children[0].querySelector('button').hidden,false,'observed native queue can hide its notice');
+  activate(list.children[0].querySelector('button'));assert.equal(list.children.length,0);assert.equal(ctx.A.A.q.length,1,'dismiss preserves raw queue');paint();assert.equal(list.children.length,0,'legacy object remains hidden in memory');
+  ctx.A.A.q=[{seq:10,text:'Native queued text'}];paint();assert.equal(list.children.length,1,'replacement legacy object survives');
+  const original={boot:'one',seq:12,text:'same'},arrival={boot:'one',seq:13,text:'same'};ctx.A.A.q=[original];r.state='queued';paint();
+  const bulk=els['#pendingQueueDismissAll'],snapshot=bulk.onclick;bulk.focus();ctx.A.A.q.push(arrival);snapshot();assert.equal(list.children.length,1,'bulk snapshot leaves later arrival');assert.equal(list.children[0].querySelector('span').textContent,'same');assert.equal(r.state,'queued');assert.equal(r.noticeDismissed,true);assert.equal(ctx.A.A.q.length,2);assert.equal(JSON.parse(storage.get('liveRoomQueueNotices')).length,1);
+  paint();bulk.focus();bulk.onclick();assert.equal(list.children.length,0);assert.equal(doc.activeElement,ctx.ofIn,'hidden focused bulk action restores composer');
+  // Captured native event cannot hide a replacement or a different boot with reused sequence.
+  ctx.A.A.q=[{boot:'old',seq:1,text:'before'}];paint();const staleNative=list.children[0].querySelector('button');ctx.A.A.q=[{boot:'new',seq:1,text:'after'}];const savedNative=storage.get('liveRoomQueueNotices');activate(staleNative);assert.equal(storage.get('liveRoomQueueNotices'),savedNative,'removed event cannot create a dismissal');assert.equal(list.children.length,1);assert.equal(list.children[0].querySelector('span').textContent,'after');
+  r.state='unknown';delete r.noticeDismissed;paint();const staleRecord=list.children[0].querySelector('button');ctx.OFM.records.set('first',{...r});activate(staleRecord);assert.equal(ctx.OFM.records.get('first').noticeDismissed,undefined,'replacement record object survives stale handler');
+  const history=ctx.OFM.records.get('first');history.state='sending';paint();assert.equal(list.children[0].querySelector('button').hidden,true);assert.equal(bulk.hidden,false);bulk.onclick();assert.equal(list.children.length,1,'bulk cannot hide sending');assert.equal(history.state,'sending');
+  ctx.A.A.q=[{boot:'external',seq:2,text:'Cleared by app'}];paint();bulk.focus();ctx.A.A.q=[];paint();assert.equal(doc.activeElement,ctx.ofIn,'external last-notice clearing restores focused bulk action');
+  history.state='queued';paint();bulk.focus();history.state='answered';paint();assert.equal(doc.activeElement,ctx.ofIn,'terminal WATCH clearing restores focused bulk action');
+
 }
 pendingPaintChecks();
 {
@@ -451,10 +486,12 @@ dismissedCacheChecks();
 for(const [label,from,to] of [['backend changes local dismissal','restored&&v.notice_dismissed===true','v.notice_dismissed===true'],['dismissal not restored','if(restored&&v.notice_dismissed===true)r.noticeDismissed=true;','']]){let caught=false;try{dismissedCacheChecks(messageCode.replace(from,to))}catch(e){caught=true}assert.ok(caught,label+' mutation detected')}
 {
   const paint=html.slice(html.indexOf('function cuPendingPaint('),html.indexOf('function cuSources('));
-  for(const [label,from,to] of [['dismiss toggles summary','ev.preventDefault();',''],['dismiss crosses agent','message?.agent!==target||',''],['dismiss stale queued','||message.state!==\'unknown\'','']]){let caught=false;try{pendingPaintChecks(paint.replace(from,to))}catch(e){caught=true}assert.ok(caught,label+' mutation detected')}
-  let caught=false;try{pendingChecks(unifiedCode.replace("r.state==='unknown'&&r.noticeDismissed===true","r.noticeDismissed===true"))}catch(e){caught=true}assert.ok(caught,'dismissal must not suppress queued mutation detected');
+  for(const [label,from,to] of [['dismiss toggles summary','ev.preventDefault();',''],['bulk includes future arrivals','cuPendingDismiss(target,dismissible)','cuPendingDismiss(target,cuPendingRows(target,A[target],OFM.records,new Map()))'],['bulk focus captured too late','let restoreFocus=focused===bulk&&!dismissible.length','let restoreFocus=false']]){let caught=false;try{pendingPaintChecks(paint.replace(from,to))}catch(e){caught=true}assert.ok(caught,label+' mutation detected')}
 }
-console.log('ok local unresolved dismissal: exact current identity/state, closed-summary action, no-toggle activation, save/reload, backend field refusal, preserved history/late answers and bounded storage; six new mutations detected');
+
+for(const [label,from,to] of [['replacement WATCH identity','message!==row.message||',''],['removed native event','A[target]?.q.includes(row.event)','true']]){let caught=false;try{pendingPaintChecks(undefined,unifiedCode.replace(from,to))}catch(e){caught=true}assert.ok(caught,label+' mutation detected')}
+
+console.log('ok local unresolved dismissal: exact current identity/state, closed-summary action, no-toggle activation, save/reload, backend field refusal, preserved history/late answers and bounded storage; three handler mutations detected');
 console.log('ok pending strip: identity/source isolation, observed queue, truthful message/steer states, terminal clearing, safe text, stable expansion, focused sibling removal, composer restoration and navigation; six mutations detected');
 
 /* The real draft save/restore helpers preserve independent destinations. */
