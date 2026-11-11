@@ -6,6 +6,38 @@
 const fs = require('fs'), path = require('path'), vm = require('vm');
 // Normalize HTML input line endings before matching and executing script fragments.
 const html = fs.readFileSync(path.join(__dirname, '..', 'src', 'web', 'index.html'), 'utf8').replace(/\r\n?/g, '\n');
+{
+  const start=html.indexOf('/* deck log helpers:'),end=html.indexOf('/* end deck log helpers */');
+  const source=html.slice(html.indexOf('\n',start)+1,end);
+  const assert=require('assert');
+  function verify(code){
+    const h=vm.runInNewContext(code+';({deckRows,deckCitation,deckEventText,deckSpeaker})');
+    assert.equal(h.deckCitation({event_id:'a'.repeat(64)}),true);
+    for(const event_id of ['1','a'.repeat(63),'a'.repeat(64)+'" onclick="x','X'.repeat(64)])assert.equal(h.deckCitation({event_id}),false);
+    assert.equal(h.deckRows({events:[{id:'durable'}]})[0].id,'durable');
+    assert.equal(h.deckSpeaker({chat_name:'Atlas',role:'user'}),'You → Atlas');assert.equal(h.deckSpeaker({chat_name:'Atlas',role:'assistant'}),'Atlas');
+    assert.equal(h.deckEventText({operation:'run',phase:'result',outcome:'unknown'}),'run · result · unknown');
+    assert.equal(h.deckEventText({operation:'run',phase:'started',outcome:'pending',certainty:'probably'}),'Probably · run · started · pending');
+    assert.equal(h.deckEventText({text:'related activity',certainty:'inferred'}),'Inferred · related activity');
+    assert.equal(h.deckEventText({text:'<script>untrusted</script>'}),'<script>untrusted</script>');
+    return h;
+  }
+  const h=verify(source);let mutation=false;
+  try{verify(source.replace("/^[a-f0-9]{64}$/.test(c.event_id)","true"))}catch(e){mutation=true}
+  assert.ok(mutation,'durable citation identity mutation must fail');
+  mutation=false;try{verify(source.replace("e.certainty==='probably'",'false'))}catch(e){mutation=true}
+  assert.ok(mutation,'provisional certainty mutation must fail');
+  const cite=html.match(/^function ofCite\(c\).*$/m)[0];
+  const esc=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  const render=vm.runInNewContext(cite+';ofCite',{deckCitation:h.deckCitation,esc,A:new Proxy({},{get(){throw Error('archive looked up live agent')}})});
+  const markup=render({event_id:'b'.repeat(64),agent:'<script>',what:'" onclick="send'});
+  assert.ok(markup.includes('data-deck="'+'b'.repeat(64)+'"')&&!markup.includes('data-n='));
+  assert.ok(markup.includes('&lt;script&gt;')&&markup.includes('&quot; onclick=&quot;send'));
+  const evidence=html.match(/^async function deckEvidence\(id\).*$/m)[0];
+  assert.ok(evidence.includes("deckRequest('event/'+id)")&&!/ofJump|setFocus|cuSelectRecipient|agent-message/.test(evidence));
+  assert.ok(html.includes('id="deckLog" role="dialog"')&&html.includes('aria-label="Close Deck Log"'));
+  console.log('ok Deck Log: durable identities, escaped independent evidence, qualified unknown outcomes; citation mutation detected');
+}
 const a = html.indexOf('/* path helpers'), b = html.indexOf('/* end path helpers */');
 if (a < 0 || b < 0 || b < a) throw new Error('the path helper markers are missing from index.html');
 const block = html.slice(html.indexOf('\n', a) + 1, b);
@@ -849,11 +881,11 @@ function deskKeyboardChecks(mutate=false){
   const ctx={focus:'A',DESK:{drawer:'agents',open:true},OFUI:{docked:true,epoch:1},ofEl:{contains:t=>t.insideOfficer,classList:{contains:()=>true}},$:node,document:{activeElement:target},
     addEventListener:(event,fn,capture)=>{if(event==='keydown')callbacks.push({fn,capture:!!capture})},
     deskCloseDrawer:()=>{ctx.DESK.drawer=null;actions.push('drawer')},deskCloseWork:()=>{ctx.DESK.open=false;actions.push('work')},render(){},setFocus:id=>{ctx.focus=id;actions.push('room')},watchOpen:on=>{node('#watchP').hidden=!on;actions.push('watch')},ofToggle:()=>actions.push('officer'),deskVisible:()=>true};
-  const watch=html.split('\n').find(x=>x.startsWith("addEventListener('keydown',e=>{if(e.key==='Escape'&&!$('#watchP').hidden)"));
+  const watch=html.split('\n').find(x=>x.startsWith("addEventListener('keydown',e=>{")&&x.includes("if(e.key==='Escape'&&!$('#watchP').hidden)"));
   let desk=html.slice(html.indexOf('function deskKeydown('),html.indexOf('/* end desk keyboard handling */'));assert.ok(desk.includes("addEventListener('keydown',deskKeydown,true)"));
   if(mutate)desk=desk.replace('e.stopImmediatePropagation();','');
   const bubbleStart=html.indexOf("addEventListener('keydown',e=>{\n  if((e.key==='Enter'");assert.ok(bubbleStart>=0);const bubble=html.slice(bubbleStart,html.indexOf('let wasPortrait=',bubbleStart));
-  const officer=html.split('\n').find(x=>x.startsWith("addEventListener('keydown',e=>{if(e.key!=='Escape')return;"));assert.ok(watch&&officer);
+  const officer=html.split('\n').find(x=>x.startsWith("addEventListener('keydown',e=>{")&&x.includes("if(e.key!=='Escape')return;if(!$('#cuAgentChoices').hidden)"));assert.ok(watch&&officer);
   vm.runInNewContext(deskHelpers+'\n'+watch+'\n'+desk+'\n'+bubble+'\n'+officer,ctx);
   const dispatch=(key,extra={})=>{let immediate=false,stopped=false;const e={key,target,preventDefault(){},stopImmediatePropagation(){immediate=true;stopped=true},stopPropagation(){stopped=true},...extra};for(const capture of [true,false]){if(!capture&&stopped)break;for(const c of callbacks.filter(c=>c.capture===capture)){c.fn(e);if(immediate)break}if(immediate)break}};
   dispatch('Escape');assert.deepEqual(actions,['drawer']);assert.equal(ctx.DESK.open,true);assert.equal(ctx.focus,'A');assert.equal(ctx.OFUI.epoch,1,'drawer Escape never also runs Officer handling');
@@ -1549,3 +1581,55 @@ const zoomApplyStart=html.indexOf('const view=roomZoomDistance'),zoomApplySource
 zoomApplyChecks(zoomApplySource);
 for(const [from,to] of [['cam.zoom=view.zoom;cam.zoomPending=false',''],['translateZ(${-D}px)','translateZ(${-fitted}px)']]){let caught=false;try{zoomApplyChecks(zoomApplySource.replace(from,to))}catch(e){caught=true}assert.ok(caught,'zoom apply mutation '+from)}
 console.log('ok actual apply commits achieved zoom, preserves requested refit and culls from final camera matrix; two mutations detected');
+
+/* Run actual Deck Log handlers with deferred network responses and composed capture listeners. */
+async function deckHandlerChecks(){
+  const code=html.slice(html.indexOf('/* deck log helpers:'),html.lastIndexOf('</script>'));
+  const nodes=new Map(),listeners=[],doc={activeElement:null};
+  function make(){return {hidden:false,value:'',textContent:'',disabled:false,children:[],handlers:{},setAttribute(){},getClientRects:()=>[{}],focus(){doc.activeElement=this},replaceChildren(...children){this.children=children},appendChild(n){this.children.push(n)},append(...items){this.children.push(...items)},addEventListener(k,fn){this.handlers[k]=fn},querySelectorAll(){return []}}}
+  const node=id=>{if(!nodes.has(id))nodes.set(id,make());return nodes.get(id)};
+  doc.createElement=make;doc.activeElement=node('#deckOpen');
+  let state={available:true,recording:true,settings:{enabled:true,retention_days:30,excluded_projects:[],excluded_chats:[]}},release,posts=[],searches=[];
+  const response=v=>({ok:true,json:async()=>v});
+  const ctx={document:doc,$:node,txt:(n,v)=>n.textContent=v,DEMO:false,KEY:'fixture',URLSearchParams,AbortSignal,confirm:()=>true,
+    fetch:async(url,options)=>{if(options.method==='POST'){const body=JSON.parse(options.body);posts.push(body);if(posts.length===1)await new Promise(done=>release=done);state={...state,settings:{...state.settings,...body}};return response(state)}if(url.includes('/status'))return response(state);if(url.includes('/chats'))return response({chats:[]});if(url.includes('/projects'))return response({projects:[]});searches.push(url);return response({events:[{id:(searches.length===1?'a':'b').repeat(64),text:'result '+searches.length}],cursor:searches.length===1?'c'.repeat(64):null})},
+    addEventListener:(event,fn,capture)=>{if(event==='keydown')listeners.push({fn,capture:!!capture})},
+    focus:'A',DESK:{drawer:'agents',open:true},OFUI:{docked:false},ofEl:{classList:{contains:()=>false}},
+    watchOpen:()=>{throw Error('background Watch changed')},deskCloseDrawer:()=>{throw Error('background drawer changed')},deskCloseWork:()=>{throw Error('background Work changed')},ofToggle:()=>{throw Error('background Officer changed')},render(){},deskVisible:()=>true};
+  const api=vm.runInNewContext(code+';({DECK,deckSettings,deckSearch,deckForeground,deckLoad,deckEvidence})',ctx);
+  api.deckSettings(state);node('#deckProjectManage').value='A';node('#deckExcludeProject').onclick();node('#deckProjectManage').value='B';node('#deckExcludeProject').onclick();
+  await new Promise(done=>setImmediate(done));assert.equal(posts.length,1);assert.deepEqual(posts[0].excluded_projects,['A']);release();await api.DECK.mutations;
+  assert.deepEqual(posts[1].excluded_projects,['A','B'],'second real handler computes from acknowledged first exclusion');
+  node('#deckQuery').value='original';node('#deckChat').value='original-chat';await node('#deckSearch').onclick();
+  node('#deckQuery').value='changed';node('#deckChat').value='changed-chat';await node('#deckMore').onclick();
+  assert.ok(searches[1].includes('query=original')&&searches[1].includes('chat_id=original-chat')&&searches[1].includes('cursor='+'c'.repeat(64)));
+  assert.equal(node('#deckResults').children.length,2);assert.equal(api.DECK.shown,2);
+  const watch=html.split('\n').find(x=>x.startsWith("addEventListener('keydown',e=>{")&&x.includes("if(e.key==='Escape'&&!$('#watchP').hidden)"));
+  const officer=html.split('\n').find(x=>x.startsWith("addEventListener('keydown',e=>{")&&x.includes("if(e.key!=='Escape')return;if(!$('#cuAgentChoices').hidden)"));
+  const desk=html.slice(html.indexOf('function deskKeydown('),html.indexOf('/* end desk keyboard handling */'));
+  vm.runInNewContext(deskHelpers+'\n'+watch+'\n'+desk+'\n'+officer,ctx);
+  node('#deckLog').hidden=false;node('#watchP').hidden=false;node('#cuAgentChoices').hidden=false;
+  const first=node('#deckClose'),last=node('#deckSearch');node('#deckLog').querySelectorAll=()=>[first,last];
+  for(const key of ['Tab','Escape']){doc.activeElement=last;let stopped=false;const e={key,target:last,preventDefault(){},stopPropagation(){stopped=true},stopImmediatePropagation(){throw Error('background capture consumed foreground key')}};for(const l of listeners.filter(l=>l.capture))l.fn(e);node('#deckLog').handlers.keydown(e);assert.ok(stopped);if(key==='Tab')assert.equal(doc.activeElement,first);else assert.equal(node('#deckLog').hidden,true)}
+  let deleted=false,finishDelete,oldSearch,oldEvidence,readRequests=0;const oldMetadata=[];
+  ctx.fetch=async(url,options)=>{
+    if(options.method==='POST'){await new Promise(done=>finishDelete=done);deleted=true;return response(state)}
+    readRequests++;
+    if(url.includes('/search'))return await new Promise(done=>oldSearch=()=>done(response({events:[{id:'d'.repeat(64),text:'deleted excerpt'}],cursor:'e'.repeat(64)})));
+    if(url.includes('/event/'))return await new Promise(done=>oldEvidence=()=>done(response({id:'d'.repeat(64),text:'deleted evidence'})));
+    const body=url.includes('/chats')?{chats:deleted?[]:[{chat_id:'old-chat',chat_name:'deleted chat title'}]}:url.includes('/projects')?{projects:deleted?[]:[{project_id:'old-project',project_name:'deleted project title'}]}:state;
+    if(deleted)return response(body);
+    return await new Promise(done=>oldMetadata.push(()=>done(response(body))));
+  };
+  const loading=api.deckLoad(),searching=node('#deckSearch').onclick(),evidence=api.deckEvidence('d'.repeat(64));
+  const deleting=node('#deckDeleteAll').onclick();await new Promise(done=>setImmediate(done));
+  const readsBefore=readRequests;await node('#deckSearch').onclick();await api.deckEvidence('f'.repeat(64));await api.deckLoad();
+  assert.equal(readRequests,readsBefore,'pending deletion blocks new search, evidence and metadata reads');
+  finishDelete();await deleting;oldSearch();oldEvidence();for(const releaseOld of oldMetadata)releaseOld();await Promise.all([loading,searching,evidence]);
+  assert.equal(node('#deckResults').children.length,0,'pre-delete search cannot restore deleted excerpts');
+  assert.equal(node('#deckEvidence').hidden,true);assert.equal(node('#deckEvidence').textContent,'');
+  assert.equal(api.DECK.cursor,null);assert.equal(node('#deckMore').hidden,true);
+  for(const id of ['#deckChat','#deckChatManage','#deckProject','#deckProjectManage'])assert.ok(node(id).children.every(item=>!item.textContent.includes('deleted')),'pre-delete metadata cannot restore deleted labels');
+  console.log('ok Deck Log actual handlers: deferred exclusions serialize, pagination freezes filters, foreground Tab/Escape defeat background capture handlers');
+}
+deckHandlerChecks().catch(error=>{console.error(error);process.exitCode=1});

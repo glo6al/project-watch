@@ -25,6 +25,8 @@ jobs:
       - run: python tests/test_owner_actions.py
       - run: python tests/test_officer_controls.py
       - run: python tests/test_officer_fulfillment.py
+      - run: python tests/test_deck_log.py
+      - run: python tests/test_deck_log_integration.py
       - run: python tests/test_peer_bridge.py
       - run: python tests/test_shared_bridge.py
       - run: python tests/test_chat_directory.py
