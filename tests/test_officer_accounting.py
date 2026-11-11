@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 import sys
 import tempfile
+import time
 import unittest
 import uuid
 from unittest.mock import patch
@@ -59,7 +60,7 @@ class OfficerAccountingTests(unittest.TestCase):
     def test_storage_failure_preserves_authoritative_control_and_never_retries(self):
         control = {'text': 'Codex confirmed interruption.', 'controls': [{'state': 'interrupted'}], 'actions': [], 'cites': []}
         def dispatch(text, request_id, call, **kwargs):
-            call({'model': 'claude-haiku-5-5'}, end=123)
+            call({'model': 'claude-haiku-5-5', 'max_tokens': 1200}, end=time.monotonic() + 30)
             return copy.deepcopy(control)
         for failure in ('begin', 'finish'):
             with self.subTest(failure=failure), patch.object(self.ledger, failure, side_effect=OSError('synthetic write failure')), \

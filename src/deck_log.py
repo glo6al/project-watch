@@ -201,6 +201,8 @@ class DeckLog:
         self.last_gap = ''
         self.last_purge = self.clock()
         self.thread = None
+        self.erasure_observer = None
+        self._erasure_pending = None
         if os.path.lexists(self.path):
             self._initialize()
         else:
@@ -286,11 +288,20 @@ class DeckLog:
         CREATE TABLE IF NOT EXISTS coverage(id INTEGER PRIMARY KEY,reason TEXT NOT NULL,started REAL NOT NULL,ended REAL NOT NULL,count INTEGER NOT NULL);
         ''')
         existing = {r['key']: json.loads(r['value']) for r in self.db.execute('SELECT * FROM settings')}
-        if existing.get('schema_version', 1) not in (1, 2):
+        if existing.get('schema_version', 1) not in (1, 2, 3):
             raise ValueError('unsupported archive schema')
         if 'certainty' not in {r[1] for r in self.db.execute('PRAGMA table_info(events)')}:
             self.db.execute("ALTER TABLE events ADD COLUMN certainty TEXT NOT NULL DEFAULT 'recorded'")
-        self._save_setting('schema_version', 2)
+        # A separate table preserves old event/source insert contracts and IDs.
+        # AUTOINCREMENT survives deletion, VACUUM and reopening; source time is not an ingest fence.
+        self.db.execute('CREATE TABLE IF NOT EXISTS event_ingest(seq INTEGER PRIMARY KEY AUTOINCREMENT,event_id TEXT UNIQUE NOT NULL)')
+        self.db.execute('INSERT INTO event_ingest(event_id) SELECT e.id FROM events e WHERE NOT EXISTS (SELECT 1 FROM event_ingest i WHERE i.event_id=e.id) ORDER BY e.observed_ts,e.source_ts,e.id')
+        self.db.execute('CREATE INDEX IF NOT EXISTS events_operation ON events(chat_id,operation_id)')
+        generation = existing.get('erasure_generation', 0)
+        if type(generation) is not int or generation < 0:
+            raise ValueError('invalid erasure generation')
+        self._save_setting('erasure_generation', generation)
+        self._save_setting('schema_version', 3)
         for key in DEFAULTS:
             if key in existing:
                 self.settings[key] = existing[key]
@@ -517,6 +528,7 @@ class DeckLog:
             if self.db.execute('SELECT COUNT(*) FROM events').fetchone()[0] + len(rows) > self.limits['events'] or self.db.execute('SELECT (SELECT COUNT(*) FROM source_records)+(SELECT COUNT(*) FROM erased_records)').fetchone()[0] > self.limits['records']:
                 raise OverflowError('storage_full')
             self.db.executemany('INSERT INTO events VALUES (' + ','.join('?' * 21) + ')', rows)
+            self.db.executemany('INSERT INTO event_ingest(event_id) VALUES (?)', [(r[0],) for r in rows])
             if self.fts:
                 self.db.executemany('INSERT INTO event_fts(id,text) VALUES (?,?)', [(r[0], ' '.join(str(r[i]) for i in (13, 11, 14, 17, 18, 5, 7, 20))) for r in rows])
             self.db.commit()
@@ -561,6 +573,8 @@ class DeckLog:
                     self.wake.notify_all()
 
     def _cleanup(self):
+        # This technical index has no prose; remove erased IDs without resetting its high-water mark.
+        self.db.execute('DELETE FROM event_ingest WHERE NOT EXISTS (SELECT 1 FROM events WHERE events.id=event_ingest.event_id)')
         # Recreate instead of relying on optional recent FTS5 secure-delete support.
         if self.db.execute("SELECT 1 FROM sqlite_master WHERE name='event_fts'").fetchone():
             self.db.execute('DROP TABLE event_fts')
@@ -568,13 +582,34 @@ class DeckLog:
             self.db.execute('CREATE VIRTUAL TABLE event_fts USING fts5(id UNINDEXED,text)')
             self.db.execute("INSERT INTO event_fts(id,text) SELECT id,text||' '||kind||' '||operation||' '||outcome||' '||file_ref||' '||chat_name||' '||project_name||' '||certainty FROM events")
         self.db.commit()
+        self._notify_erasure()
         self.db.execute('VACUUM')
         self._verify()
+
+    def _erased(self):
+        row = self.db.execute("SELECT value FROM settings WHERE key='erasure_generation'").fetchone()
+        generation = json.loads(row[0]) if row else 0
+        if type(generation) is not int or generation < 0:
+            raise ValueError('invalid erasure generation')
+        self._save_setting('erasure_generation', generation + 1)
+        self._erasure_pending = generation + 1
+
+    def _notify_erasure(self):
+        generation = self._erasure_pending
+        self._erasure_pending = None
+        if generation is not None and callable(self.erasure_observer):
+            try:
+                # Observer must only set a wake flag. Never call a model, take room
+                # locks, or perform network I/O while the archive lock is held.
+                self.erasure_observer(generation)
+            except Exception:
+                pass
 
     def _purge(self):
         cutoff = self.clock() - self.settings['retention_days'] * 86400
         count = self.db.execute('SELECT COUNT(*) FROM source_records WHERE age_ts<?', (cutoff,)).fetchone()[0]
         if count:
+            self._erased()
             self.db.execute('INSERT OR IGNORE INTO erased_records SELECT key FROM source_records WHERE age_ts<?', (cutoff,))
             self.db.execute('DELETE FROM source_records WHERE age_ts<?', (cutoff,))
             self.db.execute("INSERT INTO erase_floors VALUES ('all',?) ON CONFLICT(scope) DO UPDATE SET cutoff=MAX(cutoff,excluded.cutoff)", (cutoff,))
@@ -599,6 +634,7 @@ class DeckLog:
                 # Bounded anti-resurrection ledger; a global floor is conservative.
                 self.db.execute('DELETE FROM erase_floors')
                 self.db.execute('INSERT INTO erase_floors VALUES (?,?)', ('all', now))
+            self._erased()
             self.db.execute('INSERT OR REPLACE INTO erase_floors VALUES (?,?)', (scope, now))
             if all:
                 self.db.execute('INSERT OR IGNORE INTO erased_records SELECT key FROM source_records')
@@ -771,3 +807,70 @@ class DeckLog:
                         outcome_certainty=outcome_certainty, certainty_counts=dict(collections.Counter(r['certainty'] for r in selected)),
                         truncated=len(rows) > 1000, complete=False,
                         qualification='Historical evidence only; inferred/probably observations retain that qualification. Gaps, omitted content, and unobserved outcomes may remain.', coverage=self._status()['coverage'])
+
+
+    def evidence_state(self):
+        """Metadata only. A live query never holds this lock across an Officer call."""
+        with self.lock:
+            if not self._readable():
+                return dict(available=False, store=None, fence=0, erasure=None,
+                            coverage=self._status().get('coverage', []), queued=None, dropped=self.dropped)
+            row = self.db.execute("SELECT value FROM settings WHERE key='erasure_generation'").fetchone()
+            generation = json.loads(row[0]) if row else 0
+            high = self.db.execute("SELECT seq FROM sqlite_sequence WHERE name='event_ingest'").fetchone()
+            return dict(available=True, store=hmac.new(self.key, b'officer-evidence-store', hashlib.sha256).hexdigest(),
+                        fence=high[0] if high else 0, erasure=generation,
+                        coverage=self._status().get('coverage', []), queued=len(self.queue), dropped=self.dropped)
+
+    def evidence_rows(self, fence, spec, *, max_work=250000, metadata_only=False, seconds=2.0):
+        """Allowlisted scoped reads, before sampling. Returns all candidates or no prefix.
+
+        Work is measured in candidate rows after structural scope/filtering, before text
+        matching. A SQL progress deadline independently bounds query execution time.
+        """
+        allowed = {'scope', 'interval', 'filters'}
+        if not isinstance(spec, dict) or set(spec) - allowed:
+            raise ValueError('invalid evidence query')
+        scope, interval, filters = spec.get('scope', {}), spec.get('interval', {}), spec.get('filters', {})
+        fields = {'provider', 'kind', 'role', 'operation', 'phase', 'outcome', 'certainty', 'file_ref', 'operation_id', 'id'}
+        if not isinstance(filters, dict) or set(filters) - fields:
+            raise ValueError('invalid evidence filters')
+        where, args = ['i.seq<=?'], [fence.get('fence', 0)]
+        for field, values in [('chat_id', scope.get('chat_ids', [])), ('project_id', scope.get('project_ids', [])), *filters.items()]:
+            if not isinstance(values, list) or len(values) > 100 or any(not isinstance(v, str) or len(v) > 300 for v in values):
+                raise ValueError('invalid evidence scope')
+            if values:
+                where.append('e.' + field + ' IN (' + ','.join('?' for _ in values) + ')')
+                args.extend(values)
+        basis = interval.get('time_basis', 'source')
+        if basis not in ('source', 'observed'):
+            raise ValueError('invalid evidence time basis')
+        for key, op in [('since', '>='), ('until', '<')]:
+            value = interval.get(key)
+            if value is not None:
+                if not isinstance(value, (float, int)) or isinstance(value, bool) or not math.isfinite(value):
+                    raise ValueError('invalid evidence interval')
+                where.append('e.' + basis + '_ts' + op + '?')
+                args.append(value)
+        with self.lock:
+            current = self.evidence_state()
+            if not current['available']:
+                return dict(available=False, rows=[], work=0, complete=False, reason='retained_unavailable')
+            if current['store'] != fence.get('store') or current['erasure'] != fence.get('erasure'):
+                return dict(available=False, rows=[], work=0, complete=False, reason='evidence_removed')
+            end = time.monotonic() + max(0.001, min(2.0, seconds))
+            self.db.set_progress_handler(lambda: int(time.monotonic() >= end), 1000)
+            try:
+                clause = ' FROM events e JOIN event_ingest i ON i.event_id=e.id WHERE ' + ' AND '.join(where)
+                count = self.db.execute('SELECT COUNT(*)' + clause, args).fetchone()[0]
+                if count > max_work:
+                    return dict(available=True, rows=[], work=0, required_work=count, complete=False, reason='query_work_exhausted')
+                columns = 'e.id,e.chat_id,e.chat_name,e.provider,e.project_id,e.project_name,e.source_ts,e.observed_ts' if metadata_only else 'e.*'
+                rows = self.db.execute('SELECT ' + columns + clause + ' ORDER BY e.source_ts,e.id', args).fetchall()
+                return dict(available=True, rows=[dict(r) for r in rows], work=count, complete=True, reason='')
+            except sqlite3.OperationalError as error:
+                if 'interrupt' in str(error).lower() or 'locked' in str(error).lower():
+                    return dict(available=True, rows=[], work=0, complete=False, reason='query_deadline')
+                raise
+            finally:
+                self.db.set_progress_handler(None, 0)

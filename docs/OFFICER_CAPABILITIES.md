@@ -1,6 +1,6 @@
 # Officer capability design
 
-Status: proposed design for review. This document does not describe shipped capabilities or authorize implementation.
+Status: implemented locally, independently reviewed and tested. This document does not describe a published release.
 
 The Officer should answer natural questions about recorded work by composing a small set of read capabilities. Questions are acceptance tests, not a fixed menu. The shared design must support narrow lookups, comparisons, quantitative questions, retrospective reports and follow-ups without adding a separate implementation for each wording.
 
@@ -123,6 +123,8 @@ An erasure/generation change invalidates affected accumulated tool messages, int
 
 Previously transmitted provider data, responses already published before deletion, and independently retained owner-authored conversation text remain separate deletion boundaries. Existing visible conversation text is not rewritten by archive deletion. Reference-linked assistant content derived solely from removed sources is excluded from future model replay and cannot substitute for deleted evidence. The publication/deletion generation check and late-response UI handling must preserve this boundary.
 
+Publication has a precise server-side ordering: source validation and a publication permit commit under the same short archive gate as erasure-generation commits. Deletion ordered first prevents a permit; a permit ordered first is an already-published response, even when the network delivers it later. No archive lock is held while waiting for the network or browser. Fresh browser validation, local read epochs and erasure notifications reject ordinary stale arrivals, but physical browser display cannot be atomic with a database operation on another process. A suspended browser or delayed packet cannot be promised instantaneous retraction.
+
 Live and retained events are combined only when verified provenance supports deduplication. Otherwise their counts are reported separately. Similar text or nearby timestamps are not a deduplication rule.
 
 ## Question execution and answer checks
@@ -223,4 +225,20 @@ Offline tests establish filtering, counting, joins, scope, provenance, deletion 
 
 This design changes read access and evidence handling. It grants no action authority, native control, historical import, autonomous missions, scheduling or cross-provider messaging capability. Existing dispatch, permission and privacy boundaries remain in Python. The shared peer MCP does not gain access to the Officer's archive or new read tools.
 
-Expected implementation areas are archive queries/provenance, Officer schemas and execution, skills, current-day conversation metadata, source/citation display and tests. No production code, configuration, archive data or live service changes are part of this design deliverable.
+Implementation areas are archive queries/provenance, Officer schemas and execution, skills, current-day conversation metadata, source/citation display and tests. Local verification uses fictional archives. Deployment and publication are separate steps.
+
+## Local implementation verification
+
+The first delivery implements the shared read layer, request budgets, typed assertions, source continuity and publication checks. Prospective capture enrichment and cross-day Officer conversations remain separate options. Action dispatch and the shared peer MCP gain no new capabilities.
+
+Offline verification covers full retained counts at 50,000 events, scope-first retrieval, sparse prose among operations, paging and size fitting, exact operation links, missing identities, post-fit source coverage, deletion/expiry during calls, signed replay, publication ordering, budget admission and Python 3.9 startup. The complete regression run passed 722 tests with six platform-specific skips; the final additional admission regression also passed. Browser-handler tests cover bounded history, delayed arrivals and source navigation without claiming atomic network display.
+
+The opt-in `scripts/eval_officer_capabilities.py` runner creates a temporary fictional archive. Its default mode only lists questions. Live mode requires an explicit model, cases and a new private report destination; the configured strict request policy is preserved. A failed broad answer cannot trigger a hidden paid follow-up. Raw reports are not repository artifacts, and successful source checks are not an automatic semantic grade.
+
+| Real-model acceptance case | Evidence and observed result | Model calls |
+| --- | --- | --- |
+| Whole-room retrospective | 1,314 same-day events across 39 fictional chats plus one excluded prior-day event; evidence supplied from all 39 chats, with the busy-chat reversal and quiet-chat concerns retained | 4 |
+| Focused follow-up | Used the actual prior checked answer and reread the relevant chat's three statements; kept its reported need for an owner decision separate from migration execution, which was not established | 2 |
+| Same-day totals | Correctly returned 1,314 retained observations and 39 chats, kept source/unit/day qualifications, and excluded the older event | 2 |
+
+The actual provider responses identified Sonnet 5.5. Independent review checked the supplied evidence and narrative against the fixture. These are representative observations, not a guarantee for every question. The answers still included verbose unsolicited counts, a disclaimed but inadequately grounded busiest-chat aside, and some correct count prose outside the typed fragments. Reference validation does not certify surrounding narrative meaning. Sampled evidence never proves complete capture or that every important detail was represented.

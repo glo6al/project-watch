@@ -227,7 +227,7 @@ async function controlChecks(code=messageCode){
 
 /* The Officer submission owns one idempotency ID per user question, not per proposed message. */
 async function officerSubmitChecks(mutate=false){
-  let sendCode=html.slice(html.indexOf('async function ofSend(){'),html.indexOf('/* response actions preserve'));
+  let sendCode=html.match(/^function ofRequestHistory\(rows\).*$/m)[0]+'\n'+html.slice(html.indexOf('async function ofSend(){'),html.indexOf('/* response actions preserve'));
   if(mutate) sendCode=sendCode.replace('...(request_id?{request_id}:{})','...{}');
   const bodies=[],shown=[],button={disabled:false},status={textContent:''};let ids=0;
   const ctx={OF:{turns:[],busy:false},ofIn:{value:'Ask Aster for progress',focus(){}},ofSt:status,DEMO:false,
@@ -264,7 +264,7 @@ for(const [label,from,to] of [['late navigation gate','request.epoch===epoch','t
 
 /* An in-flight question never borrows the selected station on return or steals focus. */
 async function officerLateChecks(){
-  const code=html.slice(html.indexOf('async function ofSend(){'),html.indexOf('/* response actions preserve'));
+  const code=html.match(/^function ofRequestHistory\(rows\).*$/m)[0]+'\n'+html.slice(html.indexOf('async function ofSend(){'),html.indexOf('/* response actions preserve'));
   let release,epoch=1,selected='Birch',focuses=0,posted;const shown=[],responses=[];
   const ctx={OF:{turns:[],busy:false},ofIn:{value:'Why did it stop?',focus(){focuses++}},ofSt:{textContent:''},DEMO:false,
     ofCurrent:()=>({context:{scope:'station',agent:'x:12345678'},history:{scope:'station',agent:'x:12345678',name:selected},epoch}),
@@ -1441,7 +1441,7 @@ async function sharedSendChecks(){
   const absent=directHarness();absent.ctx.focus=null;absent.ctx.OFUI.target=null;await absent.send();assert.equal(absent.posts.length,0);assert.equal(absent.ctx.watchCalls,0,'no target cannot become a WATCH request');assert.match(absent.lines[0].h,/no longer/);
   const ctx={OF:{turns:[{role:'user',content:'Room history',context:{scope:'room'}},{role:'assistant',content:'Legacy history'},{role:'user',content:'Other history',context:{scope:'station',agent:'B'}},{role:'user',content:'Same history',context:{scope:'station',agent:'A'}}],busy:false},ofIn:{value:'New request'},ofSt:{textContent:''},DEMO:false,cuTurnMeta:()=>({}),cuDraftSave(){},ofContextPaint(){},ofReplyNotice(){},ofHistory:t=>t,ofDay(){},ofAdd(){},ofStatus(){},ofSave(){},ofShow(){},esc:String,ofAttributed:(c,h)=>h,ofCurrent:()=>({context:{scope:'station',agent:'A'},history:{scope:'station',agent:'A'}}),cuVisible:vm.runInNewContext(unifiedCode+';cuVisible')};
   let body;ctx.post=async(p,b)=>{body=b;return {ok:true,json:async()=>({text:'Answer'})}};
-  const code=html.slice(html.indexOf('async function ofSend(){'),html.indexOf('/* response actions preserve'));const send=vm.runInNewContext(code+';ofSend',ctx);await send();assert.deepEqual(Array.from(body.turns,t=>t.content),['Same history','New request']);
+  const code=html.match(/^function ofRequestHistory\(rows\).*$/m)[0]+'\n'+html.slice(html.indexOf('async function ofSend(){'),html.indexOf('/* response actions preserve'));const send=vm.runInNewContext(code+';ofSend',ctx);await send();assert.deepEqual(Array.from(body.turns,t=>t.content),['Same history','New request']);
   ctx.ofCurrent=()=>({context:{scope:'room'},history:{scope:'room'}});ctx.ofIn.value='Room request';await send();assert.deepEqual(Array.from(body.turns,t=>t.content),['Room history','Legacy history','Room request']);
 }
 
@@ -1520,7 +1520,7 @@ chooserFocusChecks();for(const mutation of [true,'selection']){let caught=false;
 console.log('ok chooser focus: repaint/rename/removal, empty fallback, selection composer and cancel trigger; two mutations detected');
 
 async function watchTerminalNoticeChecks(mutate=false){
-  let send=html.slice(html.indexOf('async function ofSend(){'),html.indexOf('/* response actions preserve'));
+  let send=html.match(/^function ofRequestHistory\(rows\).*$/m)[0]+'\n'+html.slice(html.indexOf('async function ofSend(){'),html.indexOf('/* response actions preserve'));
   if(mutate)send=send.replace('ofContextPaint();ofReplyNotice(request);if(ofSt','ofContextPaint();if(ofSt');
   const notice=html.slice(html.indexOf('function ofOpenContext('),html.indexOf('function ofLabel(')),drafts=html.slice(html.indexOf('function cuDraftSave('),html.indexOf('function cuTurnMeta('));
   for(const outcome of ['http','json','network']){

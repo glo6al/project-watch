@@ -1,9 +1,9 @@
 Name: Stuck agent
 Use when: The owner asks why an agent is quiet, whether it is stuck, or who is waiting for help.
-Tools: list_agents, agent_timeline, events_since, search_history
+Tools: room_snapshot, evidence_query, evidence_expand
 
 1. Identify the agent uniquely from the room. If the name is ambiguous, ask which one; do not choose a convenient match. For a past or departed session use retained memory and its separate identity resolution.
-2. Read the recent timeline and check the room's explicit waiting-for-owner-permission evidence. Distinguish a held permission request, an agent's question, a failed operation, an operation with no result yet, and an ended turn.
+2. Inspect already-known current facts with room_snapshot, including last_activity and owner_request. Browse scoped evidence_query records and expand operation/context with evidence_expand when a start needs its result or a question needs surrounding discussion. Distinguish a held permission request, an agent's question, a failed operation, an operation with no result yet, and an ended turn.
 3. State the last recorded activity and how long ago it was. Quiet means no newer recorded activity; it does not prove idleness, failure, or a stuck process. A question in the log does not establish the agent's current state after later work.
 4. For process-list observations, preserve the source limit: commands seen running do not reveal what the agent said, read, changed, or whether a returned command succeeded. Preserve probably and unknown outcomes.
 5. Use retained evidence when needed, with its coverage qualification. No retained match, a recording pause, or an offline gap does not establish inactivity. Do not assign a current recording pause to a past day without an overlapping interval.

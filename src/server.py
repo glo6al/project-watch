@@ -34,15 +34,21 @@ Run:  python3 src/server.py      (Windows: py src/server.py) then open http://12
 Env:  PORT (8793), WINDOW_MIN (20: how recently a session must have been active to appear)
 """
 import glob, hashlib, hmac, http.client, json, math, mimetypes, os, re, secrets, select, socket, sqlite3, ssl, subprocess, sys, threading, time, urllib.parse
+from contextlib import nullcontext
 from datetime import datetime, timedelta
 from officer_policy import AUTOMATIC, RoutingSnapshot, load_policy
 from officer_instructions import BUILTIN_PLAIN_ENGLISH, BUILTIN_OFFICER_SYSTEM, load_instructions, load_skill, skill_menu
 from officer_messaging import MessagingStore, MessagingError, validate_question, validate_target, valid_uuid
+from officer_capabilities import (ANSWER_CHARS, ANSWER_SCHEMA, EVIDENCE_SYSTEM, EVIDENCE_TOOLS, READ_NAMES, EvidenceAliases, parse_answer,
+                                  live_view as officer_live_projection, sign_receipt, verify_receipt, receipt_refs, record_fingerprint)
+from officer_evidence import EvidenceService
+from officer_request import BudgetPolicy, RequestBudget, BudgetExceeded, AssertionRegistry
 
 MESSAGING = None
 NATIVE_OBSERVATIONS = None
 HISTORY = None                 # initialized only by main; import never opens private state
 OFFICER_USAGE = None            # metadata-only accounting; never opens storage on import
+OFFICER_ERASURE_EVENT = threading.Event()
 HISTORY_WHY = 'Deck Log has not started.'
 HISTORY_LOCK = threading.RLock()
 HISTORY_LOCAL = threading.local()
@@ -3225,7 +3231,7 @@ def anthropic_request(method, path, body=None, end=None):
     def go():
         try:
             c = conn['c'] = CONNECT(max(1, min(60, left())))
-            c.request(method, path, json.dumps(body).encode() if body is not None else None,
+            c.request(method, path, json.dumps(body, sort_keys=True, separators=(',', ':'), ensure_ascii=True, allow_nan=False).encode() if body is not None else None,
                       {'Content-Type': 'application/json', 'x-api-key': key, 'anthropic-version': '2023-06-01', 'Accept': 'application/json'})
             conn['sock'] = c.sock              # kept here: a Connection: close answer detaches it from the connection object
             r = conn['r'] = c.getresponse()
@@ -3792,6 +3798,123 @@ def officer_accounting(call, ledger):
     return wrap, complete
 
 
+def officer_evidence_view():
+    """Copy room state briefly; projection and archive reads hold no capture lock."""
+    with LOCK:
+        agents = {aid: dict(a) for aid, a in AGENTS.items()}
+        events, pending, floor = list(LOG), {pid: dict(p) for pid, p in PENDING.items()}, BASE
+    return officer_live_projection(BOOT, agents, events, pending, HISTORY, floor)
+
+
+def officer_evidence_session():
+    return EvidenceService(HISTORY, officer_evidence_view, max_bytes=24000, max_work=3000000).start()
+
+
+def officer_receipt_valid(receipt, text, session=None):
+    """Revalidate signed lineage, including live boot and removed/changed observations."""
+    try:
+        session = session or officer_evidence_session()
+        if not verify_receipt(receipt, text, session.generation(), BOOT):
+            return False
+        metadata = receipt['payload']['evidence']
+        if metadata.get('live_floor') != BASE:
+            return False
+        proofs = metadata.get('fingerprints', {})
+        for ref in receipt_refs(receipt):
+            if ref not in proofs:
+                return False
+            record = session.resolve(ref)
+            if not record or record.get('unavailable') or record.get('error') or record_fingerprint(record) != proofs[ref]:
+                return False
+        return session.validate().get('valid') is True
+    except (ValueError, TypeError, OSError, sqlite3.Error):
+        return False
+
+
+def officer_publication(receipt, text):
+    """Commit publication against erasure under one short gate; never write HTTP here.
+
+    The archive uses this same lock for generation changes and their commits.
+    A permit ordered before erasure is already published; network/DOM timing is
+    not an atomic extension of a local database transaction.
+    """
+    history = HISTORY
+    gate = history.lock if history is not None else nullcontext()
+    with gate:
+        valid = officer_receipt_valid(receipt, text)
+        return {'valid': valid, 'publication': secrets.token_hex(16) if valid else None,
+                'boundary': 'server_commit_before_network_delivery'}
+
+
+def officer_erasure_notice():
+    """Coalesce committed erasures; observer never acquires a room lock in storage."""
+    if OFFICER_ERASURE_EVENT.is_set():
+        OFFICER_ERASURE_EVENT.clear()
+        emit('', 'memory_changed', False)
+
+
+def officer_replay(turns, session):
+    """Owner text survives; unsupported or erased assistant prose never becomes evidence."""
+    messages, hints = [], []
+    for turn in turns:
+        retained = {'role': turn['role'], 'content': turn['content']}
+        if 'context' in turn:
+            retained['context'] = turn['context']
+        if turn['role'] == 'user':
+            messages.append(retained)
+        elif officer_receipt_valid(turn.get('receipt'), turn['content'], session):
+            # Even authenticated prior words are untrusted context, not new facts.
+            messages.append(retained)
+            hints.extend(receipt_refs(turn['receipt']))
+    return messages, list(dict.fromkeys(hints))[-100:]
+
+
+def officer_budget():
+    """No implicit dollar limit: strict monetary operation must be selected explicitly."""
+    limit = os.environ.get('OFFICER_REQUEST_USD')
+    policy = BudgetPolicy(mode='strict_usd', usd_limit=limit, max_query_rows=3000000) if limit is not None else BudgetPolicy(max_query_rows=3000000)
+    return RequestBudget(policy)
+
+
+def officer_evidence_answer(checked, evidence, registry, actions, cap):
+    """The narrative has supplied references; numerical fragments were rendered in Python."""
+    text = checked['text']
+    if len(text) > cap:
+        return {'text': 'The checked answer exceeded its output allowance. No shortened factual summary was published.', 'partial': True, 'actions': actions, 'cites': []}
+    refs, proofs, cites = [], {}, []
+    for ref in checked['references']:
+        if ref.startswith(('deck:', 'live:', 'fact:')):
+            row = evidence.resolve(ref)
+            if not row or row.get('error') or row.get('unavailable'):
+                return {'error': 'A supporting source is no longer available. The answer was withheld.', 'evidence_invalidated': True}
+            refs.append(ref)
+            proofs[ref] = record_fingerprint(row)
+            cite = {'ref': ref, 'agent': row.get('chat_name') or row.get('chat_id') or 'Room observation',
+                    'what': str(row.get('text') or row.get('field') or row.get('operation') or row.get('kind') or '')[:80]}
+            if ref.startswith('deck:'):
+                cite.update(event_id=ref[5:], historical=True)
+            elif ref.startswith('live:'):
+                cite.update(n=int(ref.rsplit(':', 1)[1]), aid=row.get('chat_id'))
+            cites.append(cite)
+    metadata = evidence.receipt()
+    metadata.pop('reference_fingerprints', None)  # Only cited canonical proofs belong in a follow-up receipt.
+    metadata.pop('generation', None)             # The outer signed payload already binds this.
+    queries = metadata.get('queries', [])
+    kept = []
+    for query in reversed(queries):
+        candidate = [query] + kept
+        if len(json.dumps(candidate, separators=(',', ':')).encode()) <= 4096:
+            kept = candidate
+    metadata['queries'] = kept
+    metadata['omitted_query_scopes'] = len(queries) - len(kept)
+    metadata.update(refs=refs, fingerprints=proofs, live_floor=BASE, assertions=checked['assertions'])
+    if evidence.validate().get('valid') is not True:
+        return {'error': 'Saved evidence changed before the answer was ready. The answer was withheld.', 'evidence_invalidated': True}
+    receipt = sign_receipt(text, metadata, evidence.generation(), BOOT)
+    return {'text': text, 'cites': cites, 'actions': actions, 'receipt': receipt,
+            'evidence_checked': True, 'qualification': 'References and typed counts checked; narrative meaning is model-interpreted.'}
+
+
 def officer_ask(turns, call=anthropic_call, request_id=None, context=OFFICER_CONTEXT_MISSING):
     """The dispatcher sees current user text only; ordinary log tools cannot send."""
     try:
@@ -3805,23 +3928,56 @@ def officer_ask(turns, call=anthropic_call, request_id=None, context=OFFICER_CON
         model_snapshot = routing.qa
     except ValueError as error:
         return {'error': str(error)}
+    try:
+        budget = officer_budget()
+    except (ValueError, TypeError):
+        return {'error': 'The Officer request budget is invalid. No model call or action was attempted.'}
     measured, complete = officer_accounting(call, OFFICER_USAGE)
+    def admitted(stage):
+        def invoke(body, **kwargs):
+            # Admission precedes ledger.begin and intent interpretation. No denied call is recorded as sent.
+            return budget.call(measured(stage), body, stage, **kwargs)
+        return invoke
     route_output = {} if routing.automatic else None
     if request_id is not None:
-        routed = officer_dispatch(turns[-1]['content'], request_id, measured('dispatch'), model_snapshot=model_snapshot, route_output=route_output)
+        try:
+            routed = officer_dispatch(turns[-1]['content'], request_id, admitted('dispatch'), model_snapshot=model_snapshot, route_output=route_output)
+        except BudgetExceeded:
+            attempted = budget.receipt().get('calls', 0) > 0
+            notice = ('The intent check exceeded the request budget. A model call was attempted; no agent action was attempted.' if attempted else
+                      'The request budget did not allow an intent check. No model call or agent action was attempted.')
+            if MESSAGING:
+                try:
+                    MESSAGING.decide_ask(request_id, {'kind': 'clarify', 'text': notice})
+                except (MessagingError, OSError, ValueError, sqlite3.Error):
+                    pass  # A failed decision write cannot authorize an action or retry.
+            return complete({'error': notice, 'budget': budget.receipt()})
         if routed is not None:
             routed.update(model=model_snapshot[0], job='intent')
             return complete(routed)
     job = route_output.get('job', 'qa') if route_output is not None else 'manual'
     answer_snapshot = routing.summary if job == 'summary' else routing.qa
-    out = officer_exchange(turns, measured('answer'), context=context, model_snapshot=answer_snapshot)
+    out = officer_exchange(turns, admitted('answer'), context=context, model_snapshot=answer_snapshot, budget=budget, broad=job == 'summary')
     out.update(model=answer_snapshot[0], job=job)
-    return complete(out)
+    out['budget'] = budget.receipt()
+    original_text, original_receipt = out.get('text'), out.get('receipt')
+    final = complete(out)
+    if original_receipt and final.get('text') != original_text:
+        payload = original_receipt['payload']
+        final['receipt'] = sign_receipt(final['text'], payload['evidence'], payload['generation'], BOOT)
+    return final
 
 
-def officer_exchange(turns, call, context=OFFICER_CONTEXT_MISSING, model_snapshot=None):
+def officer_exchange(turns, call, context=OFFICER_CONTEXT_MISSING, model_snapshot=None, budget=None, broad=False):
     """The whole exchange for one question: the conversation so far (bounded, from the page), the tool loop (bounded
     in rounds and in time), and the answer with the log entries consulted and the room actions to perform on the page."""
+    if budget is None:
+        try:
+            budget = officer_budget()
+        except (ValueError, TypeError):
+            return {'error': 'The Officer request budget is invalid. No model call was attempted.'}
+        transport = call
+        call = lambda body, **kwargs: budget.call(transport, body, 'answer', **kwargs)
     try:
         envelope = officer_context_envelope(turns, context)
     except OfficerContextUnavailable as e:
@@ -3832,20 +3988,48 @@ def officer_exchange(turns, call, context=OFFICER_CONTEXT_MISSING, model_snapsho
         model_snapshot = model_snapshot or officer_model_snapshot()
     except ValueError as error:
         return {'error': str(error)}
-    encoded = json.dumps(scrub(envelope), ensure_ascii=True).replace('<', '\\u003c').replace('>', '\\u003e')
     instructions = load_instructions()
-    tools = OFFICER_TOOLS + [OFFICER_USAGE_TOOL] + ([OFFICER_LOAD_SKILL_TOOL] if instructions.skills else [])
-    system = instructions.system + skill_menu(instructions) + '\nTrusted local calendar metadata:\n<local_clock>\n' + json.dumps(officer_local_clock()) + '\n</local_clock>\n' + OFFICER_CONTEXT_SYSTEM + '\n<context_data>\n' + encoded + '\n</context_data>'
-    msgs = [{'role': t['role'], 'content': t['content']} for t in turns]
+    tools = OFFICER_TOOLS + EVIDENCE_TOOLS + [OFFICER_USAGE_TOOL] + ([OFFICER_LOAD_SKILL_TOOL] if instructions.skills else [])
+    evidence = officer_evidence_session()
+    replayed, hints = officer_replay(turns, evidence)
+    envelope = officer_context_envelope(replayed, context)
+    encoded = json.dumps(scrub(envelope), ensure_ascii=True).replace('<', '\\u003c').replace('>', '\\u003e')
+    msgs = [{'role': t['role'], 'content': t['content']} for t in replayed]
+    system = instructions.system + skill_menu(instructions) + EVIDENCE_SYSTEM + '\nTrusted local calendar metadata:\n<local_clock>\n' + json.dumps(officer_local_clock()) + '\n</local_clock>\n' + OFFICER_CONTEXT_SYSTEM + '\n<context_data>\n' + encoded + '\n</context_data>'
+    if hints:
+        system += '\nUntrusted prior evidence references; resolve again before use:\n' + json.dumps(hints)
+    registry, aliases, pending_results, shared_used = AssertionRegistry(), EvidenceAliases(), [], False
+    answer_cap = ANSWER_CHARS if broad else OFFICER_TURN_CHARS
+    def removed():
+        return {'error': 'Saved evidence changed or was removed while I was answering. The affected answer was withheld. Nothing was retried.', 'evidence_invalidated': True}
+    def current():
+        return evidence.validate().get('valid') is True
     cites, staged, actions, text = [], [], [], ''      # staged: entries in results not yet sent; they become cites only once the model has seen them
     end = time.monotonic() + OFFICER_DEADLINE
     for _ in range(OFFICER_ROUNDS):
+        if not current():
+            return removed()
         if end - time.monotonic() < 5:
             text = text or 'I ran out of time on that one. Ask again, more narrowly.'
             break
-        body = {**officer_request_options(model_snapshot), 'max_tokens': 1200, 'system': system, 'tools': tools,
+        body = {**officer_request_options(model_snapshot), 'max_tokens': 3000 if broad else 1200, 'system': system, 'tools': tools,
                 'messages': msgs}
-        resp, err = call(body, end=end)
+        if shared_used:
+            body['output_config'] = {**body.get('output_config', {}),
+                                     'format': {'type': 'json_schema', 'schema': ANSWER_SCHEMA}}
+        if evidence.validate_pending(pending_results).get('valid') is not True or not current():
+            return removed()
+        try:
+            resp, err = call(body, end=end)
+        except BudgetExceeded:
+            return {'text': 'I reached the request budget before I could finish checking the evidence. This is a partial review; no complete summary is available.', 'cites': [], 'actions': actions, 'partial': True}
+        # Staged results qualify only after the paid request containing them was actually made.
+        for result in pending_results:
+            evidence.mark_supplied(result)
+        registry.mark_supplied()
+        pending_results = []
+        if not current():
+            return removed()
         if err:
             return {'error': 'The Officer could not answer: ' + err}
         cites += staged[:40 - len(cites)]; staged = []
@@ -3858,18 +4042,75 @@ def officer_exchange(turns, call, context=OFFICER_CONTEXT_MISSING, model_snapsho
         text = '\n'.join(str(b.get('text') or '') for b in content if b.get('type') == 'text').strip()
         uses = [b for b in content if b.get('type') == 'tool_use' and isinstance(b.get('id'), str)]
         if stop == 'max_tokens':
+            if shared_used:
+                return {'text': 'The answer ran out of space before its evidence could be checked. No verified summary was published.', 'cites': [], 'actions': actions, 'partial': True}
             notice = '\n\nThe answer was cut short.'
             text = (text[:OFFICER_TURN_CHARS - len(notice)].rstrip() + notice).lstrip()
             break
         if stop != 'tool_use' or not uses:
+            if shared_used:
+                try:
+                    checked = registry.validate_answer(parse_answer(text))
+                    if not current():
+                        return removed()
+                    return officer_evidence_answer(aliases.answer(checked), evidence, registry, actions, answer_cap)
+                except (ValueError, TypeError, KeyError):
+                    pass
+                return {'text': 'I gathered evidence but did not finish the source checks needed to publish an answer. This review is incomplete.', 'cites': [], 'actions': actions, 'partial': True}
             break
+        finishes = [u for u in uses if u.get('name') == 'finish_answer']
+        if finishes:
+            if len(uses) != 1:
+                return {'error': 'An answer cannot be published in the same batch as an evidence read.'}
+            try:
+                checked = registry.validate_answer(finishes[0].get('input'))
+                if not current():
+                    return removed()
+                return officer_evidence_answer(aliases.answer(checked), evidence, registry, actions, answer_cap)
+            except (ValueError, TypeError, KeyError):
+                return {'error': 'The answer did not match the evidence actually supplied. No unchecked answer was published.'}
         msgs.append({'role': 'assistant', 'content': content})
         results = []
         for u in uses:
             name = str(u.get('name') or '')
             inp = u.get('input') if isinstance(u.get('input'), dict) else {}
-            r = scrub(load_skill(instructions, inp, OFFICER_TOOL_CHARS) if name == 'load_skill'
-                      else officer_tool(name, inp, actions))
+            if name in READ_NAMES:
+                shared_used = True
+                try:
+                    if budget is not None:
+                        budget.claim_query(evidence.work_bound(name, inp))
+                    if name == 'evidence_expand' and isinstance(inp.get('refs'), list):
+                        inp = {**inp, 'refs': [aliases.canonical(ref) for ref in inp['refs']]}
+                    canonical_result = scrub(evidence.tool(name, inp))
+                    r = aliases.present(canonical_result)
+                    if budget is not None:
+                        budget.supply_evidence(len(r.get('evidence', [])) + len(r.get('facts', [])), len(json.dumps(r, separators=(',', ':'), ensure_ascii=True).encode()))
+                    registry.register(r)
+                    pending_results.append(canonical_result)
+                except BudgetExceeded:
+                    r = {'error': 'The evidence/query allowance is exhausted. Do not claim a complete review.', 'partial': True}
+                except (ValueError, TypeError, OSError, sqlite3.Error):
+                    r = {'error': 'Those evidence filters or sources are unavailable.', 'partial': True}
+            else:
+                legacy_read = name in ('search_history', 'session_day_summary', 'list_agents', 'agent_timeline', 'search_events', 'events_since', 'open_session_link', 'officer_spend')
+                try:
+                    if legacy_read:
+                        budget.claim_query(evidence.work_bound(name, inp))
+                    r = scrub(load_skill(instructions, inp, OFFICER_TOOL_CHARS) if name == 'load_skill'
+                              else officer_tool(name, inp, actions))
+                    if legacy_read:
+                        rows = sum(len(r.get(k, [])) for k in ('events', 'steps', 'hits', 'agents') if isinstance(r.get(k), list))
+                        budget.supply_evidence(rows, len(json.dumps(r, separators=(',', ':'), ensure_ascii=True).encode()))
+                except BudgetExceeded:
+                    r = {'error': 'The evidence/query allowance is exhausted. No complete review is available.', 'partial': True}
+                legacy_refs = ['deck:' + event['id'] for event in r.get('events', [])
+                               if isinstance(event, dict) and isinstance(event.get('id'), str) and re.fullmatch('[0-9a-f]{64}', event['id'])]
+                legacy_refs += ['live:' + BOOT + ':' + str(step['n']) for step in (r.get('steps') or r.get('hits') or [])
+                                if isinstance(step, dict) and type(step.get('n')) is int]
+                if legacy_refs:
+                    if evidence.prepare_pending_refs(legacy_refs).get('valid') is not True:
+                        return removed()
+                    pending_results.append({'evidence': [{'ref': ref} for ref in legacy_refs]})
             for event in r.get('events') or []:
                 if isinstance(event, dict) and isinstance(event.get('id'), str) and re.fullmatch('[0-9a-f]{64}', event['id']):
                     staged.append({'event_id': event['id'], 'agent': event.get('chat_name') or event.get('chat_id'),
@@ -3879,18 +4120,27 @@ def officer_exchange(turns, call, context=OFFICER_CONTEXT_MISSING, model_snapsho
             for s in (r.get('steps') or r.get('hits') or []):
                 if s.get('n') is not None:
                     staged.append({'n': s['n'], 'agent': s.get('agent') or r.get('agent'), 'aid': s.get('id') or r.get('id'), 'what': s['what'][:80], 'ago': s['ago']})
-            results.append({'type': 'tool_result', 'tool_use_id': u['id'], 'content': json.dumps(r)})
+            results.append({'type': 'tool_result', 'tool_use_id': u['id'], 'content': json.dumps(r, separators=(',', ':'), ensure_ascii=True)})
         msgs.append({'role': 'user', 'content': results})
     else:
         text = text or 'I looked but did not get to an answer in time. Ask again, more narrowly.'
+    if not current():
+        return removed()
+    if shared_used:
+        return {'text': 'The review stopped at its request limit before I could publish a checked answer. Some requested agents or periods may remain unexamined.', 'cites': [], 'actions': actions, 'partial': True}
     if len(text) > OFFICER_TURN_CHARS:
         text = text[:OFFICER_TURN_CHARS - 20].rstrip() + ' [cut short here]'
-    return {'text': text or "I can't tell from the log.", 'cites': cites, 'actions': actions}
+    # Compatible legacy read results still require lineage and delivery checks.
+    legacy_refs = [('deck:' + c['event_id']) if c.get('event_id') else ('live:' + BOOT + ':' + str(c['n']))
+                   for c in cites if c.get('event_id') or type(c.get('n')) is int]
+    return officer_evidence_answer({'text': text or "I can't tell from the log.", 'references': list(dict.fromkeys(legacy_refs)), 'assertions': []},
+                                   evidence, registry, actions, answer_cap)
 
 
 def watch():
     tails, last_scan = {}, 0
     while True:
+        officer_erasure_notice()
         now = time.time()
         if now - last_scan > 3:
             last_scan = now
@@ -4293,6 +4543,23 @@ class H(BaseHTTPRequestHandler):
 
     def do_POST(self):
         global LAST_PAIR, APPROVER
+        if self.path in ('/officer/validate', '/officer/evidence'):
+            if not self.host_ok() or not self.keyed(self.headers.get('X-Live-Room-Key', '')):
+                return self.send(403, b'forbidden')
+            d = self.body()
+            if not isinstance(d, dict) or set(d) - {'receipt', 'text', 'ref'} or not isinstance(d.get('text'), str) or len(d['text']) > ANSWER_CHARS:
+                return self.send(400, b'invalid evidence request')
+            session = officer_evidence_session()
+            valid = officer_receipt_valid(d.get('receipt'), d['text'], session)
+            if self.path == '/officer/validate':
+                permit = officer_publication(d.get('receipt'), d['text'])
+                return self.send(200, json.dumps(permit).encode(), 'application/json')
+            if not valid or d.get('ref') not in receipt_refs(d.get('receipt')):
+                return self.send(409, b'{"error":"This supporting source is no longer available."}', 'application/json')
+            row = session.resolve(d['ref'])
+            if not row or row.get('error') or not officer_publication(d['receipt'], d['text'])['valid']:
+                return self.send(409, b'{"error":"This supporting source changed or was removed."}', 'application/json')
+            return self.send(200, json.dumps(scrub({'event': row})).encode(), 'application/json')
         if self.path.startswith('/officer/'):
             return self.officer_models_http('POST')
         if self.path.startswith('/history/'):
@@ -4500,7 +4767,7 @@ class H(BaseHTTPRequestHandler):
                 return self.send(503, ('The Officer is off: ' + OFFICER_WHY).encode())
             turns = d.get('turns')
             if not (isinstance(turns, list) and 1 <= len(turns) <= OFFICER_TURNS and all(isinstance(t, dict) and t.get('role') in ('user', 'assistant')
-                    and isinstance(t.get('content'), str) and 0 < len(t['content']) <= OFFICER_TURN_CHARS for t in turns) and turns[-1]['role'] == 'user'):
+                    and isinstance(t.get('content'), str) and 0 < len(t['content']) <= (ANSWER_CHARS if t.get('role') == 'assistant' else OFFICER_TURN_CHARS) for t in turns) and turns[-1]['role'] == 'user'):
                 return self.send(400, b'turns must be user and assistant text, ending with yours')
             context = d.get('context', OFFICER_CONTEXT_MISSING)
             try:
@@ -4521,6 +4788,12 @@ class H(BaseHTTPRequestHandler):
                 out = officer_ask(turns, request_id=d.get('request_id'), context=context)
             finally:
                 OFFICER_BUSY.release()
+            if out.get('receipt'):
+                publication = officer_publication(out['receipt'], out.get('text', ''))
+                if not publication['valid']:
+                    out = {'error': 'Saved evidence changed before publication. The affected answer was withheld.', 'evidence_invalidated': True}
+                else:
+                    out['publication'] = publication
             return self.send(200, json.dumps(out).encode(), 'application/json')
         if route == '/decide':
             if not isinstance(d.get('allow'), bool):
@@ -4841,6 +5114,7 @@ if __name__ == '__main__':
     try:
         from deck_log import DeckLog
         HISTORY = DeckLog(os.path.join(HOME, '.live-room'))
+        HISTORY.erasure_observer = lambda generation: OFFICER_ERASURE_EVENT.set()
         history_arm()
     except (OSError, sqlite3.Error, ValueError):
         HISTORY_WHY = 'Deck Log needs private local storage.'

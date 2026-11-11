@@ -177,6 +177,24 @@ Only a short skill menu is sent initially. The read-only `load_skill` tool retur
 
 The golden questions in `tests/fixtures/officer/golden_questions.json` use the existing fictional demo fleet. Run `python tests/test_officer_evals.py` for offline evidence checks. These do not prove model behavior, and the browser's demo answers remain scripted. The optional `scripts/eval_officer.py` runner lists cases without making requests; its explicit live mode uses the configured Officer API key and bills that API account. It tests fictional evidence only, without changing the saved model or sending agent messages.
 
+### Officer evidence and follow-ups
+
+The Officer has shared read capabilities for discovering live and retained chats, searching or browsing a chosen period, counting matching saved observations, selecting an overview across chats and time, and expanding nearby discussion or linked operation results. These are reusable tools, rather than a fixed list of supported questions. No new service, embeddings, background model summaries or historical import is required.
+
+Saved-event totals cover the full matching retained population when the source can establish it. Selected excerpts are identified separately. Live and retained counts stay separate unless provenance establishes that observations are the same. A successful operation is not proof of a completed goal, and recording gaps do not prove inactivity. Typed count fragments bind their source, unit, scope, period and completeness; reference checks do not certify the meaning of the surrounding model-written explanation.
+
+After shared evidence reads, final answers use [Anthropic's structured output format](https://platform.claude.com/docs/en/build-with-claude/structured-outputs) or the equivalent answer tool. Python then checks the supplied references and exact typed assertions before rendering the answer. Calendar dates and recent intervals are normalized locally, including daylight-saving boundaries; the model does not have to calculate Unix timestamps.
+
+Run `python scripts/eval_officer_capabilities.py` to list the fictional broad-summary, count and follow-up cases without reading a key or making a model call. Its explicit live mode records private reports for human review. The [capability design and verification](docs/OFFICER_CAPABILITIES.md) describe the tests and their limits.
+
+Source references accompany the current day's Officer conversation in this browser. The server signs the answer and its evidence metadata, then revalidates sources before later use. Edited, unsigned, expired or erased assistant text is excluded from future model replay; owner-written questions remain. Sources open in the existing memory viewer. Restarting WATCH invalidates the old process's receipts, so the Officer must query evidence again. This adds no cross-day Officer conversation retention and does not expand what memory records.
+
+Publication and deletion are ordered at a short server-side gate: erasure first withholds the answer; publication first counts as an already-published answer. A fresh browser check also rejects removed sources. Text already published may arrive later over the network; WATCH cannot make browser display atomic with deletion or retract data already sent to a model.
+
+Each request has one allowance covering intent checking and all answer rounds: at most seven model attempts, two minutes, 512 KiB of cumulative request input, 12,288 reserved output tokens, 64 KiB of supplied evidence and bounded local query work. Measured usage can reconcile a reservation; an unknown or unfinished attempt keeps its reservation. Summaries have a larger per-answer output allowance than quick questions. Reaching a limit produces a partial-result notice, rather than silently dropping agents and claiming a complete report.
+
+The default policy uses these non-monetary limits and does not promise a dollar ceiling. `OFFICER_REQUEST_USD` explicitly selects strict estimated-dollar admission. A strict request cannot make a paid call without applicable dated rates and a validated request-specific input-token bound. The standard transport currently supplies no such bound, so strict mode refuses calls rather than guessing a price, changing models or silently reverting to the default policy. The usage ledger below still records actual attempts and available estimates.
+
 ### Officer usage and cost
 
 Ask the Officer how much it has used or spent. WATCH records its own API attempts locally in `~/.live-room/officer-usage.sqlite3`, including the intent check and each answer round. It retains ninety days of model names, token counters, request stage and completion status, within a bounded store. It does not save prompts, answers, project names, file paths, credentials or provider response bodies in this ledger. This accounting is separate from Officer memory and begins with the updated server; it does not reconstruct past bills.

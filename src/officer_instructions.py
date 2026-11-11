@@ -24,6 +24,7 @@ _SKILL_FILES = {
     'watch-rule': ('skills', 'watch-rule.md'),
 }
 _EXISTING_TOOLS = frozenset((
+    'room_snapshot', 'evidence_query', 'evidence_expand',
     'search_history', 'session_day_summary', 'list_agents', 'agent_timeline',
     'search_events', 'events_since', 'draft_watch_rule', 'open_session_link',
     'room_filter', 'room_go_to', 'room_dismiss', 'draft_to_clipboard',

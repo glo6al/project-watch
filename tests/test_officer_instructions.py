@@ -104,7 +104,8 @@ class CoreInstructionsTests(InstructionFixture):
                                       context={'scope': 'room'}, model_snapshot=('fictional-test-model', False))
         self.assertEqual(out['text'], 'Recorded answer.')
         self.assertEqual(calls[0], calls[1])
-        self.assertTrue(calls[0].startswith(instructions.BUILTIN_OFFICER_SYSTEM + instructions.CORE_AUTHORITY + '\nTrusted local calendar metadata:'))
+        self.assertTrue(calls[0].startswith(instructions.BUILTIN_OFFICER_SYSTEM + instructions.CORE_AUTHORITY))
+        self.assertIn(server.EVIDENCE_SYSTEM, calls[0])
 
     def test_token_limit_is_visible_without_running_partial_tool_blocks(self):
         calls = []
@@ -138,7 +139,7 @@ class SkillInstructionsTests(InstructionFixture):
         with patch.object(instructions, '_OFFICER_DIR', Path(instructions.__file__).resolve().parents[1] / 'officer'):
             bundle = instructions.load_instructions()
         self.assertEqual({s.skill for s in bundle.skills}, {'shift-report', 'stuck-agent', 'conflict-check', 'handover', 'watch-rule'})
-        self.assertEqual(instructions._EXISTING_TOOLS, {t['name'] for t in server.OFFICER_TOOLS})
+        self.assertEqual(instructions._EXISTING_TOOLS, {t['name'] for t in server.OFFICER_TOOLS} | server.READ_NAMES)
         for card in bundle.skills:
             self.assertLessEqual(len(json.dumps(instructions.load_skill(bundle, {'skill': card.skill}))), server.OFFICER_TOOL_CHARS)
         self.assertNotIn('For "what did I miss"', bundle.system)
@@ -257,7 +258,7 @@ class SkillInstructionsTests(InstructionFixture):
         calls = []
         def call(body, **kwargs):
             calls.append(body)
-            self.assertEqual([t['name'] for t in body['tools']], [t['name'] for t in server.OFFICER_TOOLS] + ['officer_spend', 'load_skill'])
+            self.assertEqual([t['name'] for t in body['tools']], [t['name'] for t in server.OFFICER_TOOLS + server.EVIDENCE_TOOLS] + ['officer_spend', 'load_skill'])
             self.assertNotIn('FULL METHOD', body['system'])
             if len(calls) == 1:
                 self.write_skill('EDIT AFTER ASK SNAPSHOT')

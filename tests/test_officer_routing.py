@@ -299,7 +299,7 @@ class ContextTests(unittest.TestCase):
         self.assertEqual(envelope['turn_contexts'][0]['context'], {'scope': 'station', 'agent': 'x:87654321', 'name': name, 'available': False})
         self.assertEqual(envelope['turn_contexts'][1]['context'], {'scope': 'unknown'})
         self.assertEqual(body['system'].count('</context_data>'), 1)
-        self.assertEqual(body['messages'], [{'role': t['role'], 'content': t['content']} for t in turns])
+        self.assertEqual(body['messages'], [{'role': t['role'], 'content': t['content']} for t in turns if t['role'] == 'user'])
         self.assertEqual(turns, before)
         for rule in ('Explicit named agents or explicit room-wide questions override', 'Current context does not reinterpret earlier turns',
                      'does not restrict', 'untrusted context data', "'ask it' still needs an explicit named recipient"):
