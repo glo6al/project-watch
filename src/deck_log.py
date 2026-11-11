@@ -203,6 +203,8 @@ class DeckLog:
         self.thread = None
         self.erasure_observer = None
         self._erasure_pending = None
+        self._evidence_store = None
+        self._committed_erasure = None
         if os.path.lexists(self.path):
             self._initialize()
         else:
@@ -309,6 +311,8 @@ class DeckLog:
         self.key = bytes.fromhex(existing.get('identity_key', self.key.hex()))
         if len(self.key) != 32:
             raise ValueError('invalid archive identity')
+        self._evidence_store = hmac.new(self.key,b'officer-evidence-store',hashlib.sha256).hexdigest()
+        self._committed_erasure = generation
         self._save_setting('identity_key', self.key.hex())
         for key, value in self.settings.items():
             self._save_setting(key, value)
@@ -597,6 +601,8 @@ class DeckLog:
     def _notify_erasure(self):
         generation = self._erasure_pending
         self._erasure_pending = None
+        if generation is not None:
+            self._committed_erasure = max(self._committed_erasure or 0,generation)
         if generation is not None and callable(self.erasure_observer):
             try:
                 # Observer must only set a wake flag. Never call a model, take room
@@ -814,13 +820,37 @@ class DeckLog:
         with self.lock:
             if not self._readable():
                 return dict(available=False, store=None, fence=0, erasure=None,
-                            coverage=self._status().get('coverage', []), queued=None, dropped=self.dropped)
+                            coverage=self._status().get('coverage', []), queued=None, dropped=self.dropped,
+                            known_store=self._evidence_store, committed_erasure=self._committed_erasure)
             row = self.db.execute("SELECT value FROM settings WHERE key='erasure_generation'").fetchone()
             generation = json.loads(row[0]) if row else 0
             high = self.db.execute("SELECT seq FROM sqlite_sequence WHERE name='event_ingest'").fetchone()
             return dict(available=True, store=hmac.new(self.key, b'officer-evidence-store', hashlib.sha256).hexdigest(),
                         fence=high[0] if high else 0, erasure=generation,
+                        known_store=self._evidence_store, committed_erasure=max(generation,self._committed_erasure or 0),
                         coverage=self._status().get('coverage', []), queued=len(self.queue), dropped=self.dropped)
+
+    def evidence_current(self, ids, expected_store):
+        """Current exact projections, distinguishing confirmed absence from unknown storage.
+
+        A missing ID is removal only when the caller has authenticated its prior
+        existence in this same store. No original logs or old snapshot rows are read.
+        """
+        if not isinstance(ids,list) or len(ids)>200 or any(not isinstance(x,str) or not HEX.fullmatch(x) for x in ids):
+            raise ValueError('invalid evidence references')
+        with self.lock:
+            state=self.evidence_state()
+            identity=dict(store=state.get('store') or state.get('known_store'),
+                          erasure=state.get('erasure') if state.get('erasure') is not None else state.get('committed_erasure'))
+            if not state.get('available'):
+                return dict(available=False,identity=identity,records={},missing=[],reason='retained_unavailable')
+            if expected_store != state.get('store'):
+                return dict(available=False,identity=identity,records={},missing=[],reason='store_unavailable')
+            rows=[]
+            if ids:
+                rows=self.db.execute('SELECT * FROM events WHERE id IN ('+','.join('?' for _ in ids)+')',ids).fetchall()
+            records={row['id']:dict(row) for row in rows}
+            return dict(available=True,identity=identity,records=records,missing=sorted(set(ids)-set(records)),reason='')
 
     def evidence_rows(self, fence, spec, *, max_work=250000, metadata_only=False, seconds=2.0):
         """Allowlisted scoped reads, before sampling. Returns all candidates or no prefix.
@@ -856,8 +886,8 @@ class DeckLog:
             current = self.evidence_state()
             if not current['available']:
                 return dict(available=False, rows=[], work=0, complete=False, reason='retained_unavailable')
-            if current['store'] != fence.get('store') or current['erasure'] != fence.get('erasure'):
-                return dict(available=False, rows=[], work=0, complete=False, reason='evidence_removed')
+            if current['store'] != fence.get('store'):
+                return dict(available=False, rows=[], work=0, complete=False, reason='store_unavailable')
             end = time.monotonic() + max(0.001, min(2.0, seconds))
             self.db.set_progress_handler(lambda: int(time.monotonic() >= end), 1000)
             try:
@@ -867,7 +897,7 @@ class DeckLog:
                     return dict(available=True, rows=[], work=0, required_work=count, complete=False, reason='query_work_exhausted')
                 columns = 'e.id,e.chat_id,e.chat_name,e.provider,e.project_id,e.project_name,e.source_ts,e.observed_ts' if metadata_only else 'e.*'
                 rows = self.db.execute('SELECT ' + columns + clause + ' ORDER BY e.source_ts,e.id', args).fetchall()
-                return dict(available=True, rows=[dict(r) for r in rows], work=count, complete=True, reason='')
+                return dict(available=True, rows=[dict(r) for r in rows], work=count, complete=True, reason='',erasure=current['erasure'])
             except sqlite3.OperationalError as error:
                 if 'interrupt' in str(error).lower() or 'locked' in str(error).lower():
                     return dict(available=True, rows=[], work=0, complete=False, reason='query_deadline')

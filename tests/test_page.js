@@ -200,7 +200,7 @@ async function controlChecks(code=messageCode){
   const cachedPrivate=new Map([['liveRoomControls',JSON.stringify([malicious])]]),privateReload=messaging(code,cachedPrivate);privateReload.ctx.connected=false;privateReload.ofMessageLoad();assert.equal(privateReload.OFM.controls.size,1);assert.doesNotMatch(cachedPrivate.get('liveRoomControls'),/private_path|expected_turn_id|transcript/);
   const warningReload=messaging(code,c.storage);warningReload.ctx.connected=false;warningReload.ofMessageLoad();assert.match(warningReload.OFM.records.get(request.request_id).el.innerHTML,/Older &lt;img&gt;/);
   const showCode=html.slice(html.indexOf('function ofShow('),html.indexOf('function ofDemoAnswer('));
-  const shown=messaging(code);Object.assign(shown.ctx,{OFUI:{epoch:1,tab:'officer',recipient:'watch'},focus:null,ofEl:{classList:{contains:()=>false}},ofMayAct:()=>true,ofAttributed:(c,h)=>h});shown.ctx.ofAdd=()=>({querySelectorAll:()=>[]});shown.ctx.ofCite=()=>'';shown.ctx.ofReplyNotice=()=>{};shown.ctx.ofAct=()=>[false,''];shown.ctx.OF={};vm.runInContext(showCode+';ofShow({text:"recorded",controls:['+JSON.stringify(control)+']})',shown.ctx);assert.equal(shown.OFM.controls.size,1,'Officer response merges control even without polling');
+  const shown=messaging(code);Object.assign(shown.ctx,{OFUI:{epoch:1,tab:'officer',recipient:'watch'},focus:null,ofEl:{classList:{contains:()=>false}},ofMayAct:()=>true,ofWarningMarkup:()=>'',ofAttributed:(c,h)=>h});shown.ctx.ofAdd=()=>({querySelectorAll:()=>[]});shown.ctx.ofCite=()=>'';shown.ctx.ofReplyNotice=()=>{};shown.ctx.ofAct=()=>[false,''];shown.ctx.OF={};vm.runInContext(showCode+';ofShow({text:"recorded",controls:['+JSON.stringify(control)+']})',shown.ctx);assert.equal(shown.OFM.controls.size,1,'Officer response merges control even without polling');
 }
 (async()=>{
   await controlChecks();console.log('ok controls: lost response recovery, outcomes, reload uncertainty, stale races, retention and privacy');
@@ -264,15 +264,15 @@ for(const [label,from,to] of [['late navigation gate','request.epoch===epoch','t
 
 /* An in-flight question never borrows the selected station on return or steals focus. */
 async function officerLateChecks(){
-  const code=html.match(/^function ofRequestHistory\(rows\).*$/m)[0]+'\n'+html.slice(html.indexOf('async function ofSend(){'),html.indexOf('/* response actions preserve'));
+  const code=['ofVerification','ofWarnings','ofRequestHistory'].map(name=>html.split('\n').find(line=>line.startsWith('function '+name+'('))).join('\n')+'\n'+html.slice(html.indexOf('async function ofSend(){'),html.indexOf('/* response actions preserve'));
   let release,epoch=1,selected='Birch',focuses=0,posted;const shown=[],responses=[];
-  const ctx={OF:{turns:[],busy:false},ofIn:{value:'Why did it stop?',focus(){focuses++}},ofSt:{textContent:''},DEMO:false,
+  const ctx={OF:{turns:[],busy:false},ofIn:{value:'Why did it stop?',focus(){focuses++}},ofSt:{textContent:''},DEMO:false,KEY:'fictional-key',locked:false,claiming:false,DECK:{deleting:0},
     ofCurrent:()=>({context:{scope:'station',agent:'x:12345678'},history:{scope:'station',agent:'x:12345678',name:selected},epoch}),
     cuVisible:(c,id)=>id?c?.scope==='station'&&c.agent===id:!c||c.scope==='room',cuTurnMeta:()=>({id:'turn:1',ts:1}),cuDraftSave(){},ofContextPaint(){},ofReplyNotice(){},ofHistory:t=>t.map(({role,content,context})=>({role,content,context})),ofDay(){},ofAdd:(c,t)=>shown.push(t),ofAttributed:(c,h)=>c.name+' '+h,esc:String,ofStatus(t){ctx.ofSt.textContent=t},$:()=>({disabled:false}),ofSave(){},ofShow:(r,q)=>responses.push(q),ofOwnsFocus:q=>q.epoch===epoch,
     post:async(p,b)=>{posted=b;await new Promise(r=>release=r);return {ok:true,json:async()=>({text:'Stopped'})}}};
   vm.createContext(ctx);const send=vm.runInContext(code+';ofSend',ctx);const pending=send();selected='Aster';epoch++;release();await pending;
   assert.equal(posted.context.agent,'x:12345678');assert.equal(responses[0].history.name,'Birch');assert.equal(ctx.OF.turns[1].context.name,'Birch');assert.equal(focuses,0);
-  ctx.ofIn.value='Explain';ctx.post=async()=>{selected='Other';epoch++;throw Error('offline')};await send();assert.match(shown.at(-1),/^Aster /);assert.equal(focuses,0);
+  ctx.ofIn.value='Explain';ctx.post=async()=>{selected='Other';epoch++;throw Error('offline')};await send();assert.match(shown.at(-1),/^Aster /);assert.equal(focuses,0);assert.equal(ctx.OF.turns.at(-1).role,'user');assert.equal(ctx.OF.turns.at(-1).content,'Explain','transport failure preserves owner question');
   console.log('ok delayed response: immutable attribution on success/error, no focus theft');
 }
 officerLateChecks().catch(e=>{console.error(e);process.exitCode=1});
@@ -319,7 +319,7 @@ visibilityChecks();let clippingFailed=false;try{visibilityChecks(true)}catch(e){
 /* A still-visible dock is not ownership: another focused control defers navigation actions. */
 function responseFocusChecks(mutate=false){
   let code=html.slice(html.indexOf('function ofShow('),html.indexOf('function ofDemoAnswer('));if(mutate)code=code.replace('&&(!request||ofOwnsFocus(request))','');
-  let acts=0,suggestions=0;const ctx={OFUI:{epoch:1,tab:'officer',recipient:'watch'},focus:'station',ofEl:{classList:{contains:()=>false}},ofOwnsFocus:()=>false,ofMayAct:(q,e,a)=>q.epoch===e&&a,ofAttributed:(c,h)=>h,ofParas:String,ofAdd:()=>({querySelectorAll:()=>[]}),ofSuggestion:()=>suggestions++,ofReplyNotice(){},ofAct:()=>{acts++;return [false,'']},esc:String};
+  let acts=0,suggestions=0;const ctx={OFUI:{epoch:1,tab:'officer',recipient:'watch'},focus:'station',ofEl:{classList:{contains:()=>false}},ofOwnsFocus:()=>false,ofMayAct:(q,e,a)=>q.epoch===e&&a,ofAttributed:(c,h)=>h,ofParas:String,ofWarningMarkup:()=>'',ofAdd:()=>({querySelectorAll:()=>[]}),ofSuggestion:()=>suggestions++,ofReplyNotice(){},ofAct:()=>{acts++;return [false,'']},esc:String};
   const show=vm.runInNewContext(code+';ofShow',ctx);show({text:'Draft',actions:[{do:'watch_draft'}]},{epoch:1});assert.equal(acts,0);assert.equal(suggestions,1);
   ctx.ofOwnsFocus=()=>true;show({text:'Draft',actions:[{do:'watch_draft'}]},{epoch:1});assert.equal(acts,1);
 }
@@ -1475,7 +1475,7 @@ async function handlerCapabilityChecks(code=directCode){
 
 /* WATCH navigation retains its conversation; late replies offer an explicit return without stealing drafts. */
 function watchNavigationChecks(mutate=false){
-  const h=directHarness(),ctx=h.ctx;Object.assign(ctx,{focus:null,OFUI:{recipient:'watch',scope:'room',target:null,epoch:1},CU:{drafts:new Map(),nodes:new Map(),serial:0},PROJ:null,order:['x:A','x:B'],pos:{},STATION:{compact:false},peekT:null,peek:null,clearTimeout(){},screenPose:()=>null,glideN:0,fly(){},apply(){},render(){},ofPlace(){},forget(){},cuChooserClose(){},ofEl:{classList:{contains:()=>false}},ofParas:String,ofAttributed:(c,h)=>h,ofCite:()=>'',ofOwnsFocus:()=>true,ofMayAct:(r,e,active)=>!r||r.epoch===e&&active,ofLabel:c=>c.scope==='room'?'Whole room':c.agent,ofToggle(){ctx.focusedInput=true}});
+  const h=directHarness(),ctx=h.ctx;Object.assign(ctx,{focus:null,OFUI:{recipient:'watch',scope:'room',target:null,epoch:1},CU:{drafts:new Map(),nodes:new Map(),serial:0},PROJ:null,order:['x:A','x:B'],pos:{},STATION:{compact:false},peekT:null,peek:null,clearTimeout(){},screenPose:()=>null,glideN:0,fly(){},apply(){},render(){},ofPlace(){},forget(){},cuChooserClose(){},ofEl:{classList:{contains:()=>false}},ofParas:String,ofWarningMarkup:()=>'',ofAttributed:(c,h)=>h,ofCite:()=>'',ofOwnsFocus:()=>true,ofMayAct:(r,e,active)=>!r||r.epoch===e&&active,ofLabel:c=>c.scope==='room'?'Whole room':c.agent,ofToggle(){ctx.focusedInput=true}});
   Object.assign(ctx,vm.runInNewContext(unifiedCode+';({cuDraftKey,cuLaneVisible})'));
   for(const a of Object.values(ctx.A)){a.$={split:{style:{setProperty(){}}}};a.el={}}
   ctx.ofCurrent=()=>({context:{scope:ctx.OFUI.scope},history:{scope:ctx.OFUI.scope}});
@@ -1606,7 +1606,7 @@ async function memoryHandlerChecks(){
   assert.equal(api.DECK.mode,'settings');assert.equal(node('#deckSourcePane').hidden,true);
   const labels=node('#deckChatManage').children.map(x=>x.textContent);assert.ok(labels.some(x=>x.includes('Atlas')&&x.includes('Claude')&&x.includes('Orchard')));assert.ok(labels.some(x=>x.includes('Atlas')&&x.includes('Codex')&&x.includes('Lighthouse')));assert.ok(labels.some(x=>x.includes('Excluded chat')&&x.includes('12345678')));
   const citation=make();citation.dataset={deck:event.id};doc.activeElement=citation;
-  ctx.esc=safeEsc;ctx.ofParas=String;ctx.ofAttributed=(context,text)=>text;ctx.ofAdd=()=>({querySelectorAll:selector=>selector.includes('data-deck')?[citation]:[]});ctx.ofMayAct=()=>false;ctx.ofReplyNotice=()=>{};
+  ctx.esc=safeEsc;ctx.ofParas=String;ctx.ofWarningMarkup=()=>'';ctx.ofAttributed=(context,text)=>text;ctx.ofAdd=()=>({querySelectorAll:selector=>selector.includes('data-deck')?[citation]:[]});ctx.ofMayAct=()=>false;ctx.ofReplyNotice=()=>{};
   const showSource=html.slice(html.indexOf('function ofShow('),html.indexOf('function ofDemoAnswer('));vm.runInNewContext(html.match(/^function ofCite\(c\).*$/m)[0]+'\n'+showSource,ctx);ctx.ofShow({text:'An earlier saved answer.',cites:[{event_id:event.id,agent:'Atlas'}]});
   doc.activeElement=doc.body;let before=calls.length;await citation.onclick();
   assert.deepEqual(calls.slice(before),['/history/event/'+event.id]);assert.equal(api.DECK.mode,'source');assert.equal(node('#deckSettingsPane').hidden,true);

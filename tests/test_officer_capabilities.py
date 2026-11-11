@@ -449,7 +449,9 @@ class OfficerCapabilityTests(unittest.TestCase):
         finally:
             release.set(); thread.join(5)
         self.assertFalse(thread.is_alive()); self.assertEqual(errors, [])
-        self.assertTrue(outputs[0].get('evidence_invalidated'), outputs)
+        self.assertEqual(outputs[0].get('verification'), 'filtered', outputs)
+        self.assertEqual(outputs[0]['cites'], [])
+        self.assertTrue(outputs[0]['partial'])
         self.assertNotIn('DELETED CLAIM', json.dumps(outputs))
         self.assertEqual(len(self.calls), 2)
 
@@ -463,7 +465,8 @@ class OfficerCapabilityTests(unittest.TestCase):
             self.assertEqual(self.history.search()['events'], [])
             return message([self.finish(result, text='EXPIRED CLAIM MUST NOT PUBLISH', include_quantity=False)])
         result = self.execute(model)
-        self.assertTrue(result.get('evidence_invalidated'), result)
+        self.assertEqual(result.get('verification'), 'filtered', result)
+        self.assertEqual(result['cites'], [])
         self.assertNotIn('EXPIRED CLAIM', json.dumps(result))
 
     def test_forged_altered_and_deleted_assistant_receipts_are_not_replayed(self):
@@ -506,7 +509,7 @@ class OfficerCapabilityTests(unittest.TestCase):
             self.assertEqual(turns, original, 'Replay filtering must not mutate caller turns or contexts')
             self.assertEqual(len(self.calls), 1)
 
-    def test_http_validation_rejects_deleted_sources_and_requires_auth(self):
+    def test_http_validation_filters_deleted_answer_and_requires_auth(self):
         result = self.answered(); self.start_http()
         payload = {'receipt': result['receipt'], 'text': result['text']}
         self.assertEqual(self.post('/officer/validate', payload, False)[0], 403)
@@ -516,24 +519,34 @@ class OfficerCapabilityTests(unittest.TestCase):
         self.history.delete(all=True)
         status, permit = self.post('/officer/validate', payload)
         self.assertEqual(status, 200); self.assertFalse(permit['valid'])
+        self.assertTrue(permit['publication'])
+        self.assertEqual(permit['status'], 'filtered')
+        self.assertNotEqual(permit['answer']['text'], result['text'])
+        self.assertEqual(permit['answer']['cites'], [])
+        safe = permit['answer']
+        status, unchanged = self.post('/officer/validate', {'receipt': safe['receipt'], 'text': safe['text']})
+        self.assertEqual(status, 200); self.assertTrue(unchanged['valid'])
+        self.assertEqual(unchanged['status'], 'filtered')
+        self.assertEqual(unchanged['answer']['text'], safe['text'])
 
     def test_source_erasure_before_source_publication_permit_returns_409(self):
         result = self.answered(); self.start_http()
-        original = server.officer_publication
+        original = server.officer_evidence_session
         gates = []
-        def erase_before_permit(receipt, text):
+        def erase_before_permit():
             gates.append(1)
             self.assertTrue(self.history.delete(all=True)['ok'])
-            return original(receipt, text)
+            return original()
         payload = {'receipt': result['receipt'], 'text': result['text'], 'ref': result['cites'][0]['ref']}
-        with patch.object(server, 'officer_publication', side_effect=erase_before_permit):
+        with patch.object(server, 'officer_evidence_session', side_effect=erase_before_permit):
             status, body = self.post('/officer/evidence', payload)
         self.assertEqual(gates, [1])
         self.assertEqual(status, 409)
-        self.assertIn('removed', body['error'])
+        self.assertEqual(body['status'], 'removed')
+        self.assertTrue(body['removed'])
         self.assertNotIn('Fictional saved progress', json.dumps(body))
 
-    def test_erasure_committed_before_publication_gate_rejects_permit(self):
+    def test_erasure_committed_before_publication_gate_filters_original(self):
         result = self.answered()
         entered, permits, errors = threading.Event(), [], []
         def publish():
@@ -549,13 +562,16 @@ class OfficerCapabilityTests(unittest.TestCase):
             self.assertTrue(self.history.delete(all=True)['ok'])
         thread.join(3)
         self.assertFalse(thread.is_alive()); self.assertEqual(errors, [])
-        self.assertFalse(permits[0]['valid']); self.assertIsNone(permits[0]['publication'])
+        self.assertFalse(permits[0]['valid']); self.assertTrue(permits[0]['publication'])
+        self.assertEqual(permits[0]['status'], 'filtered')
+        self.assertNotEqual(permits[0]['answer']['text'], result['text'])
+        self.assertEqual(permits[0]['answer']['cites'], [])
 
     def test_publication_gate_before_erasure_is_already_published_boundary(self):
         result = self.answered()
         gate_entered, release_gate, delete_started, deleted = [threading.Event() for _ in range(4)]
         permits, errors = [], []
-        original = server.officer_receipt_valid
+        original = server.officer_receipt_assessment
         def validate(*args, **kwargs):
             gate_entered.set()
             self.assertTrue(release_gate.wait(3))
@@ -572,7 +588,7 @@ class OfficerCapabilityTests(unittest.TestCase):
                 deleted.set()
             except BaseException as error:
                 errors.append(error)
-        with patch.object(server, 'officer_receipt_valid', side_effect=validate):
+        with patch.object(server, 'officer_receipt_assessment', side_effect=validate):
             publisher = threading.Thread(target=publish); publisher.start()
             try:
                 self.assertTrue(gate_entered.wait(2))
@@ -624,9 +640,13 @@ class OfficerCapabilityTests(unittest.TestCase):
         status, permit = delivered[0]
         self.assertEqual(status, 200); self.assertTrue(permit['valid'])
         self.assertEqual(permit['boundary'], 'server_commit_before_network_delivery')
-        self.assertFalse(self.post('/officer/validate', {'receipt': result['receipt'], 'text': result['text']})[1]['valid'])
+        fresh = self.post('/officer/validate', {'receipt': result['receipt'], 'text': result['text']})[1]
+        self.assertFalse(fresh['valid']); self.assertEqual(fresh['status'], 'filtered')
+        self.assertTrue(fresh['publication'])
+        self.assertNotEqual(fresh['answer']['text'], result['text'])
+        self.assertEqual(fresh['answer']['cites'], [])
 
-    def test_legacy_plain_answer_has_signed_lineage_and_deleted_arrival_is_rejected(self):
+    def test_legacy_plain_answer_has_signed_lineage_and_deleted_arrival_is_filtered(self):
         self.seed()
         def model(body):
             if len(self.calls) == 1:
@@ -636,9 +656,16 @@ class OfficerCapabilityTests(unittest.TestCase):
         self.assertIn('receipt', result)
         self.assertTrue(server.officer_receipt_valid(result['receipt'], result['text']))
         self.history.delete(all=True)
-        self.assertFalse(server.officer_publication(result['receipt'], result['text'])['valid'])
+        permit = server.officer_publication(result['receipt'], result['text'])
+        self.assertFalse(permit['valid']); self.assertEqual(permit['status'], 'filtered')
+        self.assertTrue(permit['publication'])
+        self.assertNotIn('Legacy source-backed response.', permit['answer']['text'])
         self.start_http()
-        self.assertFalse(self.post('/officer/validate', {'receipt': result['receipt'], 'text': result['text']})[1]['valid'])
+        fresh = self.post('/officer/validate', {'receipt': result['receipt'], 'text': result['text']})[1]
+        self.assertFalse(fresh['valid']); self.assertEqual(fresh['status'], 'filtered')
+        self.assertTrue(fresh['publication'])
+        self.assertNotEqual(fresh['answer']['text'], result['text'])
+        self.assertEqual(fresh['answer']['cites'], [])
 
     def test_legacy_read_denied_by_tiny_evidence_budget_supplies_no_saved_text(self):
         self.seed()
@@ -665,8 +692,11 @@ class OfficerCapabilityTests(unittest.TestCase):
         with patch.object(server, 'officer_ask', side_effect=ask):
             status, value = self.post('/ask', {'turns': [{'role': 'user', 'content': 'Review the saved activity.'}], 'context': {'scope': 'room'}})
         self.assertEqual(status, 200)
-        self.assertTrue(value.get('evidence_invalidated'), value)
-        self.assertNotIn('receipt', value)
+        self.assertEqual(value.get('verification'), 'filtered', value)
+        self.assertNotEqual(value['text'], result['text'])
+        self.assertEqual(value['cites'], [])
+        self.assertFalse(value['publication']['valid'])
+        self.assertTrue(value['publication']['publication'])
 
     def test_strict_budget_blocks_intent_before_any_api_or_action(self):
         os.environ['OFFICER_REQUEST_USD'] = '0.01'
@@ -937,7 +967,7 @@ class CapabilityMutationTests(unittest.TestCase):
         cases = [
             ('officer_exchange', 'if len(uses) != 1:', 'if False:',
              'test_same_batch_read_and_finish_is_rejected_even_with_prior_valid_refs'),
-            ('officer_receipt_valid', 'if not verify_receipt(receipt, text, session.generation(), BOOT):', 'if False:',
+            ('officer_receipt_assessment', 'if not authenticate_receipt(receipt, text, BOOT):', 'if False:',
              'test_forged_altered_and_deleted_assistant_receipts_are_not_replayed'),
         ]
         for name, before, after, method in cases:

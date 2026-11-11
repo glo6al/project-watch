@@ -40,7 +40,7 @@ from officer_policy import AUTOMATIC, RoutingSnapshot, load_policy
 from officer_instructions import BUILTIN_PLAIN_ENGLISH, BUILTIN_OFFICER_SYSTEM, load_instructions, load_skill, skill_menu
 from officer_messaging import MessagingStore, MessagingError, validate_question, validate_target, valid_uuid
 from officer_capabilities import (ANSWER_CHARS, ANSWER_SCHEMA, EVIDENCE_SYSTEM, EVIDENCE_TOOLS, READ_NAMES, EvidenceAliases, parse_answer,
-                                  live_view as officer_live_projection, sign_receipt, verify_receipt, receipt_refs, record_fingerprint)
+                                  live_view as officer_live_projection, sign_receipt, verify_receipt, authenticate_receipt, receipt_refs, record_fingerprint)
 from officer_evidence import EvidenceService
 from officer_request import BudgetPolicy, RequestBudget, BudgetExceeded, AssertionRegistry
 
@@ -3810,47 +3810,155 @@ def officer_evidence_session():
     return EvidenceService(HISTORY, officer_evidence_view, max_bytes=24000, max_work=3000000).start()
 
 
+def officer_receipt_assessment(receipt, text, session=None):
+    """Authenticity, observed freshness and physical removal are separate outcomes."""
+    session = session or officer_evidence_session()
+    generation = session.current_generation()
+    base = dict(identity=BOOT, erasure_generation=generation.get('erasure'), removed=False)
+    if not authenticate_receipt(receipt, text, BOOT):
+        return dict(base, status='invalid', valid=False, warnings=['This earlier answer could not be authenticated for the current WATCH process.'])
+    payload = receipt['payload']; metadata = payload.get('evidence', {})
+    original = payload.get('generation', {})
+    if not isinstance(metadata, dict) or not isinstance(original, dict):
+        return dict(base, status='invalid', valid=False, warnings=['The answer has no usable source receipt.'])
+    refs = receipt_refs(receipt)
+    fallback = metadata.get('fallback_refs', refs)
+    fallback_valid = isinstance(fallback, list) and len(fallback) <= 100 and all(isinstance(ref, str) and len(ref) <= 500 for ref in fallback)
+    if not fallback_valid:
+        fallback = refs
+    # Older receipts did not record every archive input. Conservative erasure
+    # handling must not assume those narratives depended only on cited rows.
+    archive_used = bool(metadata.get('archive_used', bool(original.get('store')))) or any(ref.startswith('deck:') for ref in fallback)
+    # A different or inaccessible store is not proof that its former records were erased.
+    store_changed = bool(archive_used and original.get('store') != generation.get('store'))
+    erased = bool(archive_used and original.get('store') == generation.get('store') and
+                  original.get('erasure') is not None and generation.get('erasure') is not None and
+                  original['erasure'] != generation['erasure'])
+    if store_changed:
+        return dict(base, status='unavailable', valid=False,
+                    warnings=['The saved-history store could not be matched. This does not establish deletion; the earlier answer is not freshly verified.'])
+    proofs = metadata.get('fingerprints', {})
+    missing_proof = not isinstance(proofs, dict) or any(ref not in proofs for ref in refs)
+    assessed = session.assess_refs(refs, fingerprints=proofs if isinstance(proofs, dict) else {}, fingerprinter=record_fingerprint)
+    statuses = [item['status'] for item in assessed['refs'].values()]
+    removed = any(status == 'removed' for status in statuses)
+    if erased or removed:
+        # Declared citations cannot prove that arbitrary model prose is independent
+        # of erased input. Fresh canonical excerpts avoid that dependency ambiguity.
+        return dict(base, status='filtered', valid=False, removed=removed,
+                    answer=officer_surviving_answer(session, fallback, omitted=metadata.get('omitted_fallback_refs', 0)),
+                    warnings=['Saved history changed. This reply shows freshly checked surviving records instead of the earlier summary.'])
+    if not fallback_valid or missing_proof or store_changed or 'unavailable' in statuses:
+        return dict(base, status='unavailable', valid=False,
+                    warnings=['Some sources could not be checked. This is the earlier answer, not a fresh verification.'])
+    stale = 'stale' in statuses or metadata.get('verification') == 'stale'
+    if any(isinstance(assertion, dict) and 'live' in assertion.get('scope', {}).get('sources', []) for assertion in metadata.get('assertions', [])) and metadata.get('live_floor') != BASE:
+        stale = True
+    status = 'stale' if stale else 'filtered' if metadata.get('verification') == 'filtered' else 'supported'
+    warnings = ['This answer describes the observations made when it was written. Some current information has since changed.'] if stale else []
+    answer = dict(text=text, cites=officer_citations(assessed['refs']), receipt=receipt, evidence_checked=True,
+                  verification=status, warnings=warnings, identity=BOOT, erasure_generation=generation.get('erasure'))
+    return dict(base, status=status, valid=True, answer=answer, warnings=warnings)
+
+
+def officer_citations(assessed):
+    cites = []
+    for ref, item in assessed.items():
+        row = item.get('record')
+        if not isinstance(row, dict):
+            continue
+        cite = dict(ref=ref, agent=row.get('chat_name') or row.get('chat_id') or 'Room observation',
+                    what=str(row.get('text') or row.get('field') or row.get('operation') or row.get('kind') or '')[:80])
+        if ref.startswith('deck:'):
+            cite.update(event_id=ref[5:], historical=True)
+        elif ref.startswith('live:'):
+            cite.update(n=int(ref.rsplit(':', 1)[1]), aid=row.get('chat_id'))
+        cites.append(cite)
+    return cites
+
+
+def officer_surviving_answer(session, refs, omitted=0, actions=None, reason='erasure'):
+    """Render only fresh canonical records; never edit or retry a tainted narrative."""
+    refs = list(dict.fromkeys(ref for ref in refs if isinstance(ref, str) and ref.startswith(('deck:', 'live:', 'fact:'))))[:100]
+    generation = session.current_generation()
+    assessment = session.assess_refs(refs, fingerprinter=record_fingerprint)
+    kept, lines, proofs = {}, [], {}
+    omitted = omitted if type(omitted) is int and omitted >= 0 else 0
+    for ref, item in assessment['refs'].items():
+        row = item.get('record')
+        if item['status'] not in ('supported', 'stale') or not isinstance(row, dict):
+            omitted += 1
+            continue
+        name = str(row.get('chat_name') or row.get('chat_id') or row.get('subject') or 'Room observation')[:120]
+        certainty = row.get('certainty') if row.get('certainty') in ('recorded', 'inferred', 'probably') else 'recorded'
+        if row.get('field'):
+            detail = str(row['field']) + ': ' + json.dumps(row.get('value'), ensure_ascii=True)
+        elif row.get('text'):
+            detail = str(row['text'])
+        else:
+            detail = ', '.join(str(row[key]) for key in ('kind', 'operation', 'phase', 'outcome', 'file_ref') if row.get(key))
+        detail = detail[:1600] + (' [excerpt ends]' if len(detail) > 1600 else '')
+        speaker = 'owner message' if row.get('role') == 'user' else 'agent report' if row.get('role') == 'assistant' else 'observation'
+        stamp = row.get('source_ts') if row.get('time_basis') == 'source' else row.get('observed_ts')
+        if type(stamp) not in (int, float):
+            stamp = row.get('source_ts') or row.get('observed_ts')
+        try:
+            dated = datetime.fromtimestamp(stamp).astimezone().isoformat(timespec='seconds') if type(stamp) in (int, float) and math.isfinite(stamp) else 'time not recorded'
+        except (ValueError, OverflowError, OSError):
+            dated = 'time not recorded'
+        basis = str(row.get('time_basis') or 'observation time')
+        line = '**' + name.replace('*', '') + ' — ' + speaker + ' — ' + certainty + '** (' + dated + '; ' + basis + ')\n> ' + detail.replace('\n', '\n> ')
+        qualifications = [str(row[key]) for key in ('qualification', 'source_qualification', 'observation_source') if row.get(key)]
+        if qualifications:
+            line += '\n' + '; '.join(qualifications)[:500]
+        if len(lines) >= 20 or sum(map(len, lines)) + len(line) > ANSWER_CHARS - 1200:
+            omitted += 1
+            continue
+        kept[ref] = item; lines.append(line); proofs[ref] = record_fingerprint(row)
+    heading = ('Saved history changed while this answer was being prepared or checked.' if reason == 'erasure' else 'The answer exceeded its source-proof allowance.') + ' Here is what freshly checked records still support:'
+    if not lines:
+        heading = ('Saved history changed.' if reason == 'erasure' else 'The earlier answer could not carry its source proofs.') + ' No surviving source content could be freshly checked for this answer.'
+    text = heading + ('\n\n' + '\n\n'.join(lines) if lines else '')
+    text += '\n\nThis is a partial record, not a full summary. Earlier derived totals are not repeated.'
+    if omitted:
+        text += ' Some earlier sources are absent, unavailable or outside this bounded review.'
+    metadata = dict(refs=list(kept), fallback_refs=list(kept), fingerprints=proofs, assertions=[],
+                    archive_used=any(ref.startswith('deck:') for ref in kept), live_floor=BASE,
+                    verification='filtered', observed_at=time.time(), omitted_fallback_refs=omitted)
+    receipt = sign_receipt(text, metadata, generation, BOOT)
+    return dict(text=text, cites=officer_citations(kept), receipt=receipt, evidence_checked=True,
+                verification='filtered', warnings=['Only freshly checked surviving records are shown.'],
+                identity=BOOT, erasure_generation=generation.get('erasure'), partial=True, actions=actions or [])
+
+
 def officer_receipt_valid(receipt, text, session=None):
-    """Revalidate signed lineage, including live boot and removed/changed observations."""
+    """Compatibility: replay only unchanged authenticated observations."""
     try:
-        session = session or officer_evidence_session()
-        if not verify_receipt(receipt, text, session.generation(), BOOT):
-            return False
-        metadata = receipt['payload']['evidence']
-        if metadata.get('live_floor') != BASE:
-            return False
-        proofs = metadata.get('fingerprints', {})
-        for ref in receipt_refs(receipt):
-            if ref not in proofs:
-                return False
-            record = session.resolve(ref)
-            if not record or record.get('unavailable') or record.get('error') or record_fingerprint(record) != proofs[ref]:
-                return False
-        return session.validate().get('valid') is True
+        assessment = officer_receipt_assessment(receipt, text, session)
+        return assessment.get('status') in ('supported', 'filtered') and assessment.get('answer', {}).get('text') == text
     except (ValueError, TypeError, OSError, sqlite3.Error):
         return False
 
 
 def officer_publication(receipt, text):
-    """Commit publication against erasure under one short gate; never write HTTP here.
+    """Order prepared source-safe publication against committed archive erasure.
 
-    The archive uses this same lock for generation changes and their commits.
-    A permit ordered before erasure is already published; network/DOM timing is
-    not an atomic extension of a local database transaction.
+    Publication and erasure share this short local gate, not a network/DOM lock.
     """
-    history = HISTORY
-    gate = history.lock if history is not None else nullcontext()
+    gate = HISTORY.lock if HISTORY is not None else nullcontext()
     with gate:
-        valid = officer_receipt_valid(receipt, text)
-        return {'valid': valid, 'publication': secrets.token_hex(16) if valid else None,
-                'boundary': 'server_commit_before_network_delivery'}
+        assessment = officer_receipt_assessment(receipt, text)
+        assessment.update(publication=secrets.token_hex(16) if assessment.get('answer') else None,
+                          boundary='server_commit_before_network_delivery')
+        return assessment
 
 
 def officer_erasure_notice():
-    """Coalesce committed erasures; observer never acquires a room lock in storage."""
+    """Coalesce committed erasures; drawer navigation never changes this revision."""
     if OFFICER_ERASURE_EVENT.is_set():
         OFFICER_ERASURE_EVENT.clear()
-        emit('', 'memory_changed', False)
+        generation = officer_evidence_session().current_generation()
+        emit('', 'memory_changed', False, identity=BOOT, erasure_generation=generation.get('erasure'))
 
 
 def officer_replay(turns, session):
@@ -3862,10 +3970,24 @@ def officer_replay(turns, session):
             retained['context'] = turn['context']
         if turn['role'] == 'user':
             messages.append(retained)
-        elif officer_receipt_valid(turn.get('receipt'), turn['content'], session):
-            # Even authenticated prior words are untrusted context, not new facts.
-            messages.append(retained)
-            hints.extend(receipt_refs(turn['receipt']))
+        else:
+            assessment = officer_receipt_assessment(turn.get('receipt'), turn['content'], session)
+            safe = assessment.get('answer', {})
+            if assessment.get('status') in ('supported', 'filtered') and isinstance(safe.get('text'), str) and (assessment['status'] == 'supported' or receipt_refs(safe.get('receipt'))):
+                # Track replay dependencies too: later erasure must stop the next
+                # paid request from containing an opaque prior narrative.
+                refs = receipt_refs(safe.get('receipt'))
+                if session.track_refs(refs):
+                    payload = safe['receipt']['payload']
+                    metadata = payload.get('evidence', {})
+                    if metadata.get('archive_used'):
+                        evidence_dependencies = getattr(session, '_officer_archive_dependencies', [])
+                        evidence_dependencies.append(payload['generation'])
+                        session._officer_archive_dependencies = evidence_dependencies
+                    session._officer_replay_fallback = list(dict.fromkeys(getattr(session, '_officer_replay_fallback', []) + metadata.get('fallback_refs', refs)))[:100]
+                    retained['content'] = safe['text']
+                    messages.append(retained)
+                    hints.extend(refs)
     return messages, list(dict.fromkeys(hints))[-100:]
 
 
@@ -3877,28 +3999,29 @@ def officer_budget():
 
 
 def officer_evidence_answer(checked, evidence, registry, actions, cap):
-    """The narrative has supplied references; numerical fragments were rendered in Python."""
+    """Keep observations tied to the snapshot actually supplied, not later values."""
+    state = evidence.validate()
+    if state.get('needs_fallback'):
+        return officer_surviving_answer(evidence, list(evidence.supplied) + list(evidence.pending) + getattr(evidence, '_officer_replay_fallback', []), actions=actions)
     text = checked['text']
     if len(text) > cap:
         return {'text': 'The checked answer exceeded its output allowance. No shortened factual summary was published.', 'partial': True, 'actions': actions, 'cites': []}
-    refs, proofs, cites = [], {}, []
-    for ref in checked['references']:
-        if ref.startswith(('deck:', 'live:', 'fact:')):
-            row = evidence.resolve(ref)
-            if not row or row.get('error') or row.get('unavailable'):
-                return {'error': 'A supporting source is no longer available. The answer was withheld.', 'evidence_invalidated': True}
-            refs.append(ref)
-            proofs[ref] = record_fingerprint(row)
-            cite = {'ref': ref, 'agent': row.get('chat_name') or row.get('chat_id') or 'Room observation',
-                    'what': str(row.get('text') or row.get('field') or row.get('operation') or row.get('kind') or '')[:80]}
-            if ref.startswith('deck:'):
-                cite.update(event_id=ref[5:], historical=True)
-            elif ref.startswith('live:'):
-                cite.update(n=int(ref.rsplit(':', 1)[1]), aid=row.get('chat_id'))
-            cites.append(cite)
+    refs = [ref for ref in checked['references'] if ref.startswith(('deck:', 'live:', 'fact:'))]
+    originals = getattr(evidence, '_officer_proofs', {})
+    proofs = {ref: originals[ref] for ref in refs if ref in originals}
+    assessed = evidence.assess_refs(refs, fingerprints=proofs, fingerprinter=record_fingerprint)
+    # Unavailable live observations can still be described as observations made
+    # earlier. They are never silently rebound to a newer fact's proof.
+    for ref in refs:
+        if ref not in proofs and ref.startswith('fact:'):
+            row = evidence.original_observation(ref)
+            if row is not None:
+                proofs[ref] = record_fingerprint(row)
+    if any(item['status'] == 'removed' for item in assessed['refs'].values()):
+        return officer_surviving_answer(evidence, list(evidence.supplied) + list(evidence.pending) + getattr(evidence, '_officer_replay_fallback', []), actions=actions)
     metadata = evidence.receipt()
-    metadata.pop('reference_fingerprints', None)  # Only cited canonical proofs belong in a follow-up receipt.
-    metadata.pop('generation', None)             # The outer signed payload already binds this.
+    metadata.pop('reference_fingerprints', None)
+    metadata.pop('generation', None)
     queries = metadata.get('queries', [])
     kept = []
     for query in reversed(queries):
@@ -3907,12 +4030,45 @@ def officer_evidence_answer(checked, evidence, registry, actions, cap):
             kept = candidate
     metadata['queries'] = kept
     metadata['omitted_query_scopes'] = len(queries) - len(kept)
-    metadata.update(refs=refs, fingerprints=proofs, live_floor=BASE, assertions=checked['assertions'])
-    if evidence.validate().get('valid') is not True:
-        return {'error': 'Saved evidence changed before the answer was ready. The answer was withheld.', 'evidence_invalidated': True}
-    receipt = sign_receipt(text, metadata, evidence.generation(), BOOT)
-    return {'text': text, 'cites': cites, 'actions': actions, 'receipt': receipt,
-            'evidence_checked': True, 'qualification': 'References and typed counts checked; narrative meaning is model-interpreted.'}
+    all_refs = list(dict.fromkeys(refs + [ref for ref in evidence.supplied if ref.startswith(('deck:', 'live:', 'fact:'))]))
+    metadata.update(refs=refs, fingerprints=proofs, live_floor=evidence.live_floor,
+                    assertions=checked['assertions'], fallback_refs=all_refs[:100],
+                    omitted_fallback_refs=max(0, len(all_refs) - 100),
+                    archive_used=bool(getattr(evidence, '_officer_archive_dependencies', [])) or any(meta.get('source') == 'retained' or 'retained' in meta.get('sources', []) for meta in evidence.supplied.values()),
+                    observed_at=time.time())
+    warnings = list(state.get('warnings', []))
+    stale = bool(warnings) or any(item['status'] != 'supported' for item in assessed['refs'].values())
+    status = 'stale' if stale else 'supported'
+    if stale:
+        warnings = ['This answer describes the observations supplied earlier in this request. Some current information has changed or could not be checked.']
+    metadata['verification'] = status
+    generation = evidence.generation()
+    archive_epoch = metadata.get('archive_input_generation')
+    dependencies = getattr(evidence, '_officer_archive_dependencies', [])
+    epochs = [previous['erasure'] for previous in dependencies if previous.get('store') == generation.get('store') and type(previous.get('erasure')) is int]
+    if type(archive_epoch) is int:
+        epochs.append(archive_epoch)
+    if epochs:
+        generation = dict(generation, erasure=min(epochs))
+    # Receipts are bounded metadata. Drop explanatory query/frontier metadata
+    # before shortening fallback coverage; never discard a cited source proof.
+    while True:
+        try:
+            receipt = sign_receipt(text, metadata, generation, BOOT)
+            break
+        except ValueError:
+            if metadata.get('frontiers'):
+                metadata['frontiers'] = []
+            elif metadata.get('queries'):
+                metadata['omitted_query_scopes'] += len(metadata['queries']); metadata['queries'] = []
+            elif metadata.get('fallback_refs'):
+                metadata['fallback_refs'].pop(); metadata['omitted_fallback_refs'] += 1
+            else:
+                return officer_surviving_answer(evidence, refs, actions=actions, reason='size')
+    return {'text': text, 'cites': officer_citations(assessed['refs']), 'actions': actions, 'receipt': receipt,
+            'evidence_checked': True, 'verification': status, 'warnings': warnings,
+            'identity': BOOT, 'erasure_generation': generation.get('erasure'),
+            'qualification': 'References and typed counts checked; narrative meaning is model-interpreted.'}
 
 
 def officer_ask(turns, call=anthropic_call, request_id=None, context=OFFICER_CONTEXT_MISSING):
@@ -3991,6 +4147,9 @@ def officer_exchange(turns, call, context=OFFICER_CONTEXT_MISSING, model_snapsho
     instructions = load_instructions()
     tools = OFFICER_TOOLS + EVIDENCE_TOOLS + [OFFICER_USAGE_TOOL] + ([OFFICER_LOAD_SKILL_TOOL] if instructions.skills else [])
     evidence = officer_evidence_session()
+    evidence.receipt_fingerprinter = record_fingerprint
+    evidence._officer_archive_dependencies = []
+    evidence._officer_replay_fallback = []
     replayed, hints = officer_replay(turns, evidence)
     envelope = officer_context_envelope(replayed, context)
     encoded = json.dumps(scrub(envelope), ensure_ascii=True).replace('<', '\\u003c').replace('>', '\\u003e')
@@ -4000,10 +4159,31 @@ def officer_exchange(turns, call, context=OFFICER_CONTEXT_MISSING, model_snapsho
         system += '\nUntrusted prior evidence references; resolve again before use:\n' + json.dumps(hints)
     registry, aliases, pending_results, shared_used = AssertionRegistry(), EvidenceAliases(), [], False
     answer_cap = ANSWER_CHARS if broad else OFFICER_TURN_CHARS
+    evidence._officer_proofs = {}
+    pending_proofs = {}
+    def remember(result):
+        for key in ('evidence', 'facts'):
+            for item in result.get(key, []):
+                ref = item.get('ref') if isinstance(item, dict) else None
+                if not isinstance(ref, str):
+                    continue
+                proof = evidence.pending.get(ref, {}).get('receipt_fingerprint')
+                if proof is None:
+                    row = evidence.original_observation(ref) if ref.startswith('fact:') else evidence.resolve(ref)
+                    proof = record_fingerprint(row) if row is not None else None
+                if proof is not None:
+                    pending_proofs.setdefault(ref, proof)
     def removed():
-        return {'error': 'Saved evidence changed or was removed while I was answering. The affected answer was withheld. Nothing was retried.', 'evidence_invalidated': True}
+        # An actual erasure ends the opaque model context. No paid retry or
+        # further model call can replay possibly erased intermediate prose.
+        return officer_surviving_answer(evidence, list(evidence.supplied) + list(evidence.pending) + getattr(evidence, '_officer_replay_fallback', []), actions=actions)
     def current():
-        return evidence.validate().get('valid') is True
+        state = evidence.validate()
+        generation = evidence.current_generation()
+        for previous in evidence._officer_archive_dependencies:
+            if previous.get('store') == generation.get('store') and previous.get('erasure') is not None and generation.get('erasure') is not None and previous['erasure'] != generation['erasure']:
+                return False
+        return state.get('valid') is True and not state.get('needs_fallback')
     cites, staged, actions, text = [], [], [], ''      # staged: entries in results not yet sent; they become cites only once the model has seen them
     end = time.monotonic() + OFFICER_DEADLINE
     for _ in range(OFFICER_ROUNDS):
@@ -4017,7 +4197,8 @@ def officer_exchange(turns, call, context=OFFICER_CONTEXT_MISSING, model_snapsho
         if shared_used:
             body['output_config'] = {**body.get('output_config', {}),
                                      'format': {'type': 'json_schema', 'schema': ANSWER_SCHEMA}}
-        if evidence.validate_pending(pending_results).get('valid') is not True or not current():
+        pending_state = evidence.validate_pending(pending_results)
+        if pending_state.get('valid') is not True or pending_state.get('needs_fallback') or not current():
             return removed()
         try:
             resp, err = call(body, end=end)
@@ -4027,6 +4208,8 @@ def officer_exchange(turns, call, context=OFFICER_CONTEXT_MISSING, model_snapsho
         for result in pending_results:
             evidence.mark_supplied(result)
         registry.mark_supplied()
+        evidence._officer_proofs.update(pending_proofs)
+        pending_proofs.clear()
         pending_results = []
         if not current():
             return removed()
@@ -4086,6 +4269,7 @@ def officer_exchange(turns, call, context=OFFICER_CONTEXT_MISSING, model_snapsho
                     if budget is not None:
                         budget.supply_evidence(len(r.get('evidence', [])) + len(r.get('facts', [])), len(json.dumps(r, separators=(',', ':'), ensure_ascii=True).encode()))
                     registry.register(r)
+                    remember(canonical_result)
                     pending_results.append(canonical_result)
                 except BudgetExceeded:
                     r = {'error': 'The evidence/query allowance is exhausted. Do not claim a complete review.', 'partial': True}
@@ -4096,8 +4280,11 @@ def officer_exchange(turns, call, context=OFFICER_CONTEXT_MISSING, model_snapsho
                 try:
                     if legacy_read:
                         budget.claim_query(evidence.work_bound(name, inp))
+                    legacy_generation = evidence.current_generation() if name in ('search_history', 'session_day_summary') else None
                     r = scrub(load_skill(instructions, inp, OFFICER_TOOL_CHARS) if name == 'load_skill'
                               else officer_tool(name, inp, actions))
+                    if legacy_generation is not None and not r.get('error'):
+                        evidence._officer_archive_dependencies.append(legacy_generation)
                     if legacy_read:
                         rows = sum(len(r.get(k, [])) for k in ('events', 'steps', 'hits', 'agents') if isinstance(r.get(k), list))
                         budget.supply_evidence(rows, len(json.dumps(r, separators=(',', ':'), ensure_ascii=True).encode()))
@@ -4110,7 +4297,9 @@ def officer_exchange(turns, call, context=OFFICER_CONTEXT_MISSING, model_snapsho
                 if legacy_refs:
                     if evidence.prepare_pending_refs(legacy_refs).get('valid') is not True:
                         return removed()
-                    pending_results.append({'evidence': [{'ref': ref} for ref in legacy_refs]})
+                    pending_legacy = {'evidence': [{'ref': ref} for ref in legacy_refs]}
+                    remember(pending_legacy)
+                    pending_results.append(pending_legacy)
             for event in r.get('events') or []:
                 if isinstance(event, dict) and isinstance(event.get('id'), str) and re.fullmatch('[0-9a-f]{64}', event['id']):
                     staged.append({'event_id': event['id'], 'agent': event.get('chat_name') or event.get('chat_id'),
@@ -4549,17 +4738,29 @@ class H(BaseHTTPRequestHandler):
             d = self.body()
             if not isinstance(d, dict) or set(d) - {'receipt', 'text', 'ref'} or not isinstance(d.get('text'), str) or len(d['text']) > ANSWER_CHARS:
                 return self.send(400, b'invalid evidence request')
-            session = officer_evidence_session()
-            valid = officer_receipt_valid(d.get('receipt'), d['text'], session)
             if self.path == '/officer/validate':
                 permit = officer_publication(d.get('receipt'), d['text'])
-                return self.send(200, json.dumps(permit).encode(), 'application/json')
-            if not valid or d.get('ref') not in receipt_refs(d.get('receipt')):
-                return self.send(409, b'{"error":"This supporting source is no longer available."}', 'application/json')
-            row = session.resolve(d['ref'])
-            if not row or row.get('error') or not officer_publication(d['receipt'], d['text'])['valid']:
-                return self.send(409, b'{"error":"This supporting source changed or was removed."}', 'application/json')
-            return self.send(200, json.dumps(scrub({'event': row})).encode(), 'application/json')
+                return self.send(200, json.dumps(scrub(permit)).encode(), 'application/json')
+            gate = HISTORY.lock if HISTORY is not None else nullcontext()
+            with gate:
+                session = officer_evidence_session()
+                if not authenticate_receipt(d.get('receipt'), d['text'], BOOT) or d.get('ref') not in receipt_refs(d.get('receipt')):
+                    result, status = dict(status='invalid', removed=False, error='This source receipt could not be authenticated. Ask the Officer again for current sources.'), 409
+                else:
+                    previous = d['receipt']['payload'].get('generation', {})
+                    generation = session.current_generation()
+                    if str(d['ref']).startswith('deck:') and previous.get('store') != generation.get('store'):
+                        item = dict(status='unavailable')
+                    else:
+                        proofs = d['receipt']['payload']['evidence'].get('fingerprints', {})
+                        item = session.assess_refs([d['ref']], fingerprints=proofs, fingerprinter=record_fingerprint)['refs'].get(d['ref'], {})
+                    if item.get('record') and item.get('status') in ('supported', 'stale'):
+                        result, status = dict(event=item['record'], status=item['status'], warnings=['This current record differs from the observation used in the earlier answer.'] if item['status'] == 'stale' else []), 200
+                    else:
+                        removed = item.get('status') == 'removed'
+                        result, status = dict(status='removed' if removed else 'unavailable', removed=removed,
+                                              error='This saved source was deleted or expired.' if removed else 'This source could not be checked right now. That does not establish deletion.'), 409
+            return self.send(status, json.dumps(scrub(result)).encode(), 'application/json')
         if self.path.startswith('/officer/'):
             return self.officer_models_http('POST')
         if self.path.startswith('/history/'):
@@ -4790,10 +4991,15 @@ class H(BaseHTTPRequestHandler):
                 OFFICER_BUSY.release()
             if out.get('receipt'):
                 publication = officer_publication(out['receipt'], out.get('text', ''))
-                if not publication['valid']:
-                    out = {'error': 'Saved evidence changed before publication. The affected answer was withheld.', 'evidence_invalidated': True}
+                if publication.get('answer'):
+                    # Keep routing/accounting/action outcome metadata. Source-safe
+                    # preparation only replaces the read-only answer and its proofs.
+                    out.update(publication['answer'])
                 else:
-                    out['publication'] = publication
+                    out.update(verification=publication['status'], warnings=publication['warnings'],
+                               identity=publication['identity'], erasure_generation=publication['erasure_generation'])
+                    out.pop('receipt', None); out['cites'] = []
+                out['publication'] = {key: value for key, value in publication.items() if key != 'answer'}
             return self.send(200, json.dumps(out).encode(), 'application/json')
         if route == '/decide':
             if not isinstance(d.get('allow'), bool):

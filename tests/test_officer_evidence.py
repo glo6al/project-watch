@@ -70,7 +70,8 @@ class EvidenceTests(unittest.TestCase):
         self.assertGreater(erased['erasure'],before['erasure'])
         self.seed(text='New evidence',offset=1)
         self.assertGreater(self.archive.evidence_state()['fence'],before['fence'])
-        self.assertFalse(session.validate()['valid'])
+        self.assertTrue(session.validate()['valid'])
+        self.assertFalse(session.validate()['needs_fallback'])
 
     def test_legacy_migration_backfills_without_changing_ids(self):
         ids=self.seed(3)
@@ -121,7 +122,7 @@ class EvidenceTests(unittest.TestCase):
         self.assertIn('error',invalid)
         self.archive.delete(chat_id='x:archived')
         removed=self.query(session,limit=1,cursor=first['continuation']['cursor'])
-        self.assertEqual(removed['error'],'evidence_removed')
+        self.assertEqual(removed['error'],'invalid_or_changed_cursor')
 
     def test_overview_represents_quiet_and_busy_and_exposes_middle(self):
         self.seed(80,chat='x:busy',text='busy',offset=0)
@@ -171,14 +172,17 @@ class EvidenceTests(unittest.TestCase):
         self.live['facts'][0]['observed_ts']+=100
         self.assertTrue(session.validate()['valid'])
         self.live['facts'][0]['value']='different-model'
-        self.assertFalse(session.validate()['valid'])
+        check=session.validate()
+        self.assertTrue(check['valid'])
+        self.assertEqual(check['assessment']['refs'][fact['ref']]['status'],'stale')
+        self.assertFalse(check['needs_fallback'])
         fresh=self.service.start().resolve(fact['ref'])
         self.assertNotEqual(fresh['fingerprint'],fact['fingerprint'])
         receipt=session.receipt()
         self.assertIn(fact['ref'],receipt['reference_fingerprints'])
         self.assertNotIn('different-model',json.dumps(receipt))
 
-    def test_supplied_refs_only_and_live_removal_invalidate(self):
+    def test_supplied_refs_only_and_live_window_changes_qualify(self):
         self.live['events']=[dict(seq=1,chat_id='x:live',provider='codex',source_ts=None,observed_ts=self.now,kind='message',role='assistant',text='A recorded statement',certainty='recorded')]
         session=self.service.start()
         result=session.tool('evidence_query',dict(scope={'sources':['live']},interval={'since':self.now-1,'until':self.now+1}))
@@ -187,7 +191,9 @@ class EvidenceTests(unittest.TestCase):
         session.mark_supplied(result)
         self.assertTrue(session.validate()['valid'])
         self.live['events']=[];self.live['floor_seq']=2
-        self.assertFalse(session.validate()['valid'])
+        check=session.validate()
+        self.assertTrue(check['valid'])
+        self.assertIn('live_observation_unavailable',check['warnings'])
 
     def test_catalog_keeps_duplicate_names_worktrees_and_pages(self):
         self.seed(chat='x:one');self.seed(chat='x:two')
@@ -509,19 +515,22 @@ class EvidenceTests(unittest.TestCase):
         self.archive.delete(all=True)
         check=session.validate_pending([result])
         self.assertFalse(check['valid'])
-        self.assertEqual(check['reason'],'evidence_removed')
+        self.assertEqual(check['reason'],'archive_input_removed')
         self.assertEqual(session.receipt()['refs'],[])
         self.assertEqual(session.receipt()['frontiers'][0]['supplied_views'],0)
 
-    def test_pending_changed_fact_and_restart_are_rejected_before_admission(self):
+    def test_pending_changed_fact_and_restart_are_qualified_before_admission(self):
         session=self.service.start()
         result=session.tool('room_snapshot',dict(fields=['model']))
         self.live['facts'][0]['value']='Changed model'
-        self.assertEqual(session.validate_pending([result]),dict(valid=False,reason='pending_evidence_changed'))
+        check=session.validate_pending([result])
+        self.assertTrue(check['valid']);self.assertIn('observation_changed',check['warnings'])
+        self.assertEqual(session.original_observation(result['facts'][0]['ref'])['value'],'fictional-model')
         self.assertEqual(session.receipt()['refs'],[])
         self.live['facts'][0]['value']='fictional-model'
         self.live['boot']='another-boot'
-        self.assertEqual(session.validate_pending([result]),dict(valid=False,reason='live_boot_changed'))
+        check=session.validate_pending([result])
+        self.assertTrue(check['valid']);self.assertIn('live_boot_changed',check['warnings'])
 
     def test_pending_live_quantities_detect_floor_change_without_record_refs(self):
         self.live['events']=[dict(seq=1,chat_id='x:live',kind='message',role='assistant',text='Retained in live ring',certainty='recorded',source_ts=self.now,observed_ts=self.now)]
@@ -529,7 +538,8 @@ class EvidenceTests(unittest.TestCase):
         result=session.tool('evidence_query',dict(scope={'sources':['live']},view='aggregates'))
         self.assertEqual(result['evidence'],[])
         self.live['floor_seq']=2
-        self.assertEqual(session.validate_pending([result]),dict(valid=False,reason='live_evidence_removed'))
+        check=session.validate_pending([result])
+        self.assertTrue(check['valid']);self.assertIn('population_changed',check['warnings'])
         self.assertEqual(session.receipt()['refs'],[])
 
     def test_pending_live_records_are_fingerprint_checked_with_one_projection(self):
@@ -544,7 +554,8 @@ class EvidenceTests(unittest.TestCase):
         self.assertEqual(len(calls),1)
         self.assertEqual(session.work,work)
         self.live['events'][0]['observed_ts']+=1
-        self.assertEqual(session.validate_pending([result]),dict(valid=False,reason='pending_evidence_changed'))
+        check=session.validate_pending([result])
+        self.assertTrue(check['valid']);self.assertIn('observation_changed',check['warnings'])
         self.assertEqual(session.receipt()['refs'],[])
 
     def test_legacy_reference_staging_is_metadata_only_and_detects_changed_prose(self):
@@ -556,7 +567,8 @@ class EvidenceTests(unittest.TestCase):
         pending={'evidence':[{'ref':ref}]}
         self.assertTrue(session.validate_pending([pending])['valid'])
         self.live['events'][0]['text']='Changed statement'
-        self.assertFalse(session.validate_pending([pending])['valid'])
+        check=session.validate_pending([pending])
+        self.assertTrue(check['valid']);self.assertIn('observation_changed',check['warnings'])
 
     def test_unknown_unavailable_quantity_is_not_treated_as_supplied_source_content(self):
         session=EvidenceService(None,lambda:self.live).start()
@@ -565,6 +577,107 @@ class EvidenceTests(unittest.TestCase):
         self.assertTrue(session.validate_pending([result])['valid'])
         session.mark_supplied(result)
         self.assertTrue(session.validate()['valid'])
+
+    def test_fresh_exact_lookup_distinguishes_removed_unknown_and_store_identity(self):
+        keep=self.seed(chat='x:keep')[0];drop=self.seed(chat='x:drop')[0]
+        session=self.service.start();store=session.generation()['store']
+        before=session.resolve('deck:'+keep)
+        self.archive.delete(chat_id='x:drop')
+        exact=self.archive.evidence_current([keep,drop],store)
+        self.assertTrue(exact['available']);self.assertEqual(exact['missing'],[drop])
+        assessment=session.assess_refs(['deck:'+keep,'deck:'+drop])
+        self.assertEqual(assessment['refs']['deck:'+keep]['status'],'supported')
+        self.assertEqual(assessment['refs']['deck:'+drop]['status'],'removed')
+        self.assertEqual(assessment['refs']['deck:'+keep]['record']['text'],before['text'])
+        wrong=self.archive.evidence_current([keep],'wrong-store')
+        self.assertFalse(wrong['available']);self.assertEqual(wrong['missing'],[])
+        with patch.object(self.archive,'_verify',side_effect=OSError('Unavailable')):
+            unknown=self.archive.evidence_current([drop],store)
+        self.assertFalse(unknown['available']);self.assertEqual(unknown['missing'],[])
+
+    def test_ingest_fence_survives_erasure_while_exact_assessment_is_current(self):
+        first=self.seed(chat='x:keep')[0];self.seed(chat='x:drop')
+        session=self.service.start();late=self.seed(chat='x:later',offset=-1)[0]
+        self.archive.delete(chat_id='x:drop')
+        result=session.tool('evidence_query',dict(scope={'sources':['retained']}))
+        self.assertEqual({r['ref'] for r in result['evidence']},{'deck:'+first})
+        fresh=self.archive.evidence_current([first,late],session.generation()['store'])
+        self.assertEqual(set(fresh['records']),{first,late})
+
+    def test_surviving_citation_does_not_hide_tainted_uncited_archive_input(self):
+        keep=self.seed(chat='x:keep')[0];self.seed(chat='x:drop')
+        session=self.service.start();result=self.query(session)
+        session.mark_supplied(result)
+        original_fp=session.original_fingerprints()['deck:'+keep]
+        self.archive.delete(chat_id='x:drop')
+        assessment=session.assess_refs(['deck:'+keep],{'deck:'+keep:original_fp})
+        self.assertEqual(assessment['refs']['deck:'+keep]['status'],'supported')
+        self.assertTrue(assessment['erasure_changed'])
+        self.assertTrue(session.validate()['needs_fallback'])
+        self.assertFalse(session.validate_pending([])['valid'])
+        self.assertTrue(session.receipt()['archive_used'])
+        self.assertEqual(session.archive_input_generation(),0)
+
+    def test_expiry_is_confirmed_removed_and_requires_fresh_fallback(self):
+        ref='deck:'+self.seed(offset=-29*86400)[0]
+        session=self.service.start();result=self.query(session);session.mark_supplied(result)
+        self.now+=2*86400
+        assessment=session.assess_refs([ref])
+        self.assertEqual(assessment['refs'][ref]['status'],'removed')
+        self.assertTrue(session.validate()['needs_fallback'])
+
+    def test_committed_erasure_hint_survives_storage_unavailability(self):
+        self.seed();session=self.service.start();result=self.query(session);session.mark_supplied(result)
+        self.archive.delete(all=True)
+        with patch.object(self.archive,'_verify',side_effect=OSError('Unavailable')):
+            identity=session.current_generation()
+            self.assertEqual(identity['store'],session.generation()['store'])
+            self.assertGreater(identity['erasure'],session.generation()['erasure'])
+            self.assertTrue(session.validate()['needs_fallback'])
+            fresh=self.service.start()
+            self.assertEqual(fresh.generation()['erasure'],identity['erasure'])
+            self.assertEqual(fresh.assess_refs(['deck:'+'d'*64])['refs']['deck:'+'d'*64]['status'],'unavailable')
+
+    def test_read_after_erasure_has_its_own_input_epoch(self):
+        self.seed(chat='x:keep');self.seed(chat='x:drop')
+        session=self.service.start();self.archive.delete(chat_id='x:drop')
+        result=self.query(session)
+        pending=session.validate_pending([result])
+        self.assertTrue(pending['valid'])
+        self.assertEqual(pending['warnings'],[])
+        session.mark_supplied(result)
+        self.assertEqual(session.archive_input_generation(),1)
+        check=session.validate()
+        self.assertTrue(check['valid'])
+        self.assertEqual(check['warnings'],[])
+        self.assertEqual(check['assessment']['status'],'supported')
+        self.assertEqual(session.receipt()['archive_input_generation'],1)
+
+    def test_receipt_fingerprints_are_captured_before_values_can_change(self):
+        self.live['events']=[dict(seq=1,chat_id='x:live',kind='message',role='assistant',text='Original source statement',certainty='recorded',source_ts=self.now,observed_ts=self.now)]
+        session=self.service.start()
+        hash_record=lambda row:__import__('hashlib').sha256(json.dumps(row,sort_keys=True,separators=(',',':')).encode()).hexdigest()
+        session.receipt_fingerprinter=hash_record
+        result=session.tool('evidence_query',dict(scope={'sources':['live']}))
+        ref=result['evidence'][0]['ref'];proof=session.pending[ref]['receipt_fingerprint']
+        self.assertEqual(proof,hash_record(session.resolve(ref)))
+        self.live['events'][0]['text']='Updated source statement'
+        self.assertNotEqual(proof,hash_record(session.resolve(ref)))
+        self.assertNotIn('text',session.pending[ref])
+        session.mark_supplied(result)
+        assessment=session.assess_refs([ref],{ref:proof},hash_record)
+        self.assertEqual(assessment['refs'][ref]['status'],'stale')
+        fact_result=session.tool('room_snapshot',dict(scope={'sources':['live']},fields=['model']))
+        fact=fact_result['facts'][0]
+        self.assertEqual(session.pending[fact['ref']]['receipt_fingerprint'],hash_record(session.original_observation(fact['ref'])))
+
+    def test_unavailable_archive_qualifies_without_inventing_removal(self):
+        ref='deck:'+self.seed()[0];session=self.service.start();result=self.query(session);session.mark_supplied(result)
+        with patch.object(self.archive,'_verify',side_effect=OSError('Unavailable')):
+            check=session.validate()
+        self.assertTrue(check['valid']);self.assertFalse(check['needs_fallback'])
+        self.assertEqual(check['assessment']['refs'][ref]['status'],'unavailable')
+        self.assertFalse(check['assessment']['erasure_changed'])
 
     def test_invalid_inputs_never_become_sql_or_paths(self):
         session=self.service.start()

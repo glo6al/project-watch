@@ -198,6 +198,8 @@ class EvidenceSession:
         self.started = service.clock()
         self.observed_at = time.time()
         self.fence = self._archive_state()
+        self._last_archive_generation = self.fence.get('erasure')
+        self._erasure_highwater = self.fence.get('erasure')
         live = self._live()
         self.boot = str(live.get('boot', ''))[:100]
         self.live_floor = live.get('floor_seq', min((e.get('seq',0) for e in live.get('events',[]) if isinstance(e,dict) and type(e.get('seq')) is int), default=0))
@@ -208,6 +210,7 @@ class EvidenceSession:
         self.projects = self._projects(live.get('projects', []))
         self.facts = self._facts(live.get('facts', []))
         self.pending = {}
+        self.receipt_fingerprinter = None
         self.supplied = {}
         self.cursors = {}
         self.quantities = {}
@@ -217,6 +220,7 @@ class EvidenceSession:
         self.queries = []
         self.work = 0
         self.failure = ''
+        self._erasure_seen = False
         self._last_coverage = []
 
     def _live(self):
@@ -232,7 +236,8 @@ class EvidenceSession:
         try:
             return self.service.history.evidence_state()
         except (OSError, ValueError, TypeError, sqlite3.Error):
-            return dict(available=False, store=None, fence=0, erasure=None, coverage=[], queued=None)
+            return dict(available=False, store=None, fence=0, erasure=None, coverage=[], queued=None,
+                        known_store=getattr(self.service.history,'_evidence_store',None),committed_erasure=getattr(self.service.history,'_committed_erasure',None))
 
     @staticmethod
     def _subjects(items):
@@ -277,8 +282,101 @@ class EvidenceSession:
             facts.append(fact)
         return facts
 
+    @staticmethod
+    def _identity(state, boot):
+        return dict(store=state.get('store') or state.get('known_store'),
+                    erasure=state.get('erasure') if state.get('erasure') is not None else state.get('committed_erasure'),
+                    live_boot=boot)
+
     def generation(self):
-        return dict(store=self.fence.get('store'), erasure=self.fence.get('erasure'), live_boot=self.boot)
+        return self._identity(self.fence,self.boot)
+
+    def current_generation(self):
+        return self._identity(self._archive_state(),self.boot)
+
+    def original_observation(self, ref):
+        # Typed facts are already bounded snapshot metadata. No event prose is copied.
+        fact=next((item for item in self.facts if item['ref']==ref),None)
+        if fact is not None:return copy.deepcopy(fact)
+        item=self.supplied.get(ref) or self.pending.get(ref)
+        return dict(ref=ref,**copy.deepcopy(item)) if item is not None else None
+
+    def original_fingerprints(self):
+        return {ref:item.get('fingerprint') for ref,item in self.supplied.items()}
+
+    def assess_refs(self, refs, fingerprints=None, fingerprinter=None):
+        """Classify exact source state; routine changes never masquerade as deletion."""
+        if not isinstance(refs,list) or len(refs)>3200 or any(not isinstance(ref,str) for ref in refs):
+            return dict(status='unavailable',refs={},warnings=['invalid_references'],erasure_changed=False,identity=self.current_generation())
+        refs=list(dict.fromkeys(refs))
+        hashes=fingerprints if fingerprints is not None else {ref:(self.supplied.get(ref) or self.pending.get(ref) or {}).get('fingerprint') for ref in refs}
+        fingerprint=fingerprinter or _fingerprint
+        state=self._archive_state();identity=self._identity(state,self.boot);original=self.generation()
+        changed=(original['store'] is not None and identity['store']==original['store'] and original['erasure'] is not None
+                 and identity['erasure'] is not None and identity['erasure']>original['erasure'])
+        if changed:self._erasure_seen=True
+        if identity['store']==original['store'] and identity['erasure'] is not None:
+            self._erasure_highwater=max(self._erasure_highwater or 0,identity['erasure'])
+        assessment={};warnings=[];live_view=None
+        retained=[ref for ref in refs if ref.startswith('deck:') and HEX.fullmatch(ref[5:])]
+        for at in range(0,len(retained),200):
+            chunk=retained[at:at+200]
+            try:
+                result=self.service.history.evidence_current([ref[5:] for ref in chunk],original['store']) if self.service.history is not None else dict(available=False,records={},missing=[],reason='retained_unavailable')
+            except (OSError,ValueError,TypeError,sqlite3.Error):
+                result=dict(available=False,records={},missing=[],reason='retained_unavailable')
+            seen_identity=result.get('identity',{})
+            if seen_identity.get('store')==original['store'] and seen_identity.get('erasure') is not None:
+                identity=dict(seen_identity,live_boot=self.boot)
+                self._erasure_highwater=max(self._erasure_highwater or 0,seen_identity['erasure'])
+                if original['erasure'] is not None and seen_identity['erasure']>original['erasure']:self._erasure_seen=True
+            for ref in chunk:
+                if not result.get('available'):
+                    assessment[ref]=dict(status='unavailable',reason=result.get('reason') or 'retained_unavailable');continue
+                record=result.get('records',{}).get(ref[5:])
+                if record is None:
+                    assessment[ref]=dict(status='removed',reason='retained_record_absent');continue
+                record=dict(record,source='retained',ref=ref)
+                status='stale' if hashes.get(ref) is not None and fingerprint(record)!=hashes[ref] else 'supported'
+                assessment[ref]=dict(status=status,record=record,reason='source_changed' if status=='stale' else '')
+        live_refs=[ref for ref in refs if ref.startswith(('live:','fact:'))]
+        if live_refs:
+            view=live_view=self._live()
+            same_boot=str(view.get('boot',''))[:100]==self.boot
+            current=self._pending_records(live_refs,view) if same_boot else {}
+            for ref in live_refs:
+                record=current.get(ref)
+                if record is None:
+                    assessment[ref]=dict(status='stale',reason='live_boot_changed' if not same_boot else 'live_observation_unavailable');continue
+                status='stale' if hashes.get(ref) is not None and fingerprint(record)!=hashes[ref] else 'supported'
+                assessment[ref]=dict(status=status,record=record,reason='observation_changed' if status=='stale' else '')
+        for ref in refs:
+            if ref.startswith('agg:'):
+                quantity=self.quantities.get(ref);meta=self.supplied.get(ref) or self.pending.get(ref) or {}
+                stale=self._archive_tainted([meta])
+                if meta.get('source')=='live' and meta.get('requires_source',True):
+                    if live_view is None:live_view=self._live()
+                    view=live_view
+                    floor=view.get('floor_seq',min((e.get('seq',0) for e in view.get('events',[]) if isinstance(e,dict) and type(e.get('seq')) is int),default=0))
+                    stale=bool(stale or str(view.get('boot',''))[:100]!=self.boot or floor>self.live_floor)
+                if quantity is None:assessment[ref]=dict(status='unavailable',reason='quantity_not_available')
+                else:assessment[ref]=dict(status='stale' if stale else 'supported',reason='population_changed' if stale else '',record=copy.deepcopy(quantity))
+            elif ref not in assessment:
+                assessment[ref]=dict(status='unavailable',reason='unknown_reference')
+        for item in assessment.values():
+            if item['status']!='supported':warnings.append(item['reason'])
+        if self._archive_tainted(list(self.supplied.values())+[self.pending.get(ref,{}) for ref in refs]):
+            warnings.append('archive_erasure_changed')
+        status=next((name for name in ('removed','unavailable','stale') if any(item['status']==name for item in assessment.values())),'supported')
+        return dict(status=status,refs=assessment,warnings=list(dict.fromkeys(warnings)),erasure_changed=self._erasure_seen,identity=identity)
+
+    def _used_archive(self, metadata):
+        return any(item.get('requires_source',True) and (item.get('source')=='retained' or item.get('source')=='catalog' and 'retained' in item.get('sources',[])) for item in metadata)
+
+    def _archive_tainted(self, metadata):
+        return any(self._used_archive([item]) and item.get('archive_generation',self.generation()['erasure']) is not None
+                   and self._erasure_highwater is not None and self._erasure_highwater>item.get('archive_generation',self.generation()['erasure'])
+                   for item in metadata)
 
     def work_bound(self, name=None, inp=None):
         """Conservative row-work admission bound; SQL also has its own deadline."""
@@ -331,8 +429,7 @@ class EvidenceSession:
             return [], False, 'retained_unavailable', 0
         query = {k: spec[k] for k in ('scope', 'interval', 'filters')}
         result = self.service.history.evidence_rows(self.fence, query, max_work=max(0,self.service.max_work-self.work) if count_work else 200, metadata_only=metadata)
-        if result.get('reason') == 'evidence_removed':
-            self.failure = 'evidence_removed'
+        if result.get('complete') and result.get('erasure') is not None:self._last_archive_generation=result['erasure']
         if count_work:self.work += result.get('work', 0)
         return result.get('rows', []), result.get('complete', False), result.get('reason', ''), result.get('work', 0)
 
@@ -401,6 +498,12 @@ class EvidenceSession:
     def _order(row, basis='source'):
         return (_stamp(row,basis) or 0, row['source'], row['id'])
 
+    def _receipt_fingerprint(self, row):
+        if not callable(self.receipt_fingerprinter):return None
+        value=self.receipt_fingerprinter(row)
+        if not isinstance(value,str) or not HEX.fullmatch(value):raise ValueError('reference_fingerprint_unavailable')
+        return value
+
     def _record(self, row, match=None, full=False):
         # Identity is carried once by ref; empty operation fields and internal
         # fingerprints consume model supply without adding evidence.
@@ -415,7 +518,8 @@ class EvidenceSession:
         if row.get('timestamp_qualification'): value['timestamp_qualification'] = row['timestamp_qualification']
         value['text'] = _excerpt(str(row.get('text', '')), match or dict(text='', mode='literal'), 2048 if full else 480)
         value['text_complete'] = value['text'] == str(row.get('text', ''))
-        self.pending[row['ref']]=dict(source=row.get('source'),chat_id=row.get('chat_id'),snapshot=self.snapshot,fingerprint=_fingerprint(row))
+        self.pending[row['ref']]=dict(source=row.get('source'),chat_id=row.get('chat_id'),project_id=row.get('project_id'),
+                                    source_ts=row.get('source_ts'),observed_ts=row.get('observed_ts'),archive_generation=self._last_archive_generation,snapshot=self.snapshot,fingerprint=_fingerprint(row),receipt_fingerprint=self._receipt_fingerprint(row))
         return value
 
     def _quantity(self, result, metric, value, unit, complete, source, scope=None, interval=None):
@@ -423,7 +527,7 @@ class EvidenceSession:
         item = dict(ref=ref, metric=metric, value=value if complete else None, unit=unit,
                     scope=dict(scope or result['scope'], **({'sources':[source]} if source is not None else {})), interval=interval or result['interval'], snapshot=self.snapshot, complete=complete)
         self.quantities[ref] = item
-        self.pending[ref] = dict(source=source or 'catalog', sources=item['scope']['sources'], requires_source=bool(complete), snapshot=self.snapshot, fingerprint=hashlib.sha256(_json(item).encode()).hexdigest())
+        self.pending[ref] = dict(source=source or 'catalog', sources=item['scope']['sources'], requires_source=bool(complete), archive_generation=self._last_archive_generation, snapshot=self.snapshot, fingerprint=hashlib.sha256(_json(item).encode()).hexdigest())
         result['quantities'].append(item)
         return ref
 
@@ -450,7 +554,8 @@ class EvidenceSession:
             # Cursor anchors the last actually supplied observation, never an omitted row.
             result['continuation'] = dict(cursor=self._token(identity, records[-1]['ref']), status='more')
         for item in records + result['facts']:
-            self.pending[item['ref']] = dict(source=item.get('source'), chat_id=item.get('chat_id', item.get('subject')), snapshot=self.snapshot, fingerprint=item.get('fingerprint') or self.pending.get(item['ref'],{}).get('fingerprint'))
+            self.pending[item['ref']] = dict(self.pending.get(item['ref'],{}),source=item.get('source'),chat_id=item.get('chat_id',item.get('subject')),snapshot=self.snapshot,fingerprint=item.get('fingerprint') or self.pending.get(item['ref'],{}).get('fingerprint'))
+            if item.get('field') in FACT_FIELDS:self.pending[item['ref']]['receipt_fingerprint']=self._receipt_fingerprint(item)
         result['coverage']['supply'] = 'selected_detail_omitted' if result['selection']['omitted_detail'] else 'selected_records_supplied'
         return result
 
@@ -806,61 +911,32 @@ class EvidenceSession:
                 row=resolved.get(ref)
                 if row is None:return dict(valid=False,reason='pending_source_unavailable')
                 self.pending[ref]=dict(source=row.get('source','fact'),chat_id=row.get('chat_id',row.get('subject')),
-                                       fingerprint=_fingerprint(row),snapshot=self.snapshot,requires_source=True)
+                                       fingerprint=_fingerprint(row),snapshot=self.snapshot,archive_generation=self.generation()['erasure'],requires_source=True,receipt_fingerprint=self._receipt_fingerprint(row))
         except (ValueError,TypeError,OSError,sqlite3.Error):
             return dict(valid=False,reason='pending_source_unavailable')
         return dict(valid=True,reason='')
 
     def validate_pending(self, results):
-        """Check staged evidence before admission, without supplies, frontier or work changes."""
-        if not isinstance(results,list) or len(results)>64:
-            return dict(valid=False,reason='invalid_pending_results')
-        if self.failure:return dict(valid=False,reason=self.failure)
-        if self.service.clock()-self.started>300:return dict(valid=False,reason='snapshot_expired')
-        try:
-            current=self._archive_state()
-            if self.fence.get('available') and current.get('available') and (current.get('store')!=self.fence.get('store') or current.get('erasure')!=self.fence.get('erasure')):
-                return dict(valid=False,reason='evidence_removed')
-            items=[]
-            for result in results:
-                if not isinstance(result,dict) or result.get('snapshot',self.snapshot)!=self.snapshot:
-                    return dict(valid=False,reason='invalid_pending_results')
-                for field in ('evidence','facts','quantities'):
-                    values=result.get(field,[])
-                    if not isinstance(values,list):return dict(valid=False,reason='invalid_pending_results')
-                    items.extend(values)
-            if len(items)>3200:return dict(valid=False,reason='pending_reference_limit')
-            refs=[item.get('ref') for item in items if isinstance(item,dict) and isinstance(item.get('ref'),str) and not item['ref'].startswith('agg:')]
-            needs_live=any(ref.startswith(('live:','fact:')) for ref in refs) or any(isinstance(item,dict) and self.pending.get(item.get('ref'),{}).get('source') in ('live','catalog') for item in items)
-            live=self._live() if needs_live else None
-            if refs and any(ref.startswith(('live:','fact:')) for ref in refs) and str((live or {}).get('boot',''))[:100]!=self.boot:
-                return dict(valid=False,reason='live_boot_changed')
-            resolved=self._pending_records(refs,live)
-            for item in items:
-                if not isinstance(item,dict) or not isinstance(item.get('ref'),str):
-                    return dict(valid=False,reason='invalid_pending_references')
-                ref=item['ref'];meta=self.pending.get(ref)
-                if ref.startswith('agg:'):
-                    if meta is None or ref not in self.quantities or hashlib.sha256(_json(item).encode()).hexdigest()!=meta.get('fingerprint'):
-                        return dict(valid=False,reason='pending_quantity_changed')
-                    if not meta.get('requires_source',True):continue
-                    if meta.get('source')=='retained' or meta.get('source')=='catalog' and 'retained' in meta.get('sources',[]):
-                        if not current.get('available'):return dict(valid=False,reason='pending_source_unavailable')
-                    if meta.get('source')=='live' or meta.get('source')=='catalog' and 'live' in meta.get('sources',[]):
-                        live=self._live() if live is None else live
-                        floor=live.get('floor_seq',min((e.get('seq',0) for e in live.get('events',[]) if isinstance(e,dict) and type(e.get('seq')) is int),default=0))
-                        if str(live.get('boot',''))[:100]!=self.boot or floor>self.live_floor:
-                            return dict(valid=False,reason='live_evidence_removed')
-                    continue
-                row=resolved.get(ref)
-                if row is None:return dict(valid=False,reason='pending_source_unavailable')
-                # Legacy minimal references must be staged at tool-result creation
-                # to have a baseline; compatibility callers still get existence checks.
-                if meta is not None and _fingerprint(row)!=meta.get('fingerprint'):
-                    return dict(valid=False,reason='pending_evidence_changed')
-            return dict(valid=True,reason='')
-        except (ValueError,TypeError,OSError,sqlite3.Error):
-            return dict(valid=False,reason='pending_source_unavailable')
+        """Pure supply check: qualify movement, but never transmit removed source content."""
+        if not isinstance(results,list) or len(results)>64:return dict(valid=False,reason='invalid_pending_results')
+        items=[]
+        for result in results:
+            if not isinstance(result,dict) or result.get('snapshot',self.snapshot)!=self.snapshot:return dict(valid=False,reason='invalid_pending_results')
+            for field in ('evidence','facts','quantities'):
+                values=result.get(field,[])
+                if not isinstance(values,list):return dict(valid=False,reason='invalid_pending_results')
+                items.extend(values)
+        if len(items)>3200 or any(not isinstance(item,dict) or not isinstance(item.get('ref'),str) for item in items):
+            return dict(valid=False,reason='invalid_pending_references')
+        for item in items:
+            ref=item['ref']
+            if ref.startswith('agg:') and (ref not in self.quantities or hashlib.sha256(_json(item).encode()).hexdigest()!=self.pending.get(ref,{}).get('fingerprint')):
+                return dict(valid=False,reason='pending_quantity_changed')
+        assessment=self.assess_refs([item['ref'] for item in items])
+        removed=any(value['status']=='removed' for value in assessment['refs'].values())
+        tainted=self._archive_tainted(list(self.supplied.values())+[self.pending.get(item['ref'],{}) for item in items])
+        needs_fallback=bool(removed or tainted)
+        return dict(valid=not needs_fallback,reason='archive_input_removed' if needs_fallback else '',needs_fallback=needs_fallback,assessment=assessment,warnings=assessment['warnings'])
 
     def track_refs(self, refs):
         if not isinstance(refs,list) or len(refs)>200:
@@ -874,7 +950,7 @@ class EvidenceSession:
             if row is None:
                 missing.append(ref);continue
             self.supplied[ref]=dict(source=row.get('source','fact'),chat_id=row.get('chat_id',row.get('subject')),
-                                    fingerprint=_fingerprint(row),snapshot=self.snapshot)
+                                    fingerprint=_fingerprint(row),snapshot=self.snapshot,receipt_fingerprint=self._receipt_fingerprint(row))
         if missing:
             self.failure='supplied_evidence_unavailable'
         return not missing
@@ -900,42 +976,21 @@ class EvidenceSession:
                     self._frontier_supplied_count+=1
 
     def validate(self):
-        if self.service.clock()-self.started>300:
-            return dict(valid=False,reason='snapshot_expired')
-        if self.failure:
-            return dict(valid=False,reason=self.failure)
-        state=self._archive_state()
-        used_archive=any(x.get('requires_source',True) and (x.get('source')=='retained' or x.get('source')=='catalog' and 'retained' in x.get('sources',[])) for x in self.supplied.values())
-        if self.fence.get('available') and state.get('available'):
-            if state.get('store')!=self.fence.get('store') or state.get('erasure')!=self.fence.get('erasure'):
-                self.failure='evidence_removed'
-                return dict(valid=False,reason=self.failure)
-        elif used_archive and not state.get('available'):
-            return dict(valid=False,reason='supplied_source_unavailable')
-        live_refs={ref for ref in self.supplied if ref.startswith('live:')}
-        if live_refs:
-            view=self._live()
-            retained={'live:'+self.boot+':'+str(x.get('seq')) for x in view.get('events',[]) if isinstance(x,dict)}
-            if str(view.get('boot',''))[:100]!=self.boot or not live_refs<=retained:
-                self.failure='live_evidence_removed'
-                return dict(valid=False,reason=self.failure)
-        live_quantity = any(ref.startswith('agg:') and meta.get('source') == 'live' and meta.get('requires_source',True) for ref,meta in self.supplied.items())
-        if live_quantity:
-            view=self._live()
-            floor=view.get('floor_seq',min((e.get('seq',0) for e in view.get('events',[]) if isinstance(e,dict) and type(e.get('seq')) is int),default=0))
-            if str(view.get('boot',''))[:100]!=self.boot or floor>self.live_floor:
-                self.failure='live_evidence_removed'
-                return dict(valid=False,reason=self.failure)
-        for ref,meta in self.supplied.items():
-            if ref.startswith('fact:'):
-                row=self.resolve(ref)
-                if row is None or _fingerprint(row)!=meta.get('fingerprint'):
-                    self.failure='current_fact_changed'
-                    return dict(valid=False,reason=self.failure)
-        return dict(valid=True,reason='')
+        assessment=self.assess_refs(list(self.supplied))
+        removed=any(item['status']=='removed' for item in assessment['refs'].values())
+        needs_fallback=bool(removed or self._archive_tainted(self.supplied.values()))
+        return dict(valid=not needs_fallback,reason='archive_input_removed' if needs_fallback else '',needs_fallback=needs_fallback,
+                    assessment=assessment,warnings=assessment['warnings'])
+
+    def archive_input_generation(self, refs=None, include_pending=False):
+        metadata=list(self.supplied.values()) if refs is None else [self.supplied.get(ref) or self.pending.get(ref) or {} for ref in refs]
+        if include_pending:metadata+=list(self.pending.values())
+        return min((item.get('archive_generation',self.generation()['erasure']) for item in metadata
+                    if self._used_archive([item]) and item.get('archive_generation',self.generation()['erasure']) is not None),default=None)
 
     def receipt(self):
-        return dict(snapshot=self.snapshot,generation=self.generation(),refs=sorted(self.supplied),
+        return dict(snapshot=self.snapshot,generation=self.generation(),observed_at=self.observed_at,refs=sorted(self.supplied),
+                    archive_input_generation=self.archive_input_generation(),archive_used=self._used_archive(self.supplied.values()),
                     reference_fingerprints={ref:meta.get('fingerprint') for ref,meta in self.supplied.items()},
                     live_cutoff=self.live_cutoff,live_floor=self.live_floor,archive_fence=self.fence.get('fence'),
                     queries=copy.deepcopy(self.queries),work_rows=self.work,

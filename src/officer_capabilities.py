@@ -273,7 +273,8 @@ def sign_receipt(text, metadata, generation, boot):
     return {'payload': payload, 'signature': hmac.new(RECEIPT_KEY, raw, hashlib.sha256).hexdigest()}
 
 
-def verify_receipt(receipt, text, generation, boot):
+def authenticate_receipt(receipt, text, boot):
+    """Authenticate lineage separately from current source availability or freshness."""
     try:
         if not isinstance(receipt, dict) or set(receipt) != {'payload', 'signature'}:
             return False
@@ -282,10 +283,14 @@ def verify_receipt(receipt, text, generation, boot):
         return (len(raw) <= 24000 and isinstance(signature, str) and len(signature) == 64
                 and hmac.compare_digest(signature, hmac.new(RECEIPT_KEY, raw, hashlib.sha256).hexdigest())
                 and payload.get('version') == 1 and payload.get('boot') == str(boot)
-                and payload.get('answer') == hashlib.sha256(text.encode()).hexdigest()
-                and payload.get('generation') == generation)
+                and payload.get('answer') == hashlib.sha256(text.encode()).hexdigest())
     except (ValueError, TypeError, AttributeError, UnicodeError):
         return False
+
+
+def verify_receipt(receipt, text, generation, boot):
+    """Strict compatibility check; source assessment may qualify a genuine older snapshot."""
+    return authenticate_receipt(receipt, text, boot) and receipt['payload'].get('generation') == generation
 
 
 def receipt_refs(receipt):
