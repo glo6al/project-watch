@@ -28,7 +28,7 @@ The first product priority is dependable access to existing sessions across tool
 
 - Improve session discovery and navigation across providers and projects, with a clear distinction between a session, its child agents, and other sessions sharing a folder.
 - Make recorded-history coverage and unavailable content understandable before someone mistakes a partial transcript for the full conversation.
-- Extend dependable session discovery and return around the optional Deck Log: durable, searchable selected history from supported native logs while WATCH runs, with source citations, explicit coverage, opt-in recording, and retention/deletion controls. Full-account and historical-log imports remain outside the shipped scope.
+- Give the Officer durable, searchable memory from supported native logs while WATCH runs, with source citations, explicit coverage, opt-in recording, and retention/deletion controls. Historical questions belong in the normal Officer conversation; the memory UI is limited to settings and inspecting a cited source. Full-account and historical-log imports remain outside the shipped scope.
 
 **Completion criterion:** a user can identify the intended supported session, see where it comes from and how much history is available, and return to it without confusing it with another conversation. Any new storage needs explicit retention and privacy rules.
 
