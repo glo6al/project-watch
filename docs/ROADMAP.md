@@ -97,7 +97,7 @@ These run alongside the product priorities; broader messaging support does not r
 ## Longer-term ideas
 
 - A visible record of a correction reaching a session and the work that followed it.
-- A rough running cost estimate where usage and pricing inputs are available.
+- Fleet-wide running cost estimates where reliable cumulative usage and pricing inputs are available. Officer-only API accounting is separate; native context-window snapshots must not be presented as billable usage or subscription charges.
 - A room overview that uses portrait-screen height more effectively.
 - Broader transcript fixtures and provider compatibility checks.
 

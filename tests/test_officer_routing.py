@@ -134,7 +134,8 @@ class RoutingTests(unittest.TestCase):
             control.assert_called_once_with('steer', self.aid, 'focus on tests', self.rid, dict(server.AGENTS))
             server.AGENTS.clear()
             replay = server.officer_dispatch('Steer Aster now: focus on tests', self.rid, lambda *a,**k:self.fail('replanned'))
-            self.assertEqual(replay, result)
+            self.assertEqual(replay, {key: value for key, value in result.items()
+                                      if key not in ('model', 'job', 'usage_tracking')})
         self.assertFalse(self.store.snapshot()['requests'])
 
     def test_control_tools_unavailable_to_log_loop(self):
@@ -308,7 +309,13 @@ class ContextTests(unittest.TestCase):
         turns = [{'role': 'assistant', 'content': 'HISTORICAL SECRET', 'context': {'scope': 'station', 'agent': self.aid, 'name': 'Historical'}}] + self.turns
         with patch.object(server, 'officer_dispatch', return_value=None) as dispatch:
             server.officer_ask(turns, call=self.model, request_id='request', context={'scope': 'station', 'agent': self.aid})
-            dispatch.assert_called_once_with(self.turns[-1]['content'], 'request', self.model, model_snapshot=(server.OFFICER_MODEL, False))
+            dispatch.assert_called_once()
+            args, kwargs = dispatch.call_args
+            self.assertEqual(args[:2], (self.turns[-1]['content'], 'request'))
+            self.assertTrue(callable(args[2]))  # Accounting observes this transport without changing its input.
+            self.assertEqual(kwargs['model_snapshot'], server.officer_model_snapshot())
+            self.assertNotEqual(kwargs['model_snapshot'][0], server.AUTOMATIC)
+            self.assertEqual(set(kwargs), {'model_snapshot', 'route_output'})
         # Even a model that tries to substitute the selected name is rejected by the existing dispatcher.
         def relay(body, **kwargs):
             self.assertEqual(body['messages'], [{'role': 'user', 'content': 'Ask it for progress'}])

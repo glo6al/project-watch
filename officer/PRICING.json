@@ -1,0 +1,12 @@
+{
+  "schema_version": 1,
+  "verified_date": "2026-11-11",
+  "source": "https://platform.claude.com/docs/en/about-claude/pricing",
+  "currency": "USD",
+  "per_tokens": 1000000,
+  "models": {
+    "claude-haiku-5-5": {"input": "0.10", "output": "0.50", "cache_5m": "0.125", "cache_1h": "0.20", "cache_read": "0.01", "max_total_input_tokens": 100000},
+    "claude-sonnet-5-5": {"input": "2", "output": "10", "cache_5m": "2.5", "cache_1h": "4", "cache_read": "0.1", "max_total_input_tokens": null},
+    "claude-opus-5-5": {"input": "4", "output": "20", "cache_5m": "5", "cache_1h": "8", "cache_read": "0.2", "max_total_input_tokens": null}
+  }
+}
