@@ -386,10 +386,22 @@ class DeckTests(unittest.TestCase):
         # ACE; older Python inherits the parent ACL.
         os.mkdir(existing, 0o700)
         os.chmod(existing, 0o700)
-        # Surface the failing validation gate without logging paths or SIDs.
-        d._windows_security(existing, True)
+        # Elevated Windows tokens can create a directory owned by the
+        # Administrators group. Determine the owner independently of the
+        # validator so refusal remains a tested requirement in that case.
+        user_owned = self.windows_owned_by_current_user(existing)
+        if user_owned:
+            d._windows_security(existing, True)
+        else:
+            with self.assertRaisesRegex(OSError, '^nonprivate storage owner$'):
+                d._windows_security(existing, True)
         archive = d.DeckLog(existing)
         try:
+            if not user_owned:
+                self.assertFalse(archive.available)
+                self.assertEqual(archive.reason, 'private_storage_unavailable')
+                self.assertFalse(os.path.exists(archive.path))
+                return
             self.assertTrue(archive.available, archive.reason)
             epoch = archive.configure(enabled=True)['capture_epoch']
             self.assertTrue(archive.activate(epoch)['recording'])
@@ -401,6 +413,46 @@ class DeckTests(unittest.TestCase):
             self.assertEqual(archive.search()['events'][0]['text'], 'existing directory evidence')
         finally:
             archive.close()
+
+    def windows_owned_by_current_user(self, path):
+        """Independent native ownership probe; never emit paths or SID values."""
+        import ctypes
+        from ctypes import wintypes as w
+        adv = ctypes.WinDLL('advapi32', use_last_error=True)
+        kernel = ctypes.WinDLL('kernel32', use_last_error=True)
+        adv.OpenProcessToken.argtypes = [w.HANDLE, w.DWORD, ctypes.POINTER(w.HANDLE)]
+        adv.OpenProcessToken.restype = w.BOOL
+        adv.GetTokenInformation.argtypes = [w.HANDLE, ctypes.c_int, w.LPVOID, w.DWORD, ctypes.POINTER(w.DWORD)]
+        adv.GetTokenInformation.restype = w.BOOL
+        adv.GetNamedSecurityInfoW.argtypes = [w.LPWSTR, ctypes.c_int, w.DWORD, ctypes.POINTER(w.LPVOID), ctypes.POINTER(w.LPVOID), ctypes.POINTER(w.LPVOID), ctypes.POINTER(w.LPVOID), ctypes.POINTER(w.LPVOID)]
+        adv.GetNamedSecurityInfoW.restype = w.DWORD
+        adv.EqualSid.argtypes = [w.LPVOID, w.LPVOID]
+        adv.EqualSid.restype = w.BOOL
+        kernel.GetCurrentProcess.restype = w.HANDLE
+        kernel.CloseHandle.argtypes = [w.HANDLE]
+        kernel.CloseHandle.restype = w.BOOL
+        kernel.LocalFree.argtypes = [w.LPVOID]
+        kernel.LocalFree.restype = w.LPVOID
+        token, needed = w.HANDLE(), w.DWORD()
+        owner, descriptor = w.LPVOID(), w.LPVOID()
+        self.assertTrue(adv.OpenProcessToken(kernel.GetCurrentProcess(), 8, ctypes.byref(token)))
+        self.assertTrue(token)
+        try:
+            self.assertFalse(adv.GetTokenInformation(token, 1, None, 0, ctypes.byref(needed)))
+            self.assertEqual(ctypes.get_last_error(), 122)  # ERROR_INSUFFICIENT_BUFFER
+            self.assertGreater(needed.value, 0)
+            buffer = ctypes.create_string_buffer(needed.value)
+            self.assertTrue(adv.GetTokenInformation(token, 1, buffer, needed, ctypes.byref(needed)))
+            user_sid = ctypes.cast(buffer, ctypes.POINTER(w.LPVOID))[0]
+            self.assertTrue(user_sid)
+            self.assertEqual(adv.GetNamedSecurityInfoW(path, 1, 1, ctypes.byref(owner), None, None, None, ctypes.byref(descriptor)), 0)
+            self.assertTrue(owner)
+            self.assertTrue(descriptor)
+            return bool(adv.EqualSid(owner, user_sid))
+        finally:
+            if descriptor:
+                kernel.LocalFree(descriptor)
+            kernel.CloseHandle(token)
 
     def set_windows_dacl(self, path, sddl):
         import ctypes
@@ -427,12 +479,18 @@ class DeckTests(unittest.TestCase):
         # process token's default owner, which can be Administrators.
         d._windows_security(existing, True, True)
         self.set_windows_dacl(existing, 'D:P(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)(A;OICI;FA;;;OW)')
+        self.assertTrue(self.windows_owned_by_current_user(existing))
         archive = d.DeckLog(existing)
         try:
             self.assertTrue(archive.available, archive.reason)
             epoch = archive.configure(enabled=True)['capture_epoch']
             self.assertTrue(archive.activate(epoch)['recording'])
             d._windows_security(archive.path)
+            record = self.record(ts=time.time())
+            result = archive.offer_record(record, [self.prose('owner rights evidence')], capture_epoch=epoch)
+            self.assertEqual(result['status'], 'queued', result)
+            self.assertTrue(archive.flush())
+            self.assertEqual(archive.search()['events'][0]['text'], 'owner rights evidence')
         finally:
             archive.close()
 
