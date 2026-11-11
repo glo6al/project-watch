@@ -145,7 +145,9 @@ def _windows_security(path, directory=False, create=False):
             raise OSError('private storage unavailable')
         try:
             control, revision = w.WORD(), w.DWORD()
-            if not adv.EqualSid(owner, user_sid) or not dacl or not adv.GetSecurityDescriptorControl(sd, ctypes.byref(control), ctypes.byref(revision)) or (not directory and not control.value & 0x1000):
+            if not adv.EqualSid(owner, user_sid):
+                raise OSError('nonprivate storage owner')
+            if not dacl or not adv.GetSecurityDescriptorControl(sd, ctypes.byref(control), ctypes.byref(revision)) or (not directory and not control.value & 0x1000):
                 raise OSError('private storage unavailable')
             class ACLINFO(ctypes.Structure):
                 _fields_ = [('count', w.DWORD), ('used', w.DWORD), ('free', w.DWORD)]
@@ -164,7 +166,10 @@ def _windows_security(path, directory=False, create=False):
                 if not adv.ConvertSidToStringSidW(ace_sid, ctypes.byref(value)):
                     raise OSError('private storage unavailable')
                 try:
-                    if not adv.EqualSid(ace_sid, user_sid) and value.value not in (('S-1-5-18', 'S-1-5-32-544') if directory else ('S-1-5-18',)):
+                    # Python's private mkdir DACL uses OWNER RIGHTS (S-1-3-4).
+                    # It names this user because the owner was checked above.
+                    allowed = ('S-1-5-18', 'S-1-5-32-544', 'S-1-3-4') if directory else ('S-1-5-18',)
+                    if not adv.EqualSid(ace_sid, user_sid) and value.value not in allowed:
                         raise OSError('private storage unavailable')
                 finally:
                     kernel.LocalFree(value)

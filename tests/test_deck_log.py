@@ -382,10 +382,51 @@ class DeckTests(unittest.TestCase):
     @unittest.skipUnless(os.name == 'nt', 'requires real Windows inherited ACLs')
     def test_windows_existing_state_directory_matches_server_creation(self):
         existing = os.path.join(os.path.realpath(self.temp.name), 'existing-state')
-        # The server creates its shared state directory with this exact mode;
-        # on older Python/Windows its effective private ACL is inherited.
+        # The server uses this exact mode. Recent Python uses an OWNER RIGHTS
+        # ACE; older Python inherits the parent ACL.
         os.mkdir(existing, 0o700)
         os.chmod(existing, 0o700)
+        # Surface the failing validation gate without logging paths or SIDs.
+        d._windows_security(existing, True)
+        archive = d.DeckLog(existing)
+        try:
+            self.assertTrue(archive.available, archive.reason)
+            epoch = archive.configure(enabled=True)['capture_epoch']
+            self.assertTrue(archive.activate(epoch)['recording'])
+            d._windows_security(archive.path)
+            record = self.record(ts=time.time())
+            result = archive.offer_record(record, [self.prose('existing directory evidence')], capture_epoch=epoch)
+            self.assertEqual(result['status'], 'queued', result)
+            self.assertTrue(archive.flush())
+            self.assertEqual(archive.search()['events'][0]['text'], 'existing directory evidence')
+        finally:
+            archive.close()
+
+    def set_windows_dacl(self, path, sddl):
+        import ctypes
+        from ctypes import wintypes as w
+        adv = ctypes.WinDLL('advapi32', use_last_error=True)
+        kernel = ctypes.WinDLL('kernel32', use_last_error=True)
+        descriptor, dacl = w.LPVOID(), w.LPVOID()
+        present, defaulted = w.BOOL(), w.BOOL()
+        adv.ConvertStringSecurityDescriptorToSecurityDescriptorW.argtypes = [w.LPCWSTR, w.DWORD, ctypes.POINTER(w.LPVOID), ctypes.POINTER(w.DWORD)]
+        adv.GetSecurityDescriptorDacl.argtypes = [w.LPVOID, ctypes.POINTER(w.BOOL), ctypes.POINTER(w.LPVOID), ctypes.POINTER(w.BOOL)]
+        adv.SetNamedSecurityInfoW.argtypes = [w.LPWSTR, ctypes.c_int, w.DWORD, w.LPVOID, w.LPVOID, w.LPVOID, w.LPVOID]
+        kernel.LocalFree.argtypes = [w.LPVOID]
+        self.assertTrue(adv.ConvertStringSecurityDescriptorToSecurityDescriptorW(sddl, 1, ctypes.byref(descriptor), None))
+        try:
+            self.assertTrue(adv.GetSecurityDescriptorDacl(descriptor, ctypes.byref(present), ctypes.byref(dacl), ctypes.byref(defaulted)))
+            self.assertEqual(adv.SetNamedSecurityInfoW(path, 1, 0x80000004, None, None, dacl, None), 0)
+        finally:
+            kernel.LocalFree(descriptor)
+
+    @unittest.skipUnless(os.name == 'nt', 'requires real Windows OWNER RIGHTS ACLs')
+    def test_windows_owner_rights_directory_is_private(self):
+        existing = os.path.join(os.path.realpath(self.temp.name), 'owner-rights-state')
+        # Explicit user ownership makes this independent of an elevated
+        # process token's default owner, which can be Administrators.
+        d._windows_security(existing, True, True)
+        self.set_windows_dacl(existing, 'D:P(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)(A;OICI;FA;;;OW)')
         archive = d.DeckLog(existing)
         try:
             self.assertTrue(archive.available, archive.reason)
@@ -396,24 +437,35 @@ class DeckTests(unittest.TestCase):
             archive.close()
 
     @unittest.skipUnless(os.name == 'nt', 'requires real Windows unsafe DACL rejection')
-    def test_windows_world_readable_archive_is_rejected(self):
-        import ctypes
-        from ctypes import wintypes as w
+    def test_windows_broad_directory_trustees_are_rejected(self):
+        for trustee in ('WD', 'BU', 'AU'):
+            with self.subTest(trustee=trustee):
+                existing = os.path.join(os.path.realpath(self.temp.name), 'unsafe-state-' + trustee)
+                d._windows_security(existing, True, True)
+                self.set_windows_dacl(existing, 'D:P(A;OICI;FA;;;SY)(A;OICI;FA;;;OW)(A;OICI;FA;;;%s)' % trustee)
+                archive = d.DeckLog(existing)
+                try:
+                    self.assertFalse(archive.available)
+                    self.assertEqual(archive.reason, 'private_storage_unavailable')
+                    self.assertFalse(os.path.exists(archive.path))
+                finally:
+                    archive.close()
+
+    @unittest.skipUnless(os.name == 'nt', 'requires real Windows unsafe DACL rejection')
+    def test_windows_owner_rights_archive_is_rejected(self):
         self.store.close()
-        adv = ctypes.WinDLL('advapi32', use_last_error=True)
-        kernel = ctypes.WinDLL('kernel32', use_last_error=True)
-        descriptor, dacl = w.LPVOID(), w.LPVOID()
-        present, defaulted = w.BOOL(), w.BOOL()
-        adv.ConvertStringSecurityDescriptorToSecurityDescriptorW.argtypes = [w.LPCWSTR, w.DWORD, ctypes.POINTER(w.LPVOID), ctypes.POINTER(w.DWORD)]
-        adv.GetSecurityDescriptorDacl.argtypes = [w.LPVOID, ctypes.POINTER(w.BOOL), ctypes.POINTER(w.LPVOID), ctypes.POINTER(w.BOOL)]
-        adv.SetNamedSecurityInfoW.argtypes = [w.LPWSTR, ctypes.c_int, w.DWORD, w.LPVOID, w.LPVOID, w.LPVOID, w.LPVOID]
-        kernel.LocalFree.argtypes = [w.LPVOID]
-        self.assertTrue(adv.ConvertStringSecurityDescriptorToSecurityDescriptorW('D:P(A;;FA;;;WD)', 1, ctypes.byref(descriptor), None))
+        self.set_windows_dacl(self.store.path, 'D:P(A;;FA;;;SY)(A;;FA;;;OW)')
+        denied = d.DeckLog(self.root)
         try:
-            self.assertTrue(adv.GetSecurityDescriptorDacl(descriptor, ctypes.byref(present), ctypes.byref(dacl), ctypes.byref(defaulted)))
-            self.assertEqual(adv.SetNamedSecurityInfoW(self.store.path, 1, 0x80000004, None, None, dacl, None), 0)
+            self.assertFalse(denied.available)
+            self.assertEqual(denied.reason, 'private_storage_unavailable')
         finally:
-            kernel.LocalFree(descriptor)
+            denied.close()
+
+    @unittest.skipUnless(os.name == 'nt', 'requires real Windows unsafe DACL rejection')
+    def test_windows_world_readable_archive_is_rejected(self):
+        self.store.close()
+        self.set_windows_dacl(self.store.path, 'D:P(A;;FA;;;WD)')
         denied = d.DeckLog(self.root)
         self.assertFalse(denied.available)
         self.assertEqual(denied.reason, 'private_storage_unavailable')
