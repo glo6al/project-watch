@@ -3416,7 +3416,7 @@ def officer_models_view(models=None, error=''):
     with OFFICER_LOCK:
         selected = OFFICER_MODEL
         known = OFFICER_CATALOG['models'] if OFFICER_CATALOG['key'] == officer_model_key() else []
-        name = 'Automatic by job' if selected == AUTOMATIC else next((m['display_name'] for m in known if m['id'] == selected), selected)
+        name = 'Auto' if selected == AUTOMATIC else next((m['display_name'] for m in known if m['id'] == selected), selected)
         error = error or OFFICER_MODEL_ERROR
         selectable = models is not None and any(m['id'] == selected for m in models)
         if selected == AUTOMATIC:
@@ -3430,7 +3430,7 @@ def officer_models_view(models=None, error=''):
             error = error or 'The selected Officer model is unavailable. Choose an available model.'
         choices = [{'id': m['id'], 'display_name': m['display_name']} for m in models or []]
         if models is not None:
-            choices.append({'id': AUTOMATIC, 'display_name': 'Automatic by job'})
+            choices.append({'id': AUTOMATIC, 'display_name': 'Auto'})
         out = {'available': models is not None, 'complete': models is not None,
                'selection_available': selectable and not OFFICER_MODEL_ERROR,
                'models': choices, 'selected_model': selected, 'selected_name': name}

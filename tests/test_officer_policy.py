@@ -173,7 +173,7 @@ class RoutingPolicyTests(unittest.TestCase):
             self.assertEqual(result['error'], policy.POLICY_ERROR)
             view = server.officer_models_view(server.OFFICER_CATALOG['models'])
             self.assertFalse(view['selection_available'])
-            self.assertIn({'id': policy.AUTOMATIC, 'display_name': 'Automatic by job'}, view['models'])
+            self.assertIn({'id': policy.AUTOMATIC, 'display_name': 'Auto'}, view['models'])
             server.OFFICER_MODEL = 'claude-fictional-manual'
             self.assertEqual(server.officer_model_snapshot()[0], 'claude-fictional-manual')
 
@@ -239,7 +239,7 @@ class RoutingPolicyTests(unittest.TestCase):
         self.assertEqual(status, 200)
         save.assert_called_once_with(policy.AUTOMATIC)
         self.assertEqual(view['selected_model'], policy.AUTOMATIC)
-        self.assertEqual(view['selected_name'], 'Automatic by job')
+        self.assertEqual(view['selected_name'], 'Auto')
         self.assertEqual(sum(row['id'] == policy.AUTOMATIC for row in view['models']), 1)
         self.assertNotIn(policy.AUTOMATIC, [row['id'] for row in server.OFFICER_CATALOG['models']])
         server.OFFICER_CATALOG['models'] = [row for row in models if row['id'] != 'claude-sonnet-5-5']
