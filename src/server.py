@@ -2709,6 +2709,11 @@ class CloudExec:
 # did. The feature is off, with the reason shown in the drawer, unless the key file passes every check. Not offered
 # on Windows yet: the key file's permissions cannot be checked there the same way.
 OFFICER_MODEL = 'claude-haiku-5-5'
+OFFICER_MODEL_ERROR = ''
+OFFICER_CATALOG = {'key': '', 'at': 0, 'models': []}
+OFFICER_CATALOG_LOCK = threading.Lock()
+OFFICER_CATALOG_TTL, OFFICER_CATALOG_PAGES, OFFICER_CATALOG_MAX = 300, 20, 2000
+OFFICER_MODEL_ID = re.compile(r'[A-Za-z0-9][A-Za-z0-9._:-]{0,199}\Z')
 OFFICER_KEY, OFFICER_WHY = '', 'not started'
 OFFICER_LOCK = threading.Lock()
 OFFICER_ASKS = []                            # times of recent asks: at most OFFICER_RATE a minute, whatever the page sends
@@ -3194,21 +3199,22 @@ def api_connection(timeout):
 CONNECT = api_connection
 
 
-def anthropic_call(body, end=None):
+def anthropic_request(method, path, body=None, end=None):
     """One request to the Messages API. The key goes in a header and nowhere else; an error comes back as fixed
     words chosen by the status code, never as text the API sent. `end` is an absolute time.monotonic() deadline: the
     request runs on its own thread; at the deadline the ask fails, the connection is shut from this side so the
     thread's read ends, and the thread stays counted until it does. A 3xx is refused like any other non-200 status,
     since nothing here follows redirects."""
     end = end or time.monotonic() + 60
+    key = OFFICER_KEY
     left = lambda: end - time.monotonic()
     out, conn = {}, {}
 
     def go():
         try:
             c = conn['c'] = CONNECT(max(1, min(60, left())))
-            c.request('POST', '/v1/messages', json.dumps(body).encode(),
-                      {'Content-Type': 'application/json', 'x-api-key': OFFICER_KEY, 'anthropic-version': '2023-06-01', 'Accept': 'application/json'})
+            c.request(method, path, json.dumps(body).encode() if body is not None else None,
+                      {'Content-Type': 'application/json', 'x-api-key': key, 'anthropic-version': '2023-06-01', 'Accept': 'application/json'})
             conn['sock'] = c.sock              # kept here: a Connection: close answer detaches it from the connection object
             r = conn['r'] = c.getresponse()
             if r.status != 200:
@@ -3270,6 +3276,203 @@ def anthropic_call(body, end=None):
     return (out.get('resp'), '') if 'resp' in out else (None, out.get('err') or 'the API gave no answer')
 
 
+def anthropic_call(body, end=None):
+    return anthropic_request('POST', '/v1/messages', body, end=end)
+
+
+def officer_model_path():
+    return os.path.join(HOME, '.live-room', 'officer-model.json')
+
+
+def officer_private_model_file(path, create=False):
+    """Selection shares the existing POSIX-only Officer key privacy boundary."""
+    import stat as st
+    if WIN:
+        raise OSError('Officer settings unavailable')
+    directory = os.path.dirname(path)
+    if create and not os.path.lexists(directory):
+        os.mkdir(directory, 0o700)
+    parent = os.lstat(directory)
+    if not st.S_ISDIR(parent.st_mode) or st.S_ISLNK(parent.st_mode) or parent.st_uid != os.getuid() or parent.st_mode & 0o077:
+        raise OSError('Officer settings unavailable')
+    if os.path.lexists(path):
+        current = os.lstat(path)
+        if not st.S_ISREG(current.st_mode) or current.st_uid != os.getuid() or current.st_mode & 0o077 or current.st_nlink != 1:
+            raise OSError('Officer settings unavailable')
+
+
+def load_officer_model():
+    """Load a choice without network I/O; missing file means the original default."""
+    global OFFICER_MODEL, OFFICER_MODEL_ERROR
+    path = officer_model_path()
+    OFFICER_MODEL_ERROR = ''
+    if not os.path.lexists(path):
+        return
+    try:
+        officer_private_model_file(path)
+        fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+        try:
+            import stat as st
+            info = os.fstat(fd)
+            if not st.S_ISREG(info.st_mode) or info.st_uid != os.getuid() or info.st_mode & 0o077 or info.st_nlink != 1 or info.st_size > 4096:
+                raise ValueError()
+            value = json.loads(os.read(fd, 4097).decode('utf-8'))
+        finally:
+            os.close(fd)
+        if not isinstance(value, dict) or set(value) != {'model'} or not isinstance(value['model'], str) or not OFFICER_MODEL_ID.fullmatch(value['model']) or KEY_SHAPE_S.search(value['model']) or (OFFICER_KEY and OFFICER_KEY in value['model']):
+            raise ValueError()
+        OFFICER_MODEL = value['model']
+    except (OSError, ValueError, UnicodeError):
+        OFFICER_MODEL_ERROR = 'Saved Officer model settings are unavailable. Nothing was changed.'
+
+
+def officer_model_key():
+    return hashlib.sha256(OFFICER_KEY.encode()).hexdigest()
+
+
+def officer_catalog(force=False):
+    """Complete account catalog only; bounded pagination, no redirects or raw errors."""
+    if not OFFICER_KEY:
+        return None, 'The Officer API connection is unavailable.'
+    key = officer_model_key()
+    with OFFICER_LOCK:
+        if not force and OFFICER_CATALOG['key'] == key and time.monotonic() - OFFICER_CATALOG['at'] < OFFICER_CATALOG_TTL:
+            return list(OFFICER_CATALOG['models']), ''
+    if not OFFICER_CATALOG_LOCK.acquire(timeout=1):
+        return None, 'The Officer model list is still loading. Try again.'
+    try:
+        # Another request may have filled the cache while this request waited.
+        with OFFICER_LOCK:
+            if not force and OFFICER_CATALOG['key'] == key and time.monotonic() - OFFICER_CATALOG['at'] < OFFICER_CATALOG_TTL:
+                return list(OFFICER_CATALOG['models']), ''
+        deadline = time.monotonic() + 15
+        models, seen, cursors = [], set(), set()
+        cursor = None
+        for _ in range(OFFICER_CATALOG_PAGES):
+            query = {'limit': 100}
+            if cursor is not None:
+                query['after_id'] = cursor
+            response, error = anthropic_request('GET', '/v1/models?' + urllib.parse.urlencode(query), end=deadline)
+            if error:
+                return None, 'The Officer model list could not be loaded. Try again.'
+            if not isinstance(response, dict) or not isinstance(response.get('data'), list) or type(response.get('has_more')) is not bool:
+                return None, 'The API returned an invalid Officer model list.'
+            for item in response['data']:
+                if not isinstance(item, dict):
+                    return None, 'The API returned an invalid Officer model list.'
+                model, name = item.get('id'), item.get('display_name')
+                if not isinstance(model, str) or not OFFICER_MODEL_ID.fullmatch(model) or KEY_SHAPE_S.search(model) or OFFICER_KEY in model or not isinstance(name, str) or not name.strip() or len(name) > 200 or any(ord(c) < 32 for c in name) or KEY_SHAPE_S.search(name) or OFFICER_KEY in name:
+                    return None, 'The API returned an invalid Officer model list.'
+                name.encode('utf-8')
+                if model in seen:
+                    return None, 'The API returned an invalid Officer model list.'
+                seen.add(model)
+                caps = item.get('capabilities')
+                effort = caps.get('effort') if isinstance(caps, dict) else None
+                low = effort.get('low') if isinstance(effort, dict) else None
+                supported = isinstance(low, dict) and low.get('supported') is True and effort.get('supported') is not False
+                models.append({'id': model, 'display_name': name, 'low_effort': supported})
+                if len(models) > OFFICER_CATALOG_MAX:
+                    return None, 'The Officer model list exceeded its safe limit; no complete list is available.'
+            if not response['has_more']:
+                if officer_model_key() != key:
+                    return None, 'The Officer API connection changed. Reload the model list.'
+                with OFFICER_LOCK:
+                    OFFICER_CATALOG.update(key=key, at=time.monotonic(), models=models)
+                return list(models), ''
+            next_cursor = response.get('last_id')
+            if not response['data'] or not isinstance(next_cursor, str) or not OFFICER_MODEL_ID.fullmatch(next_cursor) or next_cursor in cursors or next_cursor != response['data'][-1]['id']:
+                return None, 'The API returned an invalid Officer model list.'
+            cursors.add(next_cursor)
+            cursor = next_cursor
+        return None, 'The Officer model list exceeded its safe limit; no complete list is available.'
+    except (OSError, ValueError, UnicodeError, TypeError):
+        return None, 'The Officer model list could not be loaded. Try again.'
+    finally:
+        OFFICER_CATALOG_LOCK.release()
+
+
+def officer_models_view(models=None, error=''):
+    with OFFICER_LOCK:
+        selected = OFFICER_MODEL
+        known = OFFICER_CATALOG['models'] if OFFICER_CATALOG['key'] == officer_model_key() else []
+        name = next((m['display_name'] for m in known if m['id'] == selected), selected)
+        error = error or OFFICER_MODEL_ERROR
+        if models is not None and not any(m['id'] == selected for m in models):
+            error = error or 'The selected Officer model is unavailable. Choose an available model.'
+        out = {'available': models is not None, 'complete': models is not None,
+               'selection_available': models is not None and not OFFICER_MODEL_ERROR and any(m['id'] == selected for m in models),
+               'models': [{'id': m['id'], 'display_name': m['display_name']} for m in models or []],
+               'selected_model': selected, 'selected_name': name}
+        if error:
+            out['error'] = error
+        return out
+
+
+def save_officer_model(model):
+    """Publish a private atomic selection file; no active state changes here."""
+    import tempfile
+    temporary = None
+    try:
+        path = officer_model_path()
+        officer_private_model_file(path, create=True)
+        fd, temporary = tempfile.mkstemp(prefix='.officer-model-', dir=os.path.dirname(path))
+        try:
+            os.fchmod(fd, 0o600)
+            with os.fdopen(fd, 'w', encoding='utf-8') as out:
+                json.dump({'model': model}, out)
+                out.flush()
+                os.fsync(out.fileno())
+        except BaseException:
+            try:
+                os.close(fd)
+            except OSError:
+                pass
+            raise
+        officer_private_model_file(path)
+        os.replace(temporary, path)
+        temporary = None
+    finally:
+        if temporary:
+            try:
+                os.unlink(temporary)
+            except OSError:
+                pass
+
+
+def select_officer_model(model):
+    """Persist first, publish second. No failed selection can change the active choice."""
+    global OFFICER_MODEL, OFFICER_MODEL_ERROR
+    models, error = officer_catalog()
+    if models is None:
+        return 503, officer_models_view(error=error)
+    if not isinstance(model, str) or not any(item['id'] == model for item in models):
+        return 400, officer_models_view(models, 'Choose a model from the available Officer model list.')
+    try:
+        with OFFICER_LOCK:
+            save_officer_model(model)
+            OFFICER_MODEL = model
+            OFFICER_MODEL_ERROR = ''
+        return 200, officer_models_view(models)
+    except OSError:
+        return 503, officer_models_view(models, 'The Officer model choice could not be saved. Nothing was changed.')
+
+
+def officer_model_snapshot():
+    with OFFICER_LOCK:
+        if OFFICER_MODEL_ERROR:
+            raise ValueError(OFFICER_MODEL_ERROR)
+        rows = OFFICER_CATALOG['models'] if OFFICER_CATALOG['key'] == officer_model_key() else None
+        selected = next((row for row in rows or [] if row['id'] == OFFICER_MODEL), None)
+        if rows is not None and not selected:
+            raise ValueError('The selected Officer model is unavailable. Choose an available model.')
+        return (OFFICER_MODEL, bool(selected and selected['low_effort']))
+
+
+def officer_request_options(snapshot):
+    return {'model': snapshot[0], **({'output_config': {'effort': 'low'}} if snapshot[1] else {})}
+
+
 DISPATCH_SYSTEM = """Interpret only the current owner's message. You cannot read logs or previous conversation.
 Choose the action by the owner's intended effect and timing, not the introductory verb ask, tell, or message.
 Use interrupt_agent for an explicit request to stop, pause, halt, or interrupt a named agent's current work.
@@ -3305,7 +3508,7 @@ DISPATCH_TOOLS = [
 ]
 
 
-def officer_dispatch(user_text, request_id, call):
+def officer_dispatch(user_text, request_id, call, model_snapshot=None):
     """Persist intent before submission. No registry text, logs or conversation enter this call.
 
     Natural-language intent is interpreted by the model, not proven by a parser. Its only
@@ -3315,10 +3518,11 @@ def officer_dispatch(user_text, request_id, call):
     if not valid_uuid(request_id):
         return {'error': 'The request identifier is invalid. Nothing was sent.'}
     try:
+        model_snapshot = model_snapshot or officer_model_snapshot()
         decision = MESSAGING.claim_ask(request_id, user_text) if MESSAGING else None
         if decision is None:
-            response, error = call({'model': OFFICER_MODEL, 'max_tokens': 1200, 'system': DISPATCH_SYSTEM,
-                                    'tools': DISPATCH_TOOLS, 'output_config': {'effort': 'low'},
+            response, error = call({**officer_request_options(model_snapshot), 'max_tokens': 1200, 'system': DISPATCH_SYSTEM,
+                                    'tools': DISPATCH_TOOLS,
                                     'messages': [{'role': 'user', 'content': user_text}]},
                                    end=time.monotonic() + 30)
             decision = {'kind': 'none'}
@@ -3461,14 +3665,18 @@ def officer_ask(turns, call=anthropic_call, request_id=None, context=OFFICER_CON
         return {'error': str(e), 'context_unavailable': True}
     except ValueError as e:
         return {'error': str(e)}
+    try:
+        model_snapshot = officer_model_snapshot()
+    except ValueError as error:
+        return {'error': str(error)}
     if request_id is not None:
-        routed = officer_dispatch(turns[-1]['content'], request_id, call)
+        routed = officer_dispatch(turns[-1]['content'], request_id, call, model_snapshot=model_snapshot)
         if routed is not None:
             return scrub(routed)
-    return scrub(officer_exchange(turns, call, context=context))
+    return scrub(officer_exchange(turns, call, context=context, model_snapshot=model_snapshot))
 
 
-def officer_exchange(turns, call, context=OFFICER_CONTEXT_MISSING):
+def officer_exchange(turns, call, context=OFFICER_CONTEXT_MISSING, model_snapshot=None):
     """The whole exchange for one question: the conversation so far (bounded, from the page), the tool loop (bounded
     in rounds and in time), and the answer with the log entries consulted and the room actions to perform on the page."""
     try:
@@ -3477,6 +3685,10 @@ def officer_exchange(turns, call, context=OFFICER_CONTEXT_MISSING):
         return {'error': str(e), 'context_unavailable': True}
     except ValueError as e:
         return {'error': str(e)}
+    try:
+        model_snapshot = model_snapshot or officer_model_snapshot()
+    except ValueError as error:
+        return {'error': str(error)}
     encoded = json.dumps(scrub(envelope), ensure_ascii=True).replace('<', '\\u003c').replace('>', '\\u003e')
     system = OFFICER_SYSTEM + '\nTrusted local calendar metadata:\n<local_clock>\n' + json.dumps(officer_local_clock()) + '\n</local_clock>\n' + OFFICER_CONTEXT_SYSTEM + '\n<context_data>\n' + encoded + '\n</context_data>'
     msgs = [{'role': t['role'], 'content': t['content']} for t in turns]
@@ -3486,8 +3698,8 @@ def officer_exchange(turns, call, context=OFFICER_CONTEXT_MISSING):
         if end - time.monotonic() < 5:
             text = text or 'I ran out of time on that one. Ask again, more narrowly.'
             break
-        body = {'model': OFFICER_MODEL, 'max_tokens': 1200, 'system': system, 'tools': OFFICER_TOOLS,
-                'output_config': {'effort': 'low'}, 'messages': msgs}
+        body = {**officer_request_options(model_snapshot), 'max_tokens': 1200, 'system': system, 'tools': OFFICER_TOOLS,
+                'messages': msgs}
         resp, err = call(body, end=end)
         if err:
             return {'error': 'The Officer could not answer: ' + err}
@@ -3766,7 +3978,27 @@ class H(BaseHTTPRequestHandler):
         except (OSError, sqlite3.Error):
             return answer(503, {'error': 'Deck Log storage unavailable.'})
 
+    def officer_models_http(self, method):
+        if not self.host_ok() or not self.keyed(self.headers.get('X-Live-Room-Key', '')):
+            return self.send(403, b'forbidden')
+        def answer(code, value):
+            return self.send(code, json.dumps(value).encode(), 'application/json', (('Cache-Control', 'no-store'),))
+        if method == 'GET':
+            if self.path != '/officer/models':
+                return answer(400, officer_models_view(error='Invalid Officer model request.'))
+            models, error = officer_catalog()
+            return answer(200 if models is not None else 503, officer_models_view(models, error))
+        if self.path != '/officer/model':
+            return answer(400, officer_models_view(error='Invalid Officer model request.'))
+        data = self.body()
+        if not isinstance(data, dict) or set(data) != {'model'}:
+            return answer(400, officer_models_view(error='Expected one Officer model choice.'))
+        status, out = select_officer_model(data['model'])
+        return answer(status, out)
+
     def do_GET(self):
+        if self.path.startswith('/officer/'):
+            return self.officer_models_http('GET')
         if self.path.startswith('/history/'):
             return self.history_http('GET')
         if self.path.startswith('/native/v1/'):
@@ -3909,6 +4141,8 @@ class H(BaseHTTPRequestHandler):
 
     def do_POST(self):
         global LAST_PAIR, APPROVER
+        if self.path.startswith('/officer/'):
+            return self.officer_models_http('POST')
         if self.path.startswith('/history/'):
             return self.history_http('POST')
         if self.path.startswith('/native/v1/'):
@@ -4471,7 +4705,8 @@ if __name__ == '__main__':
     load_links()
     apply_watch(True)
     load_officer_key()
-    print('Officer of the Watch: ' + ('on (%s)' % OFFICER_MODEL if OFFICER_KEY else 'off: ' + OFFICER_WHY))
+    load_officer_model()
+    print('Officer of the Watch: ' + ('off: ' + OFFICER_WHY if not OFFICER_KEY else 'unavailable: ' + OFFICER_MODEL_ERROR if OFFICER_MODEL_ERROR else 'on (%s)' % OFFICER_MODEL))
     threading.Thread(target=watch, daemon=True).start()
     if not WIN:
         threading.Thread(target=CloudExec().run, daemon=True).start()     # the process list, on its own clock

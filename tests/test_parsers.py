@@ -1022,7 +1022,7 @@ def test_officer():
             return {'stop_reason': 'end_turn', 'content': [{'type': 'text', 'text': 'Rowan read the server file a minute ago.'}]}, ''
         out = server.officer_ask([{'role': 'user', 'content': "what's Rowan doing?"}], call=fake_api)
         check('the loop runs the tool and returns the answer with exactly the entries the model was sent', out['text'].startswith('Rowan read') and len(out['cites']) == 3 and all(c['agent'] == 'Rowan' and c['aid'] == 'c:aaaaaaaa-1' for c in out['cites']) and out['actions'] == [])
-        check('the request names the model, the system prompt and low effort, and never the key', calls[0]['model'] == 'claude-haiku-5-5' and calls[0]['system'].startswith('Plain English rule') and calls[0]['output_config'] == {'effort': 'low'} and 'sk-ant' not in json.dumps(calls[0]))
+        check('the request names the model and system prompt, omits unadvertised effort, and never the key', calls[0]['model'] == 'claude-haiku-5-5' and calls[0]['system'].startswith('Plain English rule') and 'output_config' not in calls[0] and 'sk-ant' not in json.dumps(calls[0]))
         check('the tool result went back as a tool_result block, whole', calls[1]['messages'][-1]['content'][0]['type'] == 'tool_result' and json.loads(calls[1]['messages'][-1]['content'][0]['content'])['agent'] == 'Rowan')
         out = server.officer_ask([{'role': 'user', 'content': 'x'}], call=lambda b, end=None: ({'stop_reason': 'refusal', 'content': []}, ''))
         check('a refusal is said plainly', out['text'] == "I can't answer that one.")

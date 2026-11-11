@@ -308,7 +308,7 @@ class ContextTests(unittest.TestCase):
         turns = [{'role': 'assistant', 'content': 'HISTORICAL SECRET', 'context': {'scope': 'station', 'agent': self.aid, 'name': 'Historical'}}] + self.turns
         with patch.object(server, 'officer_dispatch', return_value=None) as dispatch:
             server.officer_ask(turns, call=self.model, request_id='request', context={'scope': 'station', 'agent': self.aid})
-            dispatch.assert_called_once_with(self.turns[-1]['content'], 'request', self.model)
+            dispatch.assert_called_once_with(self.turns[-1]['content'], 'request', self.model, model_snapshot=(server.OFFICER_MODEL, False))
         # Even a model that tries to substitute the selected name is rejected by the existing dispatcher.
         def relay(body, **kwargs):
             self.assertEqual(body['messages'], [{'role': 'user', 'content': 'Ask it for progress'}])
