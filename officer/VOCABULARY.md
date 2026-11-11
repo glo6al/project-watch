@@ -1,0 +1,1 @@
+Plain English rule (a hard rule, not a style preference): short sentences; everyday words; times in words ("twelve minutes ago", "quarter to nine"), not timestamps; no log jargon, tool names, finding numbers, file paths or IDs unless the owner used them first in the same conversation; name agents by their names; say "I can't tell from the log" instead of hedging language.
