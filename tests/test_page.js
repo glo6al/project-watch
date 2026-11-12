@@ -6,6 +6,7 @@
 const fs = require('fs'), path = require('path'), vm = require('vm');
 // Normalize HTML input line endings before matching and executing script fragments.
 const html = fs.readFileSync(path.join(__dirname, '..', 'src', 'web', 'index.html'), 'utf8').replace(/\r\n?/g, '\n');
+const nativeOpenSource=html.split('\n').find(line=>line.startsWith('function nativeOpenAvailable('));
 {
   const start=html.indexOf('/* deck log helpers:'),end=html.indexOf('/* end deck log helpers */');
   const source=html.slice(html.indexOf('\n',start)+1,end);
@@ -683,7 +684,7 @@ const alertEscape=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>
 function deskSignalsChecks(mutate=false){
   const nodes=new Map(),node=id=>{if(!nodes.has(id))nodes.set(id,{hidden:false,textContent:'',firstElementChild:null,children:[],setAttribute(k,v){this[k]=v}});return nodes.get(id)};
   const requests=[];
-  const ctx={...alertFixtures,focus:'A',A:{A:{name:'Ada',runtime:'Codex'}},DESK:{open:false,agents:new Map(),agentRows:new Map()},bayPg:0,PINS:{},STEADY:false,order:[],document:{activeElement:null},$:node,txt:(el,text)=>el.textContent=text,one:String,stateOf:a=>({label:'Waiting',need:a.request}),responsePaint:(a,n)=>requests.push(n),deskSetViewUI(){},deskFocus(){},render(){},esc:alertEscape,put:(n,v)=>n.html=v};
+  const ctx={...alertFixtures,focus:'A',A:{A:{id:'x:A',name:'Ada',runtime:'Codex'}},DESK:{open:false,agents:new Map(),agentRows:new Map()},bayPg:0,PINS:{},STEADY:false,order:[],document:{activeElement:null},$:node,txt:(el,text)=>el.textContent=text,one:String,stateOf:a=>({label:'Waiting',need:a.request}),responsePaint:(a,n)=>requests.push(n),deskSetViewUI(){},deskFocus(){},render(){},esc:alertEscape,put:(n,v)=>n.html=v};
   let code=html.slice(html.indexOf('function deskPaint('),html.indexOf('function deskTheme('));
   if(mutate)code=code.replace("$('#bay').hidden=bayPg===0;","$('#bay').hidden=false;");
   const signals=[1,2].map(page=>({dataset:{bay:String(page)},setAttribute(k,v){this[k]=v}}));node('#deskSignals').children=signals;
@@ -701,7 +702,7 @@ function deskAlertChecks(mutation=''){
   assert.ok(headStart>=0&&alertAt>headStart&&alertAt<headEnd,'alert belongs to the persistent desk header');
   assert.ok(headEnd<html.indexOf('id="deskWork"',headEnd),'alert is outside the closable Work area');
   const {node,doc,events}=railDOM(),list=node('#deskAgentList'),agents=new Map();
-  const ctx={...alertFixtures,focus:'A',A:{A:{name:'Ada',runtime:'Codex'},B:{name:'Bram',runtime:'Claude'}},DESK:{open:false,agents,agentRows:new Map()},bayPg:0,PINS:{},STEADY:false,order:['A','B'],document:doc,Date:{now:()=>1000*1000},$:node,one:t=>String(t||'').replace(/\s+/g,' '),stateOf:a=>({label:'between actions',need:a.request,busy:!!a.busy}),responsePaint:(a,n)=>ctx.cardRequest=n,deskSetViewUI(){},deskFocus:el=>el.focus({preventScroll:true}),post(){throw Error('Painting alerts must not submit')},cuSend(){throw Error('Painting alerts must not send')},esc:alertEscape,put:(n,v)=>n.html=v};
+  const ctx={...alertFixtures,focus:'A',A:{A:{id:'x:A',name:'Ada',runtime:'Codex'},B:{id:'c:B',name:'Bram',runtime:'Claude'}},DESK:{open:false,agents,agentRows:new Map()},bayPg:0,PINS:{},STEADY:false,order:['A','B'],document:doc,Date:{now:()=>1000*1000},$:node,one:t=>String(t||'').replace(/\s+/g,' '),stateOf:a=>({label:'between actions',need:a.request,busy:!!a.busy}),responsePaint:(a,n)=>ctx.cardRequest=n,deskSetViewUI(){},deskFocus:el=>el.focus({preventScroll:true}),post(){throw Error('Painting alerts must not submit')},cuSend(){throw Error('Painting alerts must not send')},esc:alertEscape,put:(n,v)=>n.html=v};
   let code=html.slice(html.indexOf('function deskPaint('),html.indexOf('function deskTheme('));
   const mutations={
     hide:c=>c.replace("paintAlert($('#deskAlert'),alert);","paintAlert($('#deskAlert'),null);"),
@@ -828,7 +829,7 @@ function alertDOM(){
 function alertControlChecks(source=alertHelpers){
   const {node,doc,put,focuses,element}=alertDOM(),calls=[];
   const one={n:21,id:'A',ts:990,label:'a push',text:'git push origin main'},two={n:22,id:'B',ts:991,label:'sending something out',text:'remove old preview'};
-  const ctx={...alertFixtures,A:{A:{name:'Ada',$:{go:{click:()=>calls.push('A')}}},B:{name:'Bram',$:{go:{click:()=>calls.push('B')}}}},ALERTS:[one],STEADY:false,document:doc,$:node,esc:alertEscape,put,getComputedStyle:n=>({visibility:n.visibility||'visible'})};
+  const ctx={...alertFixtures,A:{A:{id:'x:A',name:'Ada',runtime:'Codex',$:{go:{click:()=>calls.push('A')}}},B:{id:'c:B',name:'Bram',runtime:'Claude',$:{go:{click:()=>calls.push('B')}}}},ALERTS:[one],STEADY:false,document:doc,$:node,esc:alertEscape,put,getComputedStyle:n=>({visibility:n.visibility||'visible'})};
   ctx.A.A.alert=one;ctx.A.B.alert=two;
   const api=vm.runInNewContext(source+';({alertMarkup,alertClick,dismissAlert,paintAlert})',ctx);
   const surfaces=['#needs','#deskAlert','#fleet','#monitor'];node('#monitor').className='flag.r';
@@ -867,7 +868,7 @@ for(const [name,from,to] of [
   ['expansion state','expanded=ALERT_EXPANDED.has(al.n)','expanded=false'],
   ['dismissed expansion cleanup','ALERT_EXPANDED.delete(n);','void n;'],
   ['unknown label uncertainty',"title=titles.get(al.label)||('Flagged activity: '+al.label)",'title=titles.get(al.label)||al.label'],
-  ['native identity','A[open.dataset.alertOpen]?.$?.go?.click()','A.A?.$?.go?.click()'],
+  ['native identity','const a=A[open.dataset.alertOpen]','const a=A.A'],
   ['inspect focus ownership','const restore=document.activeElement===inspect','const restore=true'],
   ['dismiss focus ownership','if(owned){','if(true){'],
   ['hidden fallback','return !!el&&el.isConnected&&!el.closest(\'[hidden],[inert]\')&&!!el.getClientRects().length&&getComputedStyle(el).visibility!==\'hidden\'','return !!el'],
@@ -1128,7 +1129,7 @@ function responseFixture(source=responseSource,dispatch=dispatchSource){
   const a={id:'c:A',name:'Ada',runtime:'Claude',perms:{},calls:{},asks:{}},b={id:'x:B',name:'Bram',runtime:'Codex',perms:{},calls:{},asks:{}};
   const log=node('#ofLog');Object.assign(log,{scrollTop:600,scrollHeight:1000,clientHeight:400});
   const ctx={ofLog:log,nearEnd:el=>el.scrollHeight-el.scrollTop-el.clientHeight<40,ResizeObserver:class{constructor(f){listeners.observedResize=f}observe(){}},focus:a.id,A:{[a.id]:a,[b.id]:b},APPROVE:true,STEADY:false,DEMO:false,document:{hidden:false},Date:{now:()=>now},$:node,txt:(el,t)=>{if(el.textContent!==t)el.textContent=t},saidKind:()=>null,covered:()=>ctx.coveredNow,onScreen:()=>ctx.visible&&!ctx.inert,visible:true,inert:false,coveredNow:false,render(){},deskReveal:v=>reveals.push(v),addEventListener:(k,f)=>listeners[k]=f,post:(route,body)=>{posts.push({route,body});return new Promise((resolve,reject)=>pending.push({resolve,reject}))}};
-  vm.createContext(ctx);const api=vm.runInContext(html.split('\n').find(x=>x.startsWith('function dismissNotice('))+'\n'+needSource+'\n'+dispatch+'\n'+source+';({responsePaint,responseGate,responseCanDecide,responseInvalidate,responseReveal,RESPONSE,permissionDispatch,need})',ctx);
+  vm.createContext(ctx);const api=vm.runInContext(nativeOpenSource+'\n'+html.split('\n').find(x=>x.startsWith('function dismissNotice('))+'\n'+needSource+'\n'+dispatch+'\n'+source+';({responsePaint,responseGate,responseCanDecide,responseInvalidate,responseReveal,RESPONSE,permissionDispatch,need})',ctx);
   const paint=()=>api.responsePaint(ctx.A[ctx.focus],ctx.A[ctx.focus]?api.need(ctx.A[ctx.focus]):null);ctx.render=paint;
   const perm=(id='p1',text='rm build\n'+('Full evidence <b>not markup</b>\n'.repeat(60)))=>{const p={pid:id,tool:'Bash',text};a.perms={[id]:p};return p};
   const allow=()=>holder.children[0],click=b=>holder.onclick({target:b||allow()});
@@ -1166,6 +1167,62 @@ function responseLifecycleChecks(){
   const monitor=html.slice(html.indexOf("const yn=t.closest('.yes,.no')"),html.indexOf("if(t.closest('.go'))"));assert.match(monitor,/!p\|\|p.sent\|\|focus!==id\|\|a.permScreen!==p.pid\|\|!APPROVE\|\|covered\(\)\|\|!onScreen\(a\.\$\.code\)\|\|Date.now\(\)-\(\+yn.dataset.at\|\|0\)<450/);assert.match(monitor,/permissionDispatch\(a,p,/,'old monitor validates before shared dispatch');
 }
 responseLifecycleChecks();
+
+/* Visible native-open controls use the same current route and real handlers. */
+async function nativeOpenChecks(){
+  const monitorPaint=html.split('\n').find(line=>line.trim().startsWith('paintFace(a,id,faceState('));
+  const monitorStart=html.indexOf('  el.onclick=ev=>'),monitorEnd=html.indexOf('  world.append(el);',monitorStart);
+  const compactWire=html.split('\n').find(line=>line.startsWith("$('#deskOpenApp').onclick="));
+  const compactPaint=html.slice(html.indexOf('function deskPaint('),html.indexOf('function deskTheme('));
+  const sid='11111111-2222-4333-8444-555555555555';
+  for(const [runtime,prefix,supported] of [['Codex','x:',true],['Claude','c:',true],['Antigravity','a:',false]]){
+    const posts=[],go={hidden:false,disabled:false},a={id:prefix+sid,runtime,name:'Fictional agent',perms:{},$:{go,name:{}}};
+    const dom=alertDOM(),event=()=>({stopPropagation(){},target:{closest:s=>s==='.go'?go:null}});
+    const ctx={...alertFixtures,a,id:a.id,A:{[a.id]:a},S:{},N:null,w:'',moved:false,focus:null,DEMO:false,document:dom.doc,ALERTS:[],STEADY:false,
+      paintFace(){},faceState(){},txt:(n,v)=>n.textContent=v,esc:alertEscape,post:(route,body)=>{posts.push({route,body});return Promise.resolve({ok:true})}};
+    vm.createContext(ctx);
+    const api=vm.runInContext(alertHelpers+'\nfunction paintNative(){'+monitorPaint+'};function wire(el){'+html.slice(monitorStart,monitorEnd)+'};({paintNative,wire,alertMarkup,alertClick,nativeOpenAvailable})',ctx);
+    const monitor={};api.wire(monitor);go.click=()=>monitor.onclick(event());api.paintNative();
+    assert.equal(go.hidden,!supported,runtime+' monitor hides unavailable open');assert.equal(go.disabled,!supported);
+    monitor.onclick(event());assert.equal(posts.length,supported?1:0,'actual monitor handler honors availability');
+    if(supported)assert.deepEqual(JSON.parse(JSON.stringify(posts.at(-1))),{route:'/open',body:{agent:a.id}});
+
+    const nodes=new Map(),node=id=>{if(!nodes.has(id))nodes.set(id,{hidden:false,children:[],firstElementChild:null,setAttribute(k,v){this[k]=v}});return nodes.get(id)};
+    const compact={...alertFixtures,focus:a.id,A:{[a.id]:a},DESK:{open:false,agents:new Map(),agentRows:new Map()},bayPg:0,PINS:{},STEADY:false,order:[],document:{activeElement:null},$:node,
+      txt:(n,v)=>n.textContent=v,one:String,stateOf:()=>({label:'Idle',need:null}),responsePaint(){},deskSetViewUI(){},deskFocus(){},render(){},esc:alertEscape,put:(n,v)=>n.html=v};
+    vm.createContext(compact);const paintCompact=vm.runInContext(alertHelpers+'\n'+deskHelpers+'\n'+compactPaint+'\n'+compactWire+';deskPaint',compact);
+    paintCompact();assert.equal(node('#deskOpenApp').hidden,!supported,runtime+' compact header hides unavailable open');
+    const beforeCompact=posts.length;node('#deskOpenApp').onclick();assert.equal(posts.length,beforeCompact+(supported?1:0),'actual compact handler delegates only supported target');
+
+    const t=responseFixture();Object.assign(t.a,{id:a.id,runtime,$:{go},asks:{q:{text:'A fictional question?',maybe:false}}});t.ctx.A={[a.id]:t.a};t.ctx.focus=a.id;t.paint();
+    assert.equal(t.node('#responseOpenApp').hidden,!supported,runtime+' response card hides unavailable open');
+    const request=t.node('#responseOpenApp').onclick();assert.equal(t.posts.length,supported?1:0,'actual response handler does not post an unavailable route');
+    if(supported){assert.equal(t.posts[0].route,'/open');assert.equal(t.posts[0].body.agent,a.id);t.pending.shift().resolve({ok:true})}
+    else assert.match(t.node('#responseNote').textContent,/Open this conversation in Antigravity to answer/);
+    await request;
+
+    const alert={n:91,id:a.id,ts:100,label:'a push',text:'git push origin fictional'},surface=dom.node('#needs');
+    const paintAlert=()=>dom.put(surface,api.alertMarkup(alert));
+    paintAlert();let open=surface.querySelector('[data-alert-open]');assert.equal(!!open,supported,runtime+' alert has no dead Open agent action');
+    const click=b=>api.alertClick({target:b,preventDefault(){},stopPropagation(){}});
+    if(supported){
+      const before=posts.length;click(open);assert.equal(posts.length,before+1,'actual alert delegates to exact monitor /open route');
+      go.disabled=true;click(open);assert.equal(posts.length,before+1,'captured alert rechecks disabled target');paintAlert();assert.equal(surface.querySelector('[data-alert-open]'),null,'disabled go is not offered');
+      go.disabled=false;go.hidden=true;paintAlert();assert.equal(surface.querySelector('[data-alert-open]'),null,'hidden go is not offered');go.hidden=false;
+      paintAlert();open=surface.querySelector('[data-alert-open]');a.runtime='Antigravity';click(open);assert.equal(posts.length,before+1,'captured alert rechecks changed route');
+      node('#deskOpenApp').onclick();monitor.onclick(event());assert.equal(posts.length,before+1,'stale compact and monitor handlers recheck changed route');
+    }else{
+      go.hidden=false;go.disabled=false;paintAlert();assert.equal(surface.querySelector('[data-alert-open]'),null,'a stale enabled button cannot invent Antigravity support');
+      a.runtime='Codex';a.id='x:'+sid;ctx.id=a.id;ctx.A={[a.id]:a};go.hidden=true;go.disabled=true;api.paintNative();assert.equal(go.hidden,false,'paint restores a supported route without self-locking on old flags');
+      compact.focus=a.id;compact.A={[a.id]:a};paintCompact();assert.equal(node('#deskOpenApp').hidden,false,'compact station reuse restores support');
+      Object.assign(t.a,{id:a.id,runtime:a.runtime});t.ctx.A={[a.id]:t.a};t.ctx.focus=a.id;t.paint();assert.equal(t.node('#responseOpenApp').hidden,false,'response context reuse restores support');
+    }
+    for(const bad of [null,{}, {id:'a:'+sid,runtime:'Codex'}, {id:'x:'+sid,runtime:'Unknown'}, {id:17,runtime:'Codex'}])assert.equal(api.nativeOpenAvailable(bad),false,'unknown or mismatched routes fail closed');
+    const malformed=dom.element('button',{dataset:{alertOpen:'__proto__'}}),beforeMalformed=posts.length;click(malformed);assert.equal(posts.length,beforeMalformed,'malformed captured open cannot target a prototype');
+  }
+}
+(async()=>{await nativeOpenChecks();console.log('ok native Open: real monitor, compact, response and alert controls; unsupported routes hidden, exact supported targets, stale controls and context reuse')})().catch(e=>{console.error(e);process.exitCode=1});
+
 async function responseDispatchChecks(dispatch=dispatchSource){
   const t=responseFixture(responseSource,dispatch),p=t.perm();t.ready();t.click();t.click();assert.equal(t.posts.length,1,'duplicate click cannot dispatch twice');assert.deepEqual(JSON.parse(JSON.stringify(t.posts[0])),{route:'/decide',body:{pid:'p1',allow:true}});assert.equal(p.sent,true);
   t.ctx.focus=t.b.id;t.b.asks={q2:{text:'Which plan?',maybe:false}};t.paint();t.pending.shift().reject(Error('accepted but response lost'));await new Promise(setImmediate);assert.equal(p.sent,true,'uncertain decision remains non-retriable');assert.equal(p.uncertain,true);assert.equal(p.notice,'Outcome unknown. Check the app before trying again.');assert.equal(t.b.permMsg,undefined,'late response cannot update another agent');

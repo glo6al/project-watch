@@ -823,6 +823,7 @@ function permissionDispatch(a,p,allow){const id=a.id;
 
 /* alert presentation helpers: one event identity across room, station and Work */
 function activeAlert(al,now,lifetime=180){return al&&!al.off&&now-al.ts<lifetime?al:null}
+function nativeOpenAvailable(a,control=null){const runtime=a?.runtime,id=a?.id;return !!a&&!a.observed&&['Codex','Claude'].includes(runtime)&&typeof id==='string'&&id.startsWith(runtime==='Codex'?'x:':'c:')&&(!control||!control.disabled&&!control.hidden)}
 const ALERT_EXPANDED=new Set();
 function dismissAlert(n){
   const matches=new Set([...ALERTS,...Object.values(A).map(a=>a.alert)].filter(al=>al&&al.n===n));
@@ -834,7 +835,7 @@ function dismissAlert(n){
 function alertMarkup(al,name='',id=''){
   const target=al.id||id,a=A[target],identity=name||a?.name||'Agent',project=a?projLabel(proj(target)):'',expanded=ALERT_EXPANDED.has(al.n),evidence=al.text&&!STEADY;
   const titles=new Map([['a publish','Possible publish'],['a push','Possible push'],['a deploy','Possible deploy'],['a delete','Possible deletion'],['sending something out','Flagged activity']]),title=titles.get(al.label)||('Flagged activity: '+al.label);
-  return `<article class="alert-item" data-alert-event="${esc(al.n)}"><div class="alert-line"><span class="alert-icon" aria-label="Alert">!</span><div class="alert-copy"><h3 class="alert-title">${esc(title)}</h3><div class="alert-meta">${esc(identity)}${project?`<span class="alert-sep">/</span>${esc(project)}`:''}<span class="alert-sep">·</span><time>${esc(clock(al.ts))}</time></div></div><div class="alert-controls">${evidence?`<button type="button" data-alert-inspect="${esc(al.n)}" aria-expanded="${expanded}">${expanded?'Hide evidence':'Inspect evidence'}</button>`:''}${a?.$?.go?`<button type="button" class="alert-open" data-alert-open="${esc(target)}">Open agent ↗</button>`:''}<button type="button" class="alert-dismiss" data-alert-dismiss="${esc(al.n)}">Dismiss ×</button></div></div>${evidence?`<div class="alert-evidence"${expanded?'':' hidden'}><div class="alert-evidence-head"><span>Recorded evidence</span><span>Pattern match</span></div><pre tabindex="0">${esc(al.text)}</pre></div>`:''}</article>`;
+  return `<article class="alert-item" data-alert-event="${esc(al.n)}"><div class="alert-line"><span class="alert-icon" aria-label="Alert">!</span><div class="alert-copy"><h3 class="alert-title">${esc(title)}</h3><div class="alert-meta">${esc(identity)}${project?`<span class="alert-sep">/</span>${esc(project)}`:''}<span class="alert-sep">·</span><time>${esc(clock(al.ts))}</time></div></div><div class="alert-controls">${evidence?`<button type="button" data-alert-inspect="${esc(al.n)}" aria-expanded="${expanded}">${expanded?'Hide evidence':'Inspect evidence'}</button>`:''}${a?.$?.go&&nativeOpenAvailable(a,a.$.go)?`<button type="button" class="alert-open" data-alert-open="${esc(target)}">Open agent ↗</button>`:''}<button type="button" class="alert-dismiss" data-alert-dismiss="${esc(al.n)}">Dismiss ×</button></div></div>${evidence?`<div class="alert-evidence"${expanded?'':' hidden'}><div class="alert-evidence-head"><span>Recorded evidence</span><span>Pattern match</span></div><pre tabindex="0">${esc(al.text)}</pre></div>`:''}</article>`;
 }
 function paintAlert(el,al){el.hidden=!al;put(el,al?alertMarkup(al):'')}
 function alertVisible(el){return !!el&&el.isConnected&&!el.closest('[hidden],[inert]')&&!!el.getClientRects().length&&getComputedStyle(el).visibility!=='hidden'}
@@ -843,7 +844,7 @@ function alertClick(e){
   if(inspect||open||dismiss){
     e.preventDefault();e.stopPropagation();
     const b=inspect||open||dismiss,row=b.closest('[data-alert-event]'),surface=row?.closest('#needs,#deskAlert,#fleet,.flag.r'),owned=!!row?.contains(document.activeElement);
-    if(open){A[open.dataset.alertOpen]?.$?.go?.click();return true}
+    if(open){const a=A[open.dataset.alertOpen],go=a?.$?.go;if(nativeOpenAvailable(a,go)&&typeof go?.click==='function')go.click();return true}
     if(inspect){
       const n=Number(inspect.dataset.alertInspect),evidence=row?.querySelector('.alert-evidence');
       if(!evidence||STEADY)return true;
@@ -897,7 +898,7 @@ function agent(id){
       if(!p||p.sent||focus!==id||a.permScreen!==p.pid||!APPROVE||covered()||!onScreen(a.$.code)||Date.now()-(+yn.dataset.at||0)<450) return;      /* measured now, not when it was last painted */ permissionDispatch(a,p,yn.classList.contains('yes'));
       return}
     if(t.closest('.fx')){dismissNotice(a);return}
-    if(t.closest('.go')){if(DEMO) return; post('/open',{agent:id}).then(async r=>{if(!r.ok)alert(await r.text()||'Could not open that session.')}).catch(()=>alert('Could not reach the W.A.T.C.H. server.'));return}
+    if(t.closest('.go')){if(DEMO||!nativeOpenAvailable(a,a.$.go)) return; post('/open',{agent:id}).then(async r=>{if(!r.ok)alert(await r.text()||'Could not open that session.')}).catch(()=>alert('Could not reach the W.A.T.C.H. server.'));return}
     if(focus===id) return;                       /* already at this desk: clicks and text selection inside it change nothing */
     setFocus(id)};
   world.append(el);
@@ -1580,7 +1581,7 @@ function render(){
     const tf=!pos[id]?'':at?pos[id].tfF:pk?heldTf(id):pos[id].tfF+(w&&N.sure?' translateZ(150px)':'')+(kid?` scale(${KS})`:'');
     if(a.el.classList.contains('stepup')&&!at) a.el.classList.remove('stepup');      /* a step-up that did not finish (focus moved on) must not keep the transform frozen */
     if(tf&&a.el._tf!==tf&&!a.el.classList.contains('stepup')){a.el._tf=tf;a.el.style.transform=tf}      /* while stepping up, stepUp() owns the transform */
-    paintFace(a,id,faceState(S,N,w)); txt(a.$.name,a.name); a.$.go.disabled=String(id).startsWith('a:'); a.$.go.title=a.$.go.disabled?'Open this chat directly in Antigravity; no verified app link is available.':'Open this session in its desktop app'; txt(a.$.go,a.observed?'Lives in ChatGPT':'Open in '+(a.runtime||'app')+(a.$.go.disabled?'':' ↗'));
+    paintFace(a,id,faceState(S,N,w)); txt(a.$.name,a.name); a.$.go.hidden=!nativeOpenAvailable(a);a.$.go.disabled=a.$.go.hidden; a.$.go.title=a.$.go.hidden?'Open this chat directly in its app; no verified app link is available.':'Open this session in its desktop app'; txt(a.$.go,a.observed?'Lives in ChatGPT':'Open in '+(a.runtime||'app')+(a.$.go.hidden?'':' ↗'));
     txt(a.$.doing,S.label); cl.toggle('slow',!!S.slow);
     {const F=fuelOf(a); hid(a.$.fuel,!F); if(F){txt(a.$.fuelTxt,F.short); const w=F.frac==null?'':Math.round(F.frac*100)+'%'; hid(a.$.fuelBar.parentNode,F.frac==null);
       if(a.$.fuelBar._w!==w){a.$.fuelBar._w=w; a.$.fuelBar.style.width=w} a.$.fuel.className='fuel'+(F.frac>=.92?' hot':F.frac>=.8?' warm':'')}}
@@ -1878,7 +1879,7 @@ function deskEndDrag(){if(DESK.drag!==null){try{$('#deskSizer').releasePointerCa
 /* Desk response card: UI state only, never a second message transport. */
 const RESPONSE={entries:new Map(),current:null,exposure:null};
 function responseKey(a,n){return JSON.stringify([a.id,n.source||n.perm&&'perm:'+n.perm.pid||n.kind+':'+n.text])}
-function responseOpenReason(a){return a.observed||String(a.id).startsWith('e:')?'Open this conversation in ChatGPT to answer; no app link is available.':String(a.id).startsWith('a:')?'Open this conversation in Antigravity to answer; no verified app link is available.':String(a.id).startsWith('k:')?'Open this conversation in Cursor to answer; no app link is recorded.':''}
+function responseOpenReason(a){return a.observed||String(a.id).startsWith('e:')?'Open this conversation in ChatGPT to answer; no app link is available.':String(a.id).startsWith('a:')||a.runtime==='Antigravity'?'Open this conversation in Antigravity to answer; no verified app link is available.':String(a.id).startsWith('k:')?'Open this conversation in Cursor to answer; no app link is recorded.':!nativeOpenAvailable(a,a.$?.go)?'Open this conversation in its app to answer; no verified app link is available.':''}
 function responseText(n){return n.perm?String(n.perm.tool||'Permission')+'\n\n'+String(n.perm.text||''):String(n.text||'')}
 function responseInvalidate(){RESPONSE.exposure=null;for(const b of $('#responseDecisions').children)b.disabled=true}
 function responseVisible(){
@@ -1911,9 +1912,9 @@ function responseDraw(a,n){
   $('#responseDismiss').hidden=!!n.perm||n.sure&&n.kind!=='Needs you';$('#responseDecisions').hidden=!n.perm||STEADY||!APPROVE;$('#responseOpenApp').hidden=!!n.perm&&APPROVE&&!STEADY&&!n.perm.sent;
   const note=n.perm?(n.perm.notice||(n.perm.sent?'Sending decision…':STEADY?'Open the app to inspect and answer.':!APPROVE?'Answer here is off. Use the toolbar switch or open the app.':'')):(entry.note||(!n.sure?'Possible request from the log. ':'')+'Answer in '+(a.runtime||'the app')+'.');
   const unavailable=responseOpenReason(a),earlier=n.unresolved?(n.unresolved===1?'An earlier approval has an unknown outcome. Check the app before trying it again.':n.unresolved+' earlier approvals have unknown outcomes. Check the app before trying them again.'):'';
-  $('#responseOpenApp').disabled=!!unavailable;txt($('#responseNote'),[n.perm?.sent?note:entry.note||unavailable||note,earlier].filter(Boolean).join(' '));
+  $('#responseOpenApp').hidden=!!unavailable||$('#responseOpenApp').hidden;$('#responseOpenApp').disabled=!!unavailable;txt($('#responseNote'),[n.perm?.sent?note:entry.note||unavailable||note,earlier].filter(Boolean).join(' '));
   if(n.perm&&!n.perm.sent&&APPROVE&&!STEADY&&!entry.collapsed&&!responseVisible()){
-    $('#responseOpenApp').hidden=false;const fallback=reason=>txt($('#responseNote'),[entry.note||unavailable,reason,earlier].filter(Boolean).join(' '));
+    $('#responseOpenApp').hidden=!!unavailable;const fallback=reason=>txt($('#responseNote'),[entry.note||unavailable,reason,earlier].filter(Boolean).join(' '));
     fallback('Scroll the full request into view to answer here.');
     if(card.getBoundingClientRect().height>$('#deskConversation').clientHeight)fallback('This window is too short to answer here. Use the app.');
   }
@@ -1935,7 +1936,7 @@ addEventListener('visibilitychange',()=>{responseInvalidate();if(focus)render()}
 function deskPaint(){
   if(!focus||!A[focus])return;const a=A[focus],now=Date.now()/1000,S=stateOf(a,now),request=S.need,alert=activeAlert(a.alert,now);
   txt($('#deskName'),a.name);txt($('#deskStatus'),S.label);txt($('#deskGoal'),STEADY?(a.goal?'(goal hidden in steady mode)':''):a.goal||a.task||'No first message read');$('#deskGoal').title=$('#deskGoal').textContent;
-  $('#deskOpenApp').disabled=String(a.id||focus).startsWith('a:');$('#deskOpenApp').title=$('#deskOpenApp').disabled?'Open this chat directly in Antigravity; no verified app link is available.':'Open this session in its desktop app';txt($('#deskOpenApp'),a.observed?'Lives in ChatGPT':'Open in '+(a.runtime||'app')+($('#deskOpenApp').disabled?'':' ↗'));txt($('#deskPin'),PINS[focus]?'Unpin':'Pin');$('#deskPin').setAttribute('aria-pressed',String(!!PINS[focus]));
+  $('#deskOpenApp').hidden=!nativeOpenAvailable(a);$('#deskOpenApp').disabled=$('#deskOpenApp').hidden;$('#deskOpenApp').title=$('#deskOpenApp').hidden?'Open this chat directly in its app; no verified app link is available.':'Open this session in its desktop app';txt($('#deskOpenApp'),a.observed?'Lives in ChatGPT':'Open in '+(a.runtime||'app')+($('#deskOpenApp').hidden?'':' ↗'));txt($('#deskPin'),PINS[focus]?'Unpin':'Pin');$('#deskPin').setAttribute('aria-pressed',String(!!PINS[focus]));
   responsePaint(a,request);$('#deskRespond').hidden=!request;
   paintAlert($('#deskAlert'),alert);
   const list=$('#deskAgentList'),forest=deskAgentForest(order,A),keep=new Set(forest.map(n=>n.id)),active=document.activeElement,cursors=new Map();
@@ -1971,7 +1972,7 @@ $('#deskWorkToggle').onclick=()=>{if(DESK.open)deskCloseWork();else{DESK.returnT
 $('#deskCloseWork').onclick=()=>{deskCloseWork();render()};
 $('#deskWorkTabs').onclick=e=>{const b=e.target.closest('[data-work]');if(b)setView(b.dataset.work)};
 $('#deskRespond').onclick=responseReveal;
-$('#deskOpenApp').onclick=()=>{if(focus&&A[focus])A[focus].$.go.click()};$('#deskPin').onclick=()=>{if(focus&&A[focus])A[focus].$.pinb.click()};$('#deskDismiss').onclick=()=>{if(focus&&A[focus])A[focus].el.querySelector('.x').click()};
+$('#deskOpenApp').onclick=()=>{const a=A[focus];if(focus&&nativeOpenAvailable(a,a?.$?.go)&&typeof a?.$?.go?.click==='function')a.$.go.click()};$('#deskPin').onclick=()=>{if(focus&&A[focus])A[focus].$.pinb.click()};$('#deskDismiss').onclick=()=>{if(focus&&A[focus])A[focus].el.querySelector('.x').click()};
 $('#deskExpand').onclick=()=>{DESK.expanded=!DESK.expanded;$('#deskWorkspace').classList.toggle('expanded',DESK.expanded);$('#deskExpand').setAttribute('aria-label',DESK.expanded?'Restore split view':'Expand work view');deskInert();if(focus){A[focus].dirty=true;render()}};
 $('#deskSizer').addEventListener('pointerdown',e=>{if(e.button!==0||DESK.compact)return;e.preventDefault();DESK.drag=e.pointerId;e.currentTarget.setPointerCapture(e.pointerId);$('#compactDesk').classList.add('resizing');e.currentTarget.focus()});
 $('#deskSizer').addEventListener('pointermove',e=>{if(DESK.drag!==e.pointerId)return;const r=$('#deskWorkspace').getBoundingClientRect(),b=deskWidthBounds(r.width,(r.right-e.clientX)/r.width);DESK.preference=r.width?b.value/r.width:.46;deskSize();if(focus){A[focus].dirty=true;render()}});
