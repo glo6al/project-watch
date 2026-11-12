@@ -108,10 +108,85 @@ class OfficerCapabilityTests(unittest.TestCase):
                       project_id=self.history.opaque_identity('project', 'Orchard'),
                       source_ts=self.now - 3600 + self.number if stamp is None else stamp, time_basis='source')
         row = dict(kind='message', role='assistant', text=text, chat_name=name, project_name='Orchard', source={'slot': '0'})
-        out = self.history.offer_record(record, [row], capture_epoch=self.epoch)
+        # Fixture construction must not lose records to the live writer's
+        # intentionally nonblocking gate. Its condition uses a reentrant lock.
+        with self.history.wake:
+            out = self.history.offer_record(record, [row], capture_epoch=self.epoch)
         self.assertEqual(out['status'], 'queued')
         if self.number % 100 == 0:
             self.assertTrue(self.history.flush(30 if os.name == 'nt' else 10))
+
+    def test_fixture_admission_cannot_race_the_writers_nonblocking_gate(self):
+        attempted, release = threading.Event(), threading.Event()
+        acquired = []
+        def compete_for_writer_gate():
+            held = self.history.wake.acquire(False)
+            acquired.append(held)
+            attempted.set()
+            if held:
+                try:
+                    release.wait(5)
+                finally:
+                    self.history.wake.release()
+        contender = threading.Thread(target=compete_for_writer_gate, daemon=True)
+        prepare = self.history._prepare
+        def prepare_with_contention(*args, **kwargs):
+            # Force the exact old race between preparing a record and the
+            # production nonblocking queue gate. The fixture must already own it.
+            contender.start()
+            self.assertTrue(attempted.wait(5))
+            return prepare(*args, **kwargs)
+        try:
+            with patch.object(self.history, '_prepare', side_effect=prepare_with_contention):
+                self.add('Fictional deterministic evidence under writer contention.')
+            self.assertEqual(acquired, [False])
+        finally:
+            release.set()
+            if contender.ident is not None:
+                contender.join(5)
+        self.assertFalse(contender.is_alive())
+        self.assertTrue(self.history.flush(30 if os.name == 'nt' else 10))
+        self.assertEqual(self.history.dropped, 0)
+
+    def test_fixture_waits_for_gate_while_direct_capture_still_drops(self):
+        record = dict(key='a' * 64, stream='b' * 64, provider='codex', chat_id='x:demo-ada',
+                      project_id='', source_ts=self.now, time_basis='source')
+        direct, errors = [], []
+        waiting, finished = threading.Event(), threading.Event()
+        def capture_directly():
+            direct.append(self.history.offer_record(record, [], capture_epoch=self.epoch))
+        def seed_fixture():
+            try:
+                self.add('Fictional evidence admitted after the writer releases its gate.')
+            except BaseException as error:
+                errors.append(error)
+            finally:
+                finished.set()
+        capture = threading.Thread(target=capture_directly, daemon=True)
+        seeder = threading.Thread(target=seed_fixture, daemon=True)
+        enter = threading.Condition.__enter__
+        def observe_entry(condition):
+            if condition is self.history.wake and threading.current_thread() is seeder:
+                waiting.set()
+            return enter(condition)
+        try:
+            with self.history.wake:
+                capture.start(); capture.join(5)
+                self.assertFalse(capture.is_alive())
+                self.assertEqual(direct, [{'status': 'dropped', 'reason': 'writer_busy'}])
+                with patch.object(threading.Condition, '__enter__', observe_entry):
+                    seeder.start()
+                    self.assertTrue(waiting.wait(5))
+                    self.assertFalse(finished.is_set())
+        finally:
+            if seeder.ident is not None:
+                seeder.join(5)
+        self.assertFalse(seeder.is_alive())
+        self.assertEqual(errors, [])
+        self.assertTrue(self.history.flush(30 if os.name == 'nt' else 10))
+        with self.history.lock:
+            self.assertEqual(self.history.db.execute('SELECT count(*) FROM events').fetchone()[0], 1)
+        self.assertEqual(self.history.dropped, 1, 'Only the direct nonblocking capture was dropped.')
 
     def seed(self, dense=False):
         if dense:

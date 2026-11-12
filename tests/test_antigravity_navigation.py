@@ -325,8 +325,8 @@ class NavigationTests(unittest.TestCase):
         self.assertNotIn(self.owner, captured.getvalue())
         self.assertNotIn(self.ui, captured.getvalue())
 
-    def test_malformed_duplicate_or_oversized_json_and_extra_ui_fields_fail_closed(self):
-        for raw in (b'{', b'null', b'[]', b'"unexpected"', b'{}', b'x' * 100000):
+    def test_malformed_duplicate_json_and_extra_ui_fields_fail_closed(self):
+        for raw in (b'{', b'null', b'[]', b'"unexpected"', b'{}'):
             self.rejected(self.call('POST', '/ui/hello', role='ui', raw=raw))
         duplicate = ('{"page_id":%s,"parent_origin":"https://example.invalid",'
                      '"parent_origin":%s}' % (json.dumps(self.page), json.dumps(self.parent))).encode()
@@ -334,6 +334,27 @@ class NavigationTests(unittest.TestCase):
         self.rejected(self.call('POST', '/ui/hello', {'page_id': self.page, 'parent_origin': self.parent, 'command': 'new'}, role='ui'))
         self.hello()
         self.rejected(self.poll(command='openConversation'))
+
+    def test_oversized_declared_body_is_rejected_before_upload_without_effects(self):
+        conn = http.client.HTTPConnection('127.0.0.1', self.port, timeout=2)
+        try:
+            conn.putrequest('POST', '/ui/hello', skip_host=True, skip_accept_encoding=True)
+            for key, value in [('Host', self.host), ('Content-Type', 'application/json'),
+                               ('Content-Length', str(prototype.MAX_BODY + 1)),
+                               ('Origin', self.broker.ui_origin), ('X-Sidecar-Token', self.ui)]:
+                conn.putheader(key, value)
+            # The server rejects the declared length before reading a body. Uploading
+            # it races that rejection and can reset the client on some platforms.
+            conn.endheaders()
+            response = conn.getresponse()
+            data = json.loads(response.read())
+            self.assertEqual(response.status, 400)
+            self.assertEqual(data, {'error': 'Invalid request length.'})
+        finally:
+            conn.close()
+        self.assertIsNone(self.broker.page)
+        self.assertEqual(self.broker.requests, {})
+        self.assertFalse(self.status()[1]['connected'])
 
     def test_live_wal_metadata_is_read_without_modifying_native_rows(self):
         with contextlib.closing(sqlite3.connect(self.dbpath)) as conn, conn:
