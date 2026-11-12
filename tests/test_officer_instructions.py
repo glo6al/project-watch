@@ -258,7 +258,7 @@ class SkillInstructionsTests(InstructionFixture):
         calls = []
         def call(body, **kwargs):
             calls.append(body)
-            self.assertEqual([t['name'] for t in body['tools']], [t['name'] for t in server.OFFICER_TOOLS + server.EVIDENCE_TOOLS] + ['officer_spend', 'load_skill'])
+            self.assertEqual([t['name'] for t in body['tools']], [t['name'] for t in server.OFFICER_TOOLS + server.EVIDENCE_TOOLS] + ['officer_spend', 'anthropic_spend', 'load_skill'])
             self.assertNotIn('FULL METHOD', body['system'])
             if len(calls) == 1:
                 self.write_skill('EDIT AFTER ASK SNAPSHOT')

@@ -41,6 +41,8 @@ jobs:
       - run: python tests/test_officer_policy.py
       - run: python tests/test_officer_usage.py
       - run: python tests/test_officer_accounting.py
+      - run: python tests/test_anthropic_reporting.py
+      - run: python tests/test_anthropic_reporting_integration.py
       - run: python tests/test_officer_request.py
       - run: python tests/test_officer_evidence.py
       - run: python tests/test_officer_capabilities.py
