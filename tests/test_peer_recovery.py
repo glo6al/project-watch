@@ -1,6 +1,7 @@
 """Offline recovery uses fresh native proof, never an audit report's claims."""
 import copy
-import fcntl
+import builtins
+import importlib.util
 import json
 import os
 from pathlib import Path
@@ -29,6 +30,32 @@ def jsonl(path, records):
     path.write_text(''.join(json.dumps(r) + '\n' for r in records))
 
 
+class PlatformTests(unittest.TestCase):
+    def test_unsupported_platform_refuses_before_state_access(self):
+        with patch.object(recovery.os, 'name', 'nt'), \
+                patch.object(recovery, 'private_directory', side_effect=AssertionError('State accessed')), \
+                patch.object(recovery.sqlite3, 'connect', side_effect=AssertionError('Database opened')):
+            for apply in (False, True):
+                with self.subTest(apply=apply), self.assertRaisesRegex(recovery.RecoveryError, 'requires POSIX file locking'):
+                    recovery.recover('fictional-state', selected=[ident()], apply=apply)
+
+    def test_missing_fcntl_allows_import_but_refuses_recovery(self):
+        original_import = builtins.__import__
+        def without_fcntl(name, *args, **kwargs):
+            if name == 'fcntl':
+                raise ModuleNotFoundError('Simulated unavailable POSIX module')
+            return original_import(name, *args, **kwargs)
+        spec = importlib.util.spec_from_file_location('recovery_without_fcntl', recovery.__file__)
+        module = importlib.util.module_from_spec(spec)
+        with patch.object(builtins, '__import__', side_effect=without_fcntl):
+            spec.loader.exec_module(module)
+        self.assertIsNone(module.fcntl)
+        with patch.object(module, 'private_directory', side_effect=AssertionError('State accessed')):
+            with self.assertRaisesRegex(module.RecoveryError, 'requires POSIX file locking'):
+                module.recover('fictional-state')
+
+
+@unittest.skipUnless(os.name == 'posix' and recovery.fcntl is not None, 'Recovery requires POSIX file locking')
 class RecoveryTests(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
@@ -172,7 +199,7 @@ class RecoveryTests(unittest.TestCase):
     def test_active_writer_and_missing_lock_refuse_apply(self):
         row=self.ledger()
         with self.lock_path.open('rb') as lock:
-            fcntl.flock(lock.fileno(),fcntl.LOCK_EX|fcntl.LOCK_NB)
+            recovery.fcntl.flock(lock.fileno(),recovery.fcntl.LOCK_EX|recovery.fcntl.LOCK_NB)
             with self.assertRaisesRegex(recovery.RecoveryError,'writer is active'):self.run_recovery(row,apply=True)
         self.lock_path.unlink()
         with self.assertRaises(recovery.RecoveryError):self.run_recovery(row,apply=True)

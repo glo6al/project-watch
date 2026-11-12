@@ -2463,7 +2463,7 @@ class AntigravityTail(Tail):
         if not proof:
             raise ValueError('unsupported Antigravity transcript')
         self.aid = 'a:' + proof[0]
-        self.step_index, self.metadata_at, self.native_idle = -1, 0, None
+        self.step_index, self.metadata_at, self.native_idle = -1, None, None
         describe(self.aid, True, runtime='Antigravity', name='Antigravity ' + proof[0][:4])
         super().__init__(path)
         self.refresh_metadata(True)
@@ -2474,7 +2474,7 @@ class AntigravityTail(Tail):
             self.calls.pop(cid, None)
 
     def refresh_metadata(self, old=False):
-        if time.monotonic() - self.metadata_at < 3:
+        if self.metadata_at is not None and time.monotonic() - self.metadata_at < 3:
             return
         self.metadata_at = time.monotonic()
         meta = antigravity.metadata(self.path, HOME)

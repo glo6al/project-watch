@@ -153,6 +153,21 @@ class AntigravityTests(unittest.TestCase):
         self.assertNotIn('EXCLUDED_RAW_SUMMARY', exposed)
         self.assertNotIn('EXCLUDED_PREVIEW', exposed)
 
+    def test_first_metadata_read_does_not_assume_monotonic_clock_starts_above_zero(self):
+        self.metadata_db().close()
+        with patch.object(server.time, 'monotonic', return_value=0) as clock, \
+                patch.object(antigravity, 'metadata', wraps=antigravity.metadata) as read:
+            tail = server.AntigravityTail(str(self.path))
+            self.assertEqual(server.AGENTS[self.aid]['name'], 'Orbit')
+            self.assertEqual(read.call_count, 1)
+            tail.refresh_metadata()
+            clock.return_value = 2.99
+            tail.refresh_metadata()
+            self.assertEqual(read.call_count, 1)
+            clock.return_value = 3
+            tail.refresh_metadata()
+            self.assertEqual(read.call_count, 2)
+
     def test_metadata_reader_sees_committed_live_wal_rows(self):
         conn = self.metadata_db(title='Fresh WAL title', wal=True)
         try:
@@ -202,7 +217,7 @@ class AntigravityTests(unittest.TestCase):
             before = len(server.LOG)
             conn.execute("UPDATE conversation_summaries SET status='CASCADE_RUN_STATUS_RUNNING',not_fully_idle=1")
             conn.commit()
-            tail.metadata_at = 0
+            tail.metadata_at = None
             tail.refresh_metadata(False)
             later = [e for e in server.LOG[before:] if e.get('agent') == self.aid]
             self.assertTrue(any(e['kind'] == 'beat' for e in later))
@@ -229,7 +244,7 @@ class AntigravityTests(unittest.TestCase):
             visible_beat = [e for e in self.events() if e['kind'] == 'beat'][-1]
             self.assertGreater(visible_beat['ts'], initial_end['ts'])
             before_refresh = len(self.events())
-            tail.metadata_at = 0
+            tail.metadata_at = None
             with patch.object(server.time, 'time', return_value=base + 2):
                 tail.refresh_metadata(False)
             new_ends = [e for e in self.events()[before_refresh:] if e['kind'] == 'turn_end']
@@ -242,7 +257,7 @@ class AntigravityTests(unittest.TestCase):
                                     created_at=datetime.fromtimestamp(base + 3, timezone.utc).isoformat()))
             with patch.object(server.time, 'time', return_value=base + 3.1):
                 tail.poll()
-            tail.metadata_at = 0
+            tail.metadata_at = None
             with patch.object(server.time, 'time', return_value=base + 3.2):
                 tail.refresh_metadata(False)
             self.assertFalse(any(e['kind'] in ('beat', 'turn_end') for e in self.events()[before_system:]))

@@ -137,6 +137,23 @@ class NavigationTests(unittest.TestCase):
         _, status, _, _ = self.open()
         self.assertGreaterEqual(status, 400, 'No loaded native sidecar means no open operation.')
 
+    def test_empty_status_query_works_with_legacy_strict_parser_without_relaxing_fields(self):
+        parse = urllib.parse.parse_qs
+        def legacy_strict(query, **kwargs):
+            if not query and kwargs.get('strict_parsing'):
+                raise ValueError("bad query field: ''")
+            return parse(query, **kwargs)
+        with mock.patch.object(prototype.urllib.parse, 'parse_qs', side_effect=legacy_strict):
+            for path in ('/owner/status', '/owner/status?'):
+                status, data, _ = self.call('GET', path)
+                self.assertEqual(status, 200)
+                self.assertIs(data['connected'], False)
+            self.assertEqual(self.call('GET', '/', role=None)[0], 403)
+            self.assertEqual(self.call('GET', '/?token=' + urllib.parse.quote(self.ui), role=None)[0], 200)
+            for query in ('&', 'request_id', 'request_id=', 'request_id=x&',
+                          'request_id=x&request_id=y', 'unknown=value'):
+                self.assertEqual(self.call('GET', '/owner/status?' + query)[0], 400)
+
     def test_owner_ui_roles_and_exact_ui_origin_are_not_interchangeable(self):
         self.rejected(self.call('GET', '/owner/status', role=None))
         self.rejected(self.call('GET', '/owner/status', role='ui'))

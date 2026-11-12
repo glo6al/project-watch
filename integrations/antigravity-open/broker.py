@@ -328,14 +328,16 @@ class Handler(BaseHTTPRequestHandler):
                 raise ProtocolError(400, 'Invalid request path.')
             if url.path == '/owner/status':
                 self._auth('owner')
-                query = urllib.parse.parse_qs(url.query, keep_blank_values=True, strict_parsing=True)
+                # Python 3.9 rejects an empty query in strict mode. Absence is
+                # valid here; nonempty queries still require strict field syntax.
+                query = urllib.parse.parse_qs(url.query, keep_blank_values=True, strict_parsing=True) if url.query else {}
                 if set(query) - {'request_id'} or any(len(v) != 1 for v in query.values()):
                     raise ProtocolError(400, 'Invalid status query.')
                 return self.send(200, self.server.broker.status(query.get('request_id', [None])[0]))
             if url.path == '/connector.js' and not url.query:
                 return self.send(200, (HERE / 'connector.js').read_bytes(), 'application/javascript; charset=utf-8')
             if url.path == '/':
-                query = urllib.parse.parse_qs(url.query, keep_blank_values=True, strict_parsing=True)
+                query = urllib.parse.parse_qs(url.query, keep_blank_values=True, strict_parsing=True) if url.query else {}
                 if (set(query) - {'token', 'conversationId'} or 'token' not in query
                         or any(len(values) != 1 for values in query.values())
                         or not hmac.compare_digest(query['token'][0].encode(), self.server.broker.ui_token.encode())):

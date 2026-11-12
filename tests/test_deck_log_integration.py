@@ -57,7 +57,7 @@ class IntegrationTests(unittest.TestCase):
     def events(self):
         # Bulk synthetic batches retain per-record private-file checks. Allow
         # slower Windows runners to drain them without changing runtime limits.
-        self.assertTrue(server.HISTORY.flush(10),
+        self.assertTrue(server.HISTORY.flush(30 if os.name == 'nt' else 10),
                         'Synthetic archive writes did not settle: reason=%r, queued=%d, inflight=%d' %
                         (server.HISTORY.reason, len(server.HISTORY.queue), server.HISTORY.inflight))
         return server.HISTORY.search(limit=100)['events']

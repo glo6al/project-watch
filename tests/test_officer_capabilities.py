@@ -111,7 +111,7 @@ class OfficerCapabilityTests(unittest.TestCase):
         out = self.history.offer_record(record, [row], capture_epoch=self.epoch)
         self.assertEqual(out['status'], 'queued')
         if self.number % 100 == 0:
-            self.assertTrue(self.history.flush(10))
+            self.assertTrue(self.history.flush(30 if os.name == 'nt' else 10))
 
     def seed(self, dense=False):
         if dense:
@@ -122,7 +122,7 @@ class OfficerCapabilityTests(unittest.TestCase):
                          chat='x:demo-bram', name='Bram', stamp=self.now - 3000 + index)
         else:
             self.add('Fictional saved progress: pricing review needs a rounding correction.')
-        self.assertTrue(self.history.flush(10))
+        self.assertTrue(self.history.flush(30 if os.name == 'nt' else 10))
 
     def query(self, **changes):
         value = {'scope': copy.deepcopy(SCOPE), 'view': 'overview', 'limit': 20}

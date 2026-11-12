@@ -1,9 +1,13 @@
 """Offline, proof-based settlement of pruned shared-bridge executions.
 
-No native dispatch, reply reconstruction, retirement, or receipt fabrication.
+Explicit owner retirement is separate from proof-based execution completion.
+No native dispatch, reply reconstruction, cancellation, or receipt fabrication.
 Sources are reread; reports from earlier investigations are never accepted as proof.
 """
-import fcntl
+try:
+    import fcntl
+except ImportError:
+    fcntl = None
 import hashlib
 import hmac
 import json
@@ -597,6 +601,8 @@ def settle(db, ledger, evidence):
 
 
 def recover(state_dir, selected=None, *, retire_selected=None, apply=False, codex_sessions=None, claude_projects=None, claude_store=None):
+    if os.name != 'posix' or fcntl is None:
+        fail('Offline bridge recovery requires POSIX file locking and is unsupported on this platform.')
     if apply and not selected and not retire_selected:
         fail('Apply requires an explicit client-ID allowlist.')
     combined = (selected or []) + (retire_selected or [])
