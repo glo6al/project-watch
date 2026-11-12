@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Native-open prototype checks using fictional metadata and ephemeral brokers only."""
+"""Native navigation checks using fictional metadata and ephemeral brokers only."""
 import contextlib
 import http.client
 import importlib.util
@@ -8,6 +8,7 @@ import json
 import os
 import re
 from pathlib import Path
+from unittest import mock
 import secrets
 import shutil
 import sqlite3
@@ -27,7 +28,8 @@ prototype = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(prototype)
 
 
-class PrototypeTests(unittest.TestCase):
+@unittest.skipUnless(os.name == 'posix', 'Native navigation currently uses macOS/POSIX private-file protection.')
+class NavigationTests(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
@@ -42,8 +44,17 @@ class PrototypeTests(unittest.TestCase):
         self.owner, self.ui = secrets.token_urlsafe(32), secrets.token_urlsafe(32)
         self.parent = 'https://127.0.0.1:49321'
         self.clock = 100.0
-        self.broker = prototype.Broker(self.source, {self.target, self.second}, self.owner, self.ui,
-                                      self.parent, clock=lambda: self.clock, wall=lambda: self.clock)
+        for ident in (self.target, self.second):
+            path = self.source / 'brain' / ident / '.system_generated' / 'logs' / 'transcript.jsonl'
+            path.parent.mkdir(parents=True); path.write_text('')
+        prototype.navigation.ensure_private(self.home)
+        grant = prototype.navigation.private_dir(self.home) / 'authorization.json'
+        prototype.navigation.replace(grant, prototype.navigation.encoded({'protocol':1,'enabled':True}), None)
+        runtime = {'origin': self.parent}
+        self.runtime_patch = mock.patch.object(prototype.navigation, 'verify_runtime', return_value=True)
+        self.runtime_patch.start(); self.addCleanup(self.runtime_patch.stop)
+        self.broker = prototype.Broker(self.home, self.owner, self.ui, runtime,
+                                      clock=lambda: self.clock, wall=lambda: self.clock)
         self.server = prototype.make_server(self.broker, port=0)
         self.port = self.server.server_address[1]
         self.host = '127.0.0.1:' + str(self.port)
@@ -80,7 +91,7 @@ class PrototypeTests(unittest.TestCase):
             self.assertNotIn(self.owner, data.decode('utf-8', 'replace'), 'Owner credential must never be reflected.')
             self.assertNotIn(self.ui, data.decode('utf-8', 'replace'), 'UI credential must never be reflected.')
             if response.status < 300 and isinstance(result, dict) and 'request_id' in result:
-                self.assertEqual(set(result), {'request_id', 'conversation_id', 'state', 'confirmed'})
+                self.assertEqual(set(result), {'protocol', 'generation', 'request_id', 'conversation_id', 'state', 'confirmed'})
                 self.assertIs(result['confirmed'], False)
             return response.status, result, dict(response.getheaders())
         finally:
@@ -97,7 +108,7 @@ class PrototypeTests(unittest.TestCase):
 
     def open(self, *, request=None, target=None):
         ident = request or str(uuid.uuid4())
-        status, value, headers = self.call('POST', '/owner/open', {'request_id': ident, 'conversation_id': target or self.target})
+        status, value, headers = self.call('POST', '/owner/open', {'request_id': ident, 'conversation_id': target or self.target, 'expires_at_ms': int(self.clock*1000)+5000})
         return ident, status, value, headers
 
     def poll(self, **extra):
@@ -119,7 +130,7 @@ class PrototypeTests(unittest.TestCase):
 
     def test_startup_is_loopback_only_and_not_connected_without_native_ui(self):
         self.assertEqual(self.server.server_address[0], '127.0.0.1')
-        self.assertEqual(self.broker.ui_origin, 'plugin://watch-open-prototype-' + str(self.port))
+        self.assertEqual(self.broker.ui_origin, 'plugin://watch-navigation-' + str(self.port))
         status, data, _ = self.status()
         self.assertEqual(status, 200)
         self.assertFalse(data['connected'])
@@ -134,7 +145,7 @@ class PrototypeTests(unittest.TestCase):
             self.rejected(self.call('GET', '/owner/status', extra={'Origin': origin}))
         payload = {'page_id': self.page, 'parent_origin': self.parent}
         self.rejected(self.call('POST', '/ui/hello', payload, role='owner'))
-        for origin in ('null', self.parent, 'https://example.invalid', 'plugin://watch-open-prototype-' + str(self.port + 1)):
+        for origin in ('null', self.parent, 'https://example.invalid', 'plugin://watch-navigation-' + str(self.port + 1)):
             self.rejected(self.call('POST', '/ui/hello', payload, role='ui', extra={'Origin': origin}))
         self.rejected(self.call('POST', '/ui/hello', payload, role=None, extra={'X-Sidecar-Token': 'invalid'}))
 
@@ -151,7 +162,7 @@ class PrototypeTests(unittest.TestCase):
 
     def test_only_exact_open_existing_envelope_and_uuid_targets_are_accepted(self):
         self.hello()
-        base = {'request_id': str(uuid.uuid4()), 'conversation_id': self.target}
+        base = {'request_id': str(uuid.uuid4()), 'conversation_id': self.target, 'expires_at_ms': int(self.clock*1000)+5000}
         for extra in ({'prompt': 'Do not send this.'}, {'command': 'newConversation'}, {'agent': 'another provider'}, {'url': 'https://example.invalid'}):
             self.rejected(self.call('POST', '/owner/open', dict(base, **extra)))
         for field in ('request_id', 'conversation_id'):
@@ -161,7 +172,7 @@ class PrototypeTests(unittest.TestCase):
         self.rejected(self.call('POST', '/owner/open', {'conversation_id': self.target}))
         self.rejected(self.call('POST', '/owner/open', [], role='owner'))
 
-    def test_native_metadata_and_owner_allowlist_are_both_required_without_transcripts(self):
+    def test_primary_metadata_and_canonical_source_are_both_required_without_body_reads(self):
         self.hello()
         outside = str(uuid.uuid4())
         with contextlib.closing(sqlite3.connect(self.dbpath)) as conn, conn:
@@ -172,7 +183,7 @@ class PrototypeTests(unittest.TestCase):
             conn.execute('DELETE FROM conversation_summaries WHERE conversation_id=?', (self.second,))
         _, status, _, _ = self.open(target=self.second)
         self.assertGreaterEqual(status, 400, 'An allowance alone proves no native target.')
-        self.assertFalse((self.source / 'brain').exists(), 'No transcript or request body is needed for navigation proof.')
+        self.assertEqual((self.source / 'brain' / self.target / '.system_generated' / 'logs' / 'transcript.jsonl').read_bytes(), b'')
         _, status, value, _ = self.open()
         self.assertIn(status, (200, 202))
         self.assertEqual(value['conversation_id'], self.target)
@@ -348,21 +359,26 @@ class PrototypeTests(unittest.TestCase):
         _, status, _, _ = self.open()
         self.assertEqual(status, 404)
 
-    def test_lifetime_request_bound_preserves_old_idempotency_instead_of_evicting_ids(self):
+    def test_retention_bounds_do_not_become_a_lifetime_failure_or_refresh_expiry(self):
         self.hello()
         first = None
-        for _ in range(64):
+        for _ in range(70):
             ident, status, _, _ = self.open()
-            self.assertIn(status, (200, 202))
+            self.assertEqual(status, 200)
             first = first or ident
             self.assertEqual(self.poll()[1]['command']['request_id'], ident)
             self.assertEqual(self.receipt(ident)[0], 200)
-        _, status, _, _ = self.open()
-        self.assertEqual(status, 429)
+        original_expiry = self.broker.requests[first]['expires_at_ms']
+        self.clock += 4
         _, status, duplicate, _ = self.open(request=first)
-        self.assertIn(status, (200, 202))
+        self.assertEqual(status, 200)
         self.assertEqual(duplicate['state'], 'called')
-        self.assertIsNone(self.poll()[1]['command'], 'Lifetime bound must not forget delivered IDs and permit replay.')
+        self.assertEqual(self.broker.requests[first]['expires_at_ms'], original_expiry)
+        self.clock += 32
+        self.page = str(uuid.uuid4()); self.hello()
+        self.assertEqual(self.broker.requests, {})
+        self.rejected(self.call('POST', '/owner/open', dict(request_id=first,conversation_id=self.target,expires_at_ms=original_expiry)))
+        self.assertEqual(self.open()[1], 200)
 
     def test_bootstrap_and_static_files_contain_no_owner_or_ui_capability(self):
         self.rejected(self.call('GET', '/', role=None))
@@ -575,6 +591,123 @@ class PrototypeTests(unittest.TestCase):
                 finally:
                     conn.close()
 
+    def test_global_grant_admits_a_new_primary_chat_without_manual_registration(self):
+        self.hello()
+        ident = str(uuid.uuid4())
+        transcript = self.source / 'brain' / ident / '.system_generated' / 'logs' / 'transcript.jsonl'
+        transcript.parent.mkdir(parents=True); transcript.write_text('')
+        with contextlib.closing(sqlite3.connect(self.dbpath)) as conn, conn:
+            conn.execute('INSERT INTO conversation_summaries VALUES(?)', (ident,))
+        _, status, row, _ = self.open(target=ident)
+        self.assertEqual(status, 200)
+        self.assertEqual(row['conversation_id'], ident)
+        self.assertEqual(self.poll()[1]['command']['conversation_id'], ident)
+
+    def test_disconnect_blocks_admission_and_claim_without_recalling_already_called(self):
+        self.hello()
+        first, _, _, _ = self.open(); self.poll(); self.receipt(first)
+        second, _, _, _ = self.open()
+        grant = prototype.navigation.private_dir(self.home) / 'authorization.json'
+        raw, _ = prototype.navigation.snapshot(grant, private=True)
+        prototype.navigation.replace(grant, prototype.navigation.encoded({'protocol':1,'enabled':False}), raw)
+        self.rejected(self.poll())
+        self.assertEqual(self.open()[1], 403)
+        self.assertFalse(self.status()[1]['connected'])
+        self.assertEqual(self.status(first)[1]['state'], 'called')
+        self.assertEqual(self.status(second)[1]['state'], 'expired')
+
+    def test_disconnected_idle_broker_resumes_loaded_panel_after_regrant(self):
+        self.hello()
+        grant=prototype.navigation.private_dir(self.home)/'authorization.json'
+        raw,_=prototype.navigation.snapshot(grant,private=True)
+        prototype.navigation.replace(grant,prototype.navigation.encoded({'protocol':1,'enabled':False}),raw)
+        self.assertFalse(self.status()[1]['connected'])
+        self.rejected(self.poll())
+        raw,_=prototype.navigation.snapshot(grant,private=True)
+        prototype.navigation.replace(grant,prototype.navigation.encoded({'protocol':1,'enabled':True}),raw)
+        self.hello()
+        self.assertEqual(self.open()[1],200)
+
+    def test_unowned_native_startup_exits_normally_without_restart_loop(self):
+        with mock.patch.object(prototype.sys,'platform','darwin'), mock.patch.object(prototype.navigation,'_owned_before',return_value=False), mock.patch.object(prototype.navigation,'process_lock') as lock:
+            self.assertIsNone(prototype.main())
+            lock.assert_not_called()
+
+    def test_revoked_registered_page_can_load_but_cannot_admit_work_until_regrant(self):
+        grant=prototype.navigation.private_dir(self.home)/'authorization.json'
+        raw,_=prototype.navigation.snapshot(grant,private=True)
+        prototype.navigation.replace(grant,prototype.navigation.encoded({'protocol':1,'enabled':False}),raw)
+        status,_,_=self.call('GET','/?token='+urllib.parse.quote(self.ui)+'&conversationId='+self.target,role=None)
+        self.assertEqual(status,200,'Loading the legitimate idle panel grants no navigation authority.')
+        self.rejected(self.call('POST','/ui/hello',dict(page_id=self.page,parent_origin=self.parent),role='ui'))
+        self.assertFalse(self.status()[1]['connected'])
+
+    def test_verified_installed_startup_stays_healthy_idle_when_grant_revoked(self):
+        with mock.patch.object(prototype.sys,'platform','darwin'):
+            prototype.navigation.install(self.home,ROOT)
+            prototype.navigation.disconnect(self.home)
+        seen=[]
+        case=self
+        class IdleServer:
+            server_port=49322
+            def __init__(self,broker): self.broker=broker
+            def serve_forever(self,**kwargs):
+                seen.append('started')
+                case.assertFalse(self.broker.status()['connected'])
+                case.assertFalse(prototype.navigation.authorized(case.home))
+                with case.assertRaises(prototype.ProtocolError):self.broker.hello(case.page,case.parent)
+                case.assertTrue((prototype.navigation.private_dir(case.home)/'connection.json').exists())
+                raise SystemExit(0)
+            def server_close(self):seen.append('closed')
+        with mock.patch.object(prototype.sys,'platform','darwin'), mock.patch.object(Path,'home',return_value=self.home), mock.patch.object(prototype.navigation,'runtime_for_backend',return_value={'origin':self.parent}), mock.patch.object(prototype.navigation,'process',return_value={'start':'fictional-start'}), mock.patch.object(prototype,'make_server',side_effect=lambda broker,port:IdleServer(broker)), mock.patch.dict(os.environ,{'ANTIGRAVITY_SIDECAR_WEB_PORT':'49322','ANTIGRAVITY_SIDECAR_UI_TOKEN':self.ui}), mock.patch.object(prototype.signal,'signal'):
+            with self.assertRaises(SystemExit) as stopped:prototype.main()
+            self.assertEqual(stopped.exception.code,0)
+        self.assertEqual(seen,['started','closed'])
+        self.assertFalse((prototype.navigation.private_dir(self.home)/'connection.json').exists())
+        with prototype.navigation.process_lock(self.home):pass
+
+    def test_original_admission_expiry_survives_retry_with_new_expiry(self):
+        self.hello()
+        ident, _, _, _ = self.open()
+        original = dict(self.broker.requests[ident])
+        self.clock += 4.9
+        self.assertEqual(self.open(request=ident)[1], 200)
+        self.assertEqual(self.broker.requests[ident]['expires'], original['expires'])
+        self.assertEqual(self.broker.requests[ident]['expires_at_ms'], original['expires_at_ms'])
+        self.clock += .2
+        self.assertIsNone(self.poll()[1]['command'])
+        self.assertEqual(self.status(ident)[1]['state'], 'expired')
+
+    def test_expiry_is_exact_bounded_integer_and_old_requests_do_not_resurrect(self):
+        self.hello()
+        for expires in (True, 1.2, '105000', 0, -1, 100000, 105001, 9007199254740992):
+            self.rejected(self.call('POST','/owner/open',dict(request_id=str(uuid.uuid4()),conversation_id=self.target,expires_at_ms=expires)))
+        self.assertEqual(self.broker.requests, {})
+
+    def test_other_panels_are_passive_and_takeover_never_migrates_pending_commands(self):
+        self.hello()
+        ident, _, _, _ = self.open()
+        passive_page = str(uuid.uuid4())
+        status, passive, _ = self.call('POST','/ui/hello',dict(page_id=passive_page,parent_origin=self.parent),role='ui')
+        self.assertEqual(status, 200)
+        self.assertEqual(passive,dict(page_id=passive_page,passive=True,lease_ms=8000))
+        self.rejected(self.call('POST','/ui/poll',dict(page_id=passive_page,lease=self.lease),role='ui'))
+        self.call('POST','/ui/bye',dict(page_id=self.page,lease=self.lease),role='ui')
+        self.page = passive_page; self.hello()
+        self.assertIsNone(self.poll()[1]['command'])
+        self.assertEqual(self.status(ident)[1]['state'], 'expired')
+
+    def test_expiry_capacity_is_temporary_and_preserves_original_rows(self):
+        self.hello()
+        with mock.patch.object(prototype, 'MAX_REQUESTS', 2):
+            first, _, _, _ = self.open(); self.poll(); self.receipt(first)
+            second, _, _, _ = self.open(); self.poll(); self.receipt(second)
+            self.assertEqual(self.open()[1], 429)
+            self.assertEqual(self.open(request=first)[2]['state'], 'called')
+            self.clock += 36
+            self.page = str(uuid.uuid4()); self.hello()
+            self.assertEqual(self.open()[1], 200)
+
     def test_shutdown_marks_claim_uncertain_and_new_broker_has_no_retained_commands(self):
         self.hello()
         ident, _, _, _ = self.open(); self.poll()
@@ -583,21 +716,18 @@ class PrototypeTests(unittest.TestCase):
         self.assertEqual(row['state'], 'unknown')
         self.assertFalse(self.status()[1]['connected'])
         self.rejected(self.poll())
-        fresh = prototype.Broker(self.source, {self.target}, self.owner, self.ui, self.parent,
+        fresh = prototype.Broker(self.home, self.owner, self.ui, {'origin': self.parent},
                                  clock=lambda: self.clock, wall=lambda: self.clock)
-        self.assertEqual(fresh.status(), {'connected': False, 'pending': False})
+        self.assertEqual(fresh.status(), {'protocol':1, 'generation':fresh.generation,'connected': False, 'pending': False})
         with self.assertRaises(prototype.ProtocolError) as missing:
             fresh.status(ident)
         self.assertEqual(missing.exception.status, 404)
 
-    def test_other_provider_root_and_shared_capabilities_cannot_start_broker(self):
-        other = self.home / '.gemini' / 'antigravity-cli'
-        other.mkdir()
-        for root, owner, ui, parent in ((other, self.owner, self.ui, self.parent),
-                                       (self.source, self.owner, self.owner, self.parent),
-                                       (self.source, self.owner, self.ui, 'https://example.invalid')):
+    def test_shared_capabilities_and_foreign_parent_cannot_start_broker(self):
+        for owner, ui, parent in ((self.owner, self.owner, self.parent),
+                                  (self.owner, self.ui, 'https://example.invalid')):
             with self.assertRaises(ValueError):
-                prototype.Broker(root, {self.target}, owner, ui, parent)
+                prototype.Broker(self.home, owner, ui, {'origin':parent})
 
     def test_security_and_delivery_regressions_detect_in_memory_guard_mutations(self):
         global prototype
@@ -605,8 +735,10 @@ class PrototypeTests(unittest.TestCase):
         path = INTEGRATION / 'broker.py'
         source = path.read_text()
         mutations = [
-            ('target not in self.allowed or not canonical_uuid(target)', 'not canonical_uuid(target)',
-             'test_native_metadata_and_owner_allowlist_are_both_required_without_transcripts'),
+            ('return self.public(previous)', "previous['expires'] = self.clock() + 5; return self.public(previous)",
+             'test_original_admission_expiry_survives_retry_with_new_expiry'),
+            ('self._authorized() and navigation.existing_app_chat(self.home, target)', 'self._authorized()',
+             'test_primary_metadata_and_canonical_source_are_both_required_without_body_reads'),
             ("origins not in ([], [broker.ui_origin])", 'False',
              'test_owner_ui_roles_and_exact_ui_origin_are_not_interchangeable'),
             ("row['state'] = 'claimed'", "row['state'] = 'queued'",
@@ -625,7 +757,7 @@ class PrototypeTests(unittest.TestCase):
                 try:
                     prototype = mutated
                     result = unittest.TestResult()
-                    PrototypeTests(method).run(result)
+                    NavigationTests(method).run(result)
                 finally:
                     prototype = original
                 self.assertEqual(result.errors, [], 'A mutant must fail a real assertion, not a fixture error.')
@@ -661,7 +793,7 @@ function fixture(value=command,{failInvoke=false,loseReceipt=false,factory=creat
   const calls=[],invoked=[],states=[];
   const request=async(route,body)=>{
     body=clone(body);calls.push({route,body});
-    if(route==='/ui/hello'){assert.deepStrictEqual(body,{page_id:page});return {page_id:page,lease,lease_ms:8000}}
+    if(route==='/ui/hello'){assert.deepStrictEqual(body,{page_id:page});return {page_id:page,passive:false,lease,lease_ms:8000}}
     if(route==='/ui/poll'){assert.deepStrictEqual(body,{page_id:page,lease});return {command:value}}
     if(route==='/ui/receipt'){
       assert.deepStrictEqual(Object.keys(body).sort(),['page_id','lease','request_id','conversation_id','state'].sort());
@@ -679,14 +811,15 @@ function fixture(value=command,{failInvoke=false,loseReceipt=false,factory=creat
   const normal=fixture();await normal.connector.tick();
   assert.deepStrictEqual(normal.invoked,[target]);
   assert.deepStrictEqual(normal.calls.map(c=>c.route),['/ui/hello','/ui/poll','/ui/receipt']);
-  assert.equal(normal.calls.at(-1).body.state,'called');assert.equal(normal.states.at(-1),'dispatched; selection unconfirmed');
+  assert.equal(normal.calls.at(-1).body.state,'called');assert.equal(normal.states.at(-1),'Opening requested');
   await normal.connector.tick();assert.equal(normal.invoked.length,1,'An identical command must not navigate twice.');
   const lost=fixture(command,{loseReceipt:true});await lost.connector.tick();await lost.connector.tick();
   assert.equal(lost.invoked.length,1,'An uncertain receipt must never cause automatic navigation replay.');
   const failed=fixture(command,{failInvoke:true});await failed.connector.tick();assert.equal(failed.calls.at(-1).body.state,'failed');
   assert.ok(!JSON.stringify([failed.calls,failed.states,lost.calls,lost.states]).includes('fictional private error'),'Native or transport diagnostics must not escape.');
   for(const value of [{...command,request_id:'not-a-request'},{...command,conversation_id:'x:'+target},
-    {...command,expires_at_ms:time},{...command,remaining_ms:0},{...command,remaining_ms:5001},
+    {...command,expires_at_ms:time},{...command,expires_at_ms:time+5000.5},
+    {...command,expires_at_ms:time+5001},{...command,remaining_ms:0},{...command,remaining_ms:5001},
     {...command,prompt:'Never send a prompt.'},[], 'open anything']){
     const malformed=fixture(value);await malformed.connector.tick();assert.equal(malformed.invoked.length,0,'Invalid/expired commands cannot reach native navigation.');
   }
@@ -715,7 +848,7 @@ function fixture(value=command,{failInvoke=false,loseReceipt=false,factory=creat
     'The actual type regressions must fail when the string guard is removed.');
   let releasePoll,pollStarted=false,invoked=0;
   const racing=create({pageId:page,now:()=>time,invoke:()=>invoked++,request:async(route)=>{
-    if(route==='/ui/hello')return {page_id:page,lease,lease_ms:8000};
+    if(route==='/ui/hello')return {page_id:page,passive:false,lease,lease_ms:8000};
     if(route==='/ui/poll'){pollStarted=true;return new Promise(resolve=>releasePoll=resolve)}
     if(route==='/ui/bye')return {closed:true};
     throw Error('Unexpected route after close.');
@@ -726,18 +859,38 @@ function fixture(value=command,{failInvoke=false,loseReceipt=false,factory=creat
 })().catch(error=>{console.error(error);process.exitCode=1});
 """)
 
+    def test_actual_connector_passive_panels_and_expiry_based_seen_retention(self):
+        self.run_node(r"""
+const fs=require('fs'),vm=require('vm'),assert=require('assert');
+const create=vm.runInNewContext(fs.readFileSync(process.argv[1],'utf8')+';createConnector',{Date});
+const page='11111111-2222-4333-8444-555555555555', target='33333333-4444-4555-8666-777777777777';
+let passive=true, polls=0, calls=0, wall=100000,index=0;const states=[];
+const active=create({pageId:page,now:()=>wall,invoke:()=>calls++,onState:value=>states.push(value),request:async(path)=>{
+ if(path==='/ui/hello')return passive?{page_id:page,passive:true,lease_ms:8000}:{page_id:page,passive:false,lease:'a'.repeat(64),lease_ms:8000};
+ if(path==='/ui/poll'){polls++;return {command:{request_id:'22222222-3333-4444-8555-'+(++index).toString(16).padStart(12,'0'),conversation_id:target,expires_at_ms:wall+5000,remaining_ms:5000}};}
+ return {confirmed:false};
+}});
+(async()=>{
+ await active.tick();assert.equal(polls,0);assert.equal(calls,0);assert.equal(states.at(-1),'Connected through another panel');
+ passive=false;
+ for(let i=0;i<2050;i++)await active.tick();assert.equal(calls,2048,'Seen retention must be bounded.');
+ wall+=35001;await active.tick();assert.equal(calls,2049,'Expired seen entries must not impose a lifetime request cap.');
+ console.log('passive and retention checks passed');
+})().catch(error=>{console.error(error);process.exitCode=1});
+""")
+
     def test_actual_native_boot_only_uses_pinned_owned_frame_and_fixed_navigation_message(self):
         self.run_node(r"""
 const fs=require('fs'),vm=require('vm'),assert=require('assert');
 const source=fs.readFileSync(process.argv[1],'utf8');
 const page='11111111-2222-4333-8444-555555555555',requestId='22222222-3333-4444-8555-666666666666';
 const target='33333333-4444-4555-8666-777777777777',lease='a'.repeat(64),parent='https://127.0.0.1:49321';
-const origin='plugin://watch-open-prototype-49322',token='fixture-native-ui-capability',now=100000;
+const origin='plugin://watch-navigation-49322',token='fixture-native-ui-capability',now=100000;
 const clone=v=>JSON.parse(JSON.stringify(v));
 async function boot(change=()=>{},contextChange=()=>{}){
   const posts=[],requests=[],listeners={},states=[];let sequence=0,statusText='';
   const status={get textContent(){return statusText},set textContent(value){states.push(value);statusText=value}};
-  const win={location:{protocol:'plugin:',host:'watch-open-prototype-49322',search:'?token='+token,ancestorOrigins:[parent]},
+  const win={location:{protocol:'plugin:',host:'watch-navigation-49322',search:'?token='+token,ancestorOrigins:[parent]},
     parent:{postMessage:(message,destination)=>posts.push({message:clone(message),destination})},addEventListener:(event,callback)=>listeners[event]=callback};
   const metas={'watch-native-parent':parent,'watch-native-origin':origin};
   const doc={referrer:'',getElementById:()=>status,querySelector:selector=>({content:metas[selector.match(/"([^"]+)"/)[1]]})};
@@ -750,7 +903,7 @@ async function boot(change=()=>{},contextChange=()=>{}){
       assert.equal(options.credentials,'omit');assert.equal(options.referrerPolicy,'no-referrer');
       assert.deepStrictEqual(clone(options.headers),{'Content-Type':'application/json','X-Sidecar-Token':token});
       let value;
-      if(path==='/ui/hello'){assert.deepStrictEqual(body,{page_id:page,parent_origin:parent});value={page_id:page,lease,lease_ms:8000}}
+      if(path==='/ui/hello'){assert.deepStrictEqual(body,{page_id:page,parent_origin:parent});value={page_id:page,passive:false,lease,lease_ms:8000}}
       else if(path==='/ui/poll')value={command:{request_id:requestId,conversation_id:target,expires_at_ms:now+5000,remaining_ms:5000}};
       else if(path==='/ui/receipt'){assert.deepStrictEqual(body,{page_id:page,lease,request_id:requestId,conversation_id:target,state:'called'});value={confirmed:false}}
       else if(path==='/ui/bye')value={closed:true};
@@ -761,10 +914,10 @@ async function boot(change=()=>{},contextChange=()=>{}){
   return {win,posts,requests,status,states,listeners};
 }
 (async()=>{
-  const good=await boot();assert.equal(good.posts.length,1);assert.equal(good.states[0],'Starting native connection…');
+  const good=await boot();assert.equal(good.posts.length,1);assert.equal(good.states[0],'Connecting…');
   assert.deepStrictEqual(good.posts[0],{message:{type:'toggle-conversation',payload:{conversationId:target}},destination:parent});
   assert.equal('sidecar' in good.win,false,'The adapter must not install a replacement vendor SDK.');
-  assert.equal(good.status.textContent,'dispatched; selection unconfirmed');
+  assert.equal(good.status.textContent,'Opening requested');
   assert.ok(!JSON.stringify(good.posts).includes(token),'No credential may cross the native navigation message.');
   good.listeners.pagehide();for(let i=0;i<20;i++)await Promise.resolve();assert.equal(good.requests.at(-1).path,'/ui/bye');
   for(const change of [w=>{w.parent=w},w=>{w.location.ancestorOrigins=['https://example.invalid']},
@@ -772,11 +925,11 @@ async function boot(change=()=>{},contextChange=()=>{}){
     w=>{w.location.search='?token=one&token=two'},(w,d,m)=>{m['watch-native-parent']='https://example.invalid'}]){
     const bad=await boot(change);assert.equal(bad.posts.length,0,'An unowned or incompatible iframe must not contact the native host.');
     assert.equal(bad.requests.length,0,'Missing bootstrap must fail before contacting the broker.');
-    assert.match(bad.status.textContent,/Unavailable/);
+    assert.match(bad.status.textContent,/Open WATCH Navigation/);
   }
   for(const breakCrypto of [ctx=>{ctx.crypto=undefined},ctx=>{ctx.crypto={randomUUID(){throw Error('fictional bootstrap detail '+token)}}}]){
     const failed=await boot(()=>{},breakCrypto);assert.equal(failed.posts.length,0);assert.equal(failed.requests.length,0);
-    assert.equal(failed.status.textContent,'Unavailable: native connector could not start.');
+    assert.equal(failed.status.textContent,'Connection unavailable. Reopen WATCH Navigation to try again.');
     assert.ok(!failed.status.textContent.includes(token));assert.ok(!failed.status.textContent.includes('fictional bootstrap detail'));
   }
   console.log('actual native frame/navigation checks passed');

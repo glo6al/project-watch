@@ -45,9 +45,11 @@ from officer_evidence import EvidenceService
 from anthropic_reporting import report as anthropic_report
 from officer_request import BudgetPolicy, RequestBudget, BudgetExceeded, AssertionRegistry
 import antigravity
+import antigravity_open
 
 MESSAGING = None
 NATIVE_OBSERVATIONS = None
+ANTIGRAVITY_OPEN = None        # separate owner-only native navigation; never a peer capability
 HISTORY = None                 # initialized only by main; import never opens private state
 OFFICER_USAGE = None            # metadata-only accounting; never opens storage on import
 OFFICER_ERASURE_EVENT = threading.Event()
@@ -3287,6 +3289,11 @@ def officer_tool(name, inp, actions, *, end=None):
                 return {'can_open': True, 'how': 'the Open button on its desk opens it in Codex'}
             if aid[0] == 'c':          # answered from what the room holds; whether Claude Desktop started it is checked only when the button is pressed
                 return {'can_open': 'only if Claude Desktop started it, which the room checks when the button is pressed', 'how': 'the Open button on its desk'}
+            if aid[0] == 'a':
+                state = antigravity_open_status()
+                ready = state['available'] and aid in state['eligible_agents']
+                return {'can_open': ready, 'how': 'the Open button requests this existing chat in Antigravity' if ready else '',
+                        'why': '' if ready else ('This chat has no verified Antigravity desktop identity.' if state['available'] else state['message'])}
             return {'can_open': False, 'why': 'nothing recorded links this agent to a window that can be opened'}
         actions.append({'do': name[5:], 'agent': aid, 'name': nm(a, aid)})
         return {'queued_for_screen': True, 'note': "the page will do this if it can and tell the owner what it did; do not say it is done"}
@@ -4769,6 +4776,12 @@ class H(BaseHTTPRequestHandler):
                 except OSError:
                     pass
             return self.send(404, b'not found')
+        if u.path == '/antigravity-open/status':
+            if not self.keyed(self.headers.get('X-Live-Room-Key', '')):
+                return self.send(403, b'forbidden')
+            if u.query or u.fragment:
+                return self.send(400, b'Invalid navigation status query.')
+            return self.send(200, json.dumps(antigravity_open_status()).encode(), 'application/json')
         if u.path == '/agent-capabilities':
             if not self.keyed(self.headers.get('X-Live-Room-Key', '')):
                 return self.send(403, b'forbidden')
@@ -5014,6 +5027,19 @@ class H(BaseHTTPRequestHandler):
             return self.send(200, KEY.encode())
         if not self.keyed(self.headers.get('X-Live-Room-Key', '')):
             return self.send(403, b'forbidden')
+        if route in ('/antigravity-open/setup', '/antigravity-open/disconnect'):
+            if d or self.path != route:
+                return self.send(400, b'{"error":"Expected an empty navigation request."}', 'application/json')
+            if ANTIGRAVITY_OPEN is None:
+                return self.send(503, b'{"error":"Antigravity navigation is unavailable."}', 'application/json')
+            with LOCK:
+                agents = {aid: dict(item) for aid, item in AGENTS.items()}
+            try:
+                out = (ANTIGRAVITY_OPEN.setup(os.path.dirname(HERE), agents)
+                       if route.endswith('/setup') else ANTIGRAVITY_OPEN.disconnect(agents))
+            except antigravity_open.OpenError as error:
+                return self.send(error.status, json.dumps({'error': str(error), 'error_code': error.code}).encode(), 'application/json')
+            return self.send(200, json.dumps(out).encode(), 'application/json')
         if route in ('/peer-reply-setup', '/peer-reply-status', '/peer-reply-revoke'):
             import peer_bridge
             if MESSAGING is None:
@@ -5117,6 +5143,8 @@ class H(BaseHTTPRequestHandler):
                 APPROVER = time.time()
             return self.send(200, b'ok')
         if route == '/open':
+            if isinstance(d.get('agent'), str) and d['agent'].startswith('a:') and (set(d) != {'agent'} or self.path != route):
+                return self.send(400, b'Invalid Antigravity navigation request.')
             return self.open_session(str(d.get('agent', '')))
         if route == '/ask':
             if not self.keyed(self.headers.get('X-Live-Room-Key', '')):
@@ -5216,14 +5244,20 @@ class H(BaseHTTPRequestHandler):
     def open_session(self, aid):
         seen = set()
         a = AGENTS.get(aid)
-        while a and a.get('sub') and not a.get('soft') and a.get('parent') in AGENTS and aid not in seen:     # only a recorded Claude sub-agent lives inside its parent; inferred relations are never followed
+        while not aid.startswith('a:') and a and a.get('sub') and not a.get('soft') and a.get('parent') in AGENTS and aid not in seen:     # only a recorded Claude sub-agent lives inside its parent; inferred relations are never followed
             seen.add(aid)
             aid = a['parent']
             a = AGENTS[aid]
         if not a or not AID_RX.match(aid):
             return self.send(404, b'unknown agent')
         if aid[0] == 'a':
-            return self.send(404, b'Antigravity does not expose a verified link to this chat. Open it in Antigravity.')
+            if ANTIGRAVITY_OPEN is None:
+                return self.send(404, b'Antigravity navigation is unavailable. Connect WATCH Navigation before opening this chat.')
+            try:
+                out = ANTIGRAVITY_OPEN.open(aid, dict(a))
+            except antigravity_open.OpenError as error:
+                return self.send(error.status, json.dumps({'error': str(error), 'error_code': error.code}).encode(), 'application/json')
+            return self.send(202, json.dumps(out).encode(), 'application/json')
         if aid[0] == 'k':
             return self.send(404, b'Cursor does not record a link that opens this chat.')
         if aid[0] == 'e':
@@ -5467,6 +5501,18 @@ def owner_target_call(method, agent, *args):
         return invoke(snapshot)
 
 
+def antigravity_open_status():
+    # Owner UI and read-only Officer availability only. Never publish connection
+    # receipts or capabilities into agent facts, event history or peer discovery.
+    with LOCK:
+        agents = {aid: dict(item) for aid, item in AGENTS.items()}
+    if ANTIGRAVITY_OPEN is not None:
+        return ANTIGRAVITY_OPEN.status(agents)
+    return dict(supported=False, installed=False, authorized=False, available=False,
+                state='unavailable', message=antigravity_open.MESSAGES['unavailable'],
+                generation='', eligible_agents=[])
+
+
 def resolve_native_agent(agent_id):
     # Snapshot only: no discovery, native I/O or general room publication.
     with LOCK:
@@ -5476,6 +5522,7 @@ def resolve_native_agent(agent_id):
 
 if __name__ == '__main__':
     KEY = load_key()
+    ANTIGRAVITY_OPEN = antigravity_open.Adapter(HOME)
     try:
         from deck_log import DeckLog
         HISTORY = DeckLog(os.path.join(HOME, '.live-room'))
@@ -5517,6 +5564,7 @@ if __name__ == '__main__':
         srv.serve_forever()
     finally:
         NATIVE_OBSERVATIONS.close()
+        ANTIGRAVITY_OPEN.close()
         if HISTORY is not None:
             HISTORY.close(timeout=2)
         if OFFICER_USAGE is not None:

@@ -1,4 +1,4 @@
-"""Disposable native Antigravity navigation proof; standard library only.
+"""Owner-authorized native Antigravity navigation; standard library only.
 
 Importing this module does no I/O. There are no prompt, agent, model, MCP,
 arbitrary RPC, browser automation, or native debugging endpoints.
@@ -11,15 +11,19 @@ import os
 from pathlib import Path
 import secrets
 import signal
-import sqlite3
-import stat
 import time
 import urllib.parse
 import uuid
+import sys
 
-SIDECAR_ID = 'watch-open-prototype'
-COMMAND_SECONDS, LEASE_SECONDS = 5, 8
-MAX_BODY, MAX_REQUESTS = 2048, 64
+# A normal global sidecar loads the same reviewed helper beside this file.
+if not (Path(__file__).resolve().parent / 'antigravity_navigation.py').exists():
+    sys.path.insert(0, str(Path(__file__).resolve().parents[2] / 'src'))
+import antigravity_navigation as navigation
+
+SIDECAR_ID = navigation.ID
+COMMAND_SECONDS, LEASE_SECONDS, RETENTION_SECONDS = 5, 8, 30
+MAX_BODY, MAX_REQUESTS = 2048, 2048
 TERMINAL = frozenset(('called', 'failed', 'expired', 'unknown'))
 HERE = Path(__file__).resolve().parent
 
@@ -51,129 +55,116 @@ def native_parent(value):
         return False
 
 
-def regular(path):
-    try:
-        info = os.lstat(path)
-        return (stat.S_ISREG(info.st_mode) and info.st_nlink == 1
-                and os.path.abspath(path) == os.path.realpath(path))
-    except OSError:
-        return False
-
-
 class Broker:
-    def __init__(self, source_root, allowed_ids, owner_token, ui_token, parent_origin,
+    def __init__(self, home, owner_token, ui_token, runtime, generation=None,
                  clock=time.monotonic, wall=time.time):
-        self.root = Path(os.path.abspath(source_root))
-        if (self.root.name != 'antigravity' or self.root.parent.name != '.gemini'
-                or str(self.root) != os.path.realpath(self.root)):
-            raise ValueError('Only a canonical Antigravity App source is supported.')
-        if (not isinstance(allowed_ids, (list, tuple, set, frozenset)) or not 1 <= len(allowed_ids) <= 2
-                or not all(canonical_uuid(v) for v in allowed_ids)):
-            raise ValueError('Register one or two existing App conversations.')
-        self.allowed = frozenset(allowed_ids)
-        if not all(isinstance(v, str) and 16 <= len(v) <= 256 and v.isascii() and not any(c.isspace() for c in v)
-                   for v in (owner_token, ui_token)) or hmac.compare_digest(owner_token, ui_token):
+        self.home = Path(home)
+        if not all(type(v) is str and 16 <= len(v) <= 256 and v.isascii()
+                   and not any(c.isspace() for c in v) for v in (owner_token, ui_token)):
             raise ValueError('Separate owner and native UI capabilities are required.')
-        if not native_parent(parent_origin):
-            raise ValueError('The observed native parent origin must be pinned.')
-        self.owner_token, self.ui_token, self.parent_origin = owner_token, ui_token, parent_origin
+        if hmac.compare_digest(owner_token, ui_token) or not native_parent(runtime.get('origin')):
+            raise ValueError('The native connection is invalid.')
+        self.generation = generation or secrets.token_hex(16)
+        if (type(self.generation) is not str or len(self.generation) != 32
+                or any(c not in '0123456789abcdef' for c in self.generation)):
+            raise ValueError('The native generation is invalid.')
+        self.owner_token, self.ui_token = owner_token, ui_token
+        self.runtime, self.parent_origin = dict(runtime), runtime['origin']
         self.clock, self.wall = clock, wall
         self.ui_origin = None
         self.page = None
         self.requests = {}
 
-    def _target(self, target):
-        if target not in self.allowed or not canonical_uuid(target):
-            return False
-        database = self.root / 'conversation_summaries.db'
-        conn = None
-        try:
-            if str(self.root) != os.path.realpath(self.root) or not regular(database):
-                return False
-            for suffix in ('-wal', '-shm'):
-                p = Path(str(database) + suffix)
-                if os.path.lexists(p) and not regular(p):
-                    return False
-            if Path(str(database) + '-wal').exists() and not Path(str(database) + '-shm').exists():
-                return False
-            conn = sqlite3.connect(database.as_uri() + '?mode=ro', uri=True, timeout=.05)
-            conn.execute('PRAGMA query_only=ON')
-            deadline = time.monotonic() + .1
-            conn.set_progress_handler(lambda: int(time.monotonic() > deadline), 1000)
-            rows = conn.execute('SELECT conversation_id FROM conversation_summaries '
-                                'WHERE conversation_id=? LIMIT 2', (target,)).fetchall()
-            return rows == [(target,)]
-        except (OSError, ValueError, sqlite3.Error):
-            return False
-        finally:
-            if conn is not None:
-                conn.close()
+    def _authorized(self):
+        return navigation.authorized(self.home)
 
-    @staticmethod
-    def public(row):
-        return dict(request_id=row['request_id'], conversation_id=row['conversation_id'],
+    def _target(self, target):
+        return self._authorized() and navigation.existing_app_chat(self.home, target)
+
+    def public(self, row):
+        return dict(protocol=1, generation=self.generation,
+                    request_id=row['request_id'], conversation_id=row['conversation_id'],
                     state=row['state'], confirmed=False)
 
     def _advance(self):
         now = self.clock()
-        if self.page and now >= self.page['expires']:
+        if self.page and (now >= self.page['expires'] or not self._authorized()):
             self.page = None
         for row in self.requests.values():
             if row['state'] in ('queued', 'claimed') and (now >= row['expires'] or not self.page
                     or row['lease'] != self.page['lease']):
                 row['state'] = 'expired' if row['state'] == 'queued' else 'unknown'
+        self.requests = {key: row for key, row in self.requests.items()
+                         if row['state'] not in TERMINAL or now < row['expires'] + RETENTION_SECONDS}
 
     def _page(self, page_id, lease):
         self._advance()
         if (not self.page or self.page['page_id'] != page_id or not isinstance(lease, str)
                 or not hmac.compare_digest(self.page['lease'], lease)):
-            raise ProtocolError(409, 'The native UI lease is unavailable.')
+            raise ProtocolError(409, 'The native connection is unavailable.')
         self.page['expires'] = self.clock() + LEASE_SECONDS
 
-    def owner_open(self, request_id, conversation_id):
+    def owner_open(self, request_id, conversation_id, expires_at_ms):
         if not canonical_uuid(request_id, request=True) or not canonical_uuid(conversation_id):
             raise ProtocolError(400, 'Valid exact request and conversation identifiers are required.')
+        if type(expires_at_ms) is not int or not 0 < expires_at_ms <= 9007199254740991:
+            raise ProtocolError(400, 'A bounded navigation expiry is required.')
         self._advance()
+        if not self._authorized():
+            raise ProtocolError(403, 'Antigravity navigation is disconnected.')
         previous = self.requests.get(request_id)
         if previous:
             if previous['conversation_id'] != conversation_id:
                 raise ProtocolError(409, 'That request identifier already has a different target.')
+            # The originally accepted expiry is immutable, including retries with
+            # a later expiry. A terminal/uncertain request is never requeued.
             return self.public(previous)
+        remaining = expires_at_ms - int(self.wall() * 1000)
+        if not 0 < remaining <= COMMAND_SECONDS * 1000:
+            raise ProtocolError(400, 'This navigation request has expired or is too far ahead.')
         if not self._target(conversation_id):
-            raise ProtocolError(404, 'The registered existing App conversation is unavailable.')
+            raise ProtocolError(404, 'That existing Antigravity desktop chat is unavailable.')
+        try:
+            navigation.verify_runtime(self.runtime, self.home)
+        except navigation.NavigationError:
+            raise ProtocolError(503, 'The native desktop connection is unavailable.') from None
         self._advance()
         if not self.page:
-            raise ProtocolError(503, 'The registered native UI is not connected.')
+            raise ProtocolError(503, 'Open WATCH Navigation from Extensions in an existing Antigravity chat.')
         if any(r['state'] in ('queued', 'claimed') for r in self.requests.values()):
             raise ProtocolError(409, 'A navigation request is already unresolved.')
         if len(self.requests) >= MAX_REQUESTS:
-            raise ProtocolError(429, 'This disposable connector has reached its request limit.')
+            raise ProtocolError(429, 'Navigation is temporarily busy. Try again shortly.')
         row = dict(request_id=request_id, conversation_id=conversation_id, state='queued',
-                   expires=self.clock() + COMMAND_SECONDS, lease=self.page['lease'])
+                   expires=self.clock() + remaining / 1000, expires_at_ms=expires_at_ms,
+                   lease=self.page['lease'])
         self.requests[request_id] = row
         return self.public(row)
 
     def status(self, request_id=None):
         self._advance()
         if request_id is None:
-            return dict(connected=bool(self.page), pending=any(r['state'] in ('queued', 'claimed') for r in self.requests.values()))
+            return dict(protocol=1, generation=self.generation, connected=bool(self.page),
+                        pending=any(r['state'] in ('queued', 'claimed') for r in self.requests.values()))
         if not canonical_uuid(request_id, request=True):
             raise ProtocolError(400, 'A valid request identifier is required.')
         row = self.requests.get(request_id)
         if row is None:
-            raise ProtocolError(404, 'That request is not retained by this connector.')
+            raise ProtocolError(404, 'That request is no longer retained.')
         return self.public(row)
 
     def hello(self, page_id, parent_origin):
         if not canonical_uuid(page_id, request=True) or parent_origin != self.parent_origin:
-            raise ProtocolError(400, 'The native UI identity or parent is invalid.')
+            raise ProtocolError(400, 'The native connection identity is invalid.')
         self._advance()
+        if not self._authorized():
+            raise ProtocolError(403, 'Antigravity navigation is disconnected.')
         if self.page and self.page['page_id'] != page_id:
-            raise ProtocolError(409, 'Another native UI already holds this connector.')
+            return dict(page_id=page_id, passive=True, lease_ms=LEASE_SECONDS * 1000)
         if self.page is None:
             self.page = dict(page_id=page_id, lease=secrets.token_hex(32), expires=0)
         self.page['expires'] = self.clock() + LEASE_SECONDS
-        return dict(page_id=page_id, lease=self.page['lease'], lease_ms=LEASE_SECONDS * 1000)
+        return dict(page_id=page_id, passive=False, lease=self.page['lease'], lease_ms=LEASE_SECONDS * 1000)
 
     def poll(self, page_id, lease):
         self._page(page_id, lease)
@@ -182,13 +173,22 @@ class Broker:
                 if not self._target(row['conversation_id']):
                     row['state'] = 'expired'
                     return dict(command=None)
+                try:
+                    navigation.verify_runtime(self.runtime, self.home)
+                except navigation.NavigationError:
+                    row['state'] = 'expired'
+                    return dict(command=None)
                 self._advance()
                 if row['state'] != 'queued':
                     return dict(command=None)
-                row['state'] = 'claimed'  # Before HTTP output: losing that output never redelivers.
-                remaining = max(1, min(5000, int((row['expires'] - self.clock()) * 1000)))
+                row['state'] = 'claimed'  # Consume before HTTP output: never redeliver.
+                remaining = max(1, min(5000, int((row['expires'] - self.clock()) * 1000),
+                                       row['expires_at_ms'] - int(self.wall() * 1000)))
+                if row['expires_at_ms'] <= int(self.wall() * 1000):
+                    row['state'] = 'unknown'
+                    return dict(command=None)
                 return dict(command=dict(request_id=row['request_id'], conversation_id=row['conversation_id'],
-                                         expires_at_ms=int(self.wall() * 1000) + remaining, remaining_ms=remaining))
+                                         expires_at_ms=row['expires_at_ms'], remaining_ms=remaining))
         return dict(command=None)
 
     def receipt(self, page_id, lease, request_id, conversation_id, state):
@@ -196,7 +196,7 @@ class Broker:
         row = self.requests.get(request_id) if isinstance(request_id, str) else None
         if (not row or row['lease'] != lease or row['conversation_id'] != conversation_id
                 or state not in ('called', 'failed') or row['state'] not in ('claimed', state)):
-            raise ProtocolError(409, 'The receipt does not match a current claimed navigation.')
+            raise ProtocolError(409, 'The receipt does not match a current navigation request.')
         row['state'] = state
         return self.public(row)
 
@@ -253,7 +253,7 @@ class BoundedReader:
 
 class Handler(BaseHTTPRequestHandler):
     protocol_version = 'HTTP/1.1'
-    server_version, sys_version = 'WATCH Open Test', ''
+    server_version, sys_version = 'WATCH Navigation', ''
 
     def log_message(self, *args):
         pass
@@ -342,7 +342,8 @@ class Handler(BaseHTTPRequestHandler):
                     raise ProtocolError(403, 'Forbidden.')
                 if 'conversationId' in query:
                     target = query['conversationId'][0]
-                    if not canonical_uuid(target) or target not in self.server.broker.allowed:
+                    if (not canonical_uuid(target)
+                            or not navigation.existing_app_chat(self.server.broker.home, target)):
                         raise ProtocolError(403, 'Forbidden.')
                 page = (HERE / 'index.html').read_text(encoding='utf-8')
                 page = page.replace('{{NATIVE_PARENT}}', html.escape(self.server.broker.parent_origin, quote=True))
@@ -359,7 +360,7 @@ class Handler(BaseHTTPRequestHandler):
             url = self._common()
             if url.query or url.fragment or url.scheme or url.netloc:
                 raise ProtocolError(400, 'Invalid request path.')
-            routes = {'/owner/open': ('owner', ('request_id', 'conversation_id'), 'owner_open'),
+            routes = {'/owner/open': ('owner', ('request_id', 'conversation_id', 'expires_at_ms'), 'owner_open'),
                       '/ui/hello': ('ui', ('page_id', 'parent_origin'), 'hello'),
                       '/ui/poll': ('ui', ('page_id', 'lease'), 'poll'),
                       '/ui/receipt': ('ui', ('page_id', 'lease', 'request_id', 'conversation_id', 'state'), 'receipt'),
@@ -400,65 +401,50 @@ def make_server(broker, port=0):
     return server
 
 
-def _private_read(path):
-    if not regular(path):
-        raise ValueError('The private prototype configuration is unavailable.')
-    info = os.stat(path)
-    if os.name == 'nt' or info.st_uid != os.getuid() or info.st_mode & 0o077 or info.st_size > 4096:
-        raise ValueError('The private prototype configuration is not protected.')
-    fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
-    try:
-        opened = os.fstat(fd)
-        if (opened.st_dev, opened.st_ino) != (info.st_dev, info.st_ino):
-            raise ValueError('The private prototype configuration changed.')
-        return _json(os.read(fd, 4097))
-    finally:
-        os.close(fd)
-
 
 def main():
-    # Disposable macOS test setup only; no installation or enabling is performed.
-    if os.name == 'nt':
-        raise ValueError('This native desktop prototype has not been enabled on Windows.')
-    private = Path.home() / '.live-room' / 'antigravity-open-prototype'
-    info = os.lstat(private)
-    if (not stat.S_ISDIR(info.st_mode) or info.st_uid != os.getuid() or info.st_mode & 0o077
-            or str(private) != os.path.realpath(private)):
-        raise ValueError('A protected prototype directory is required.')
-    config = _private_read(private / 'config.json')
-    if not exact(config, ('allowed_ids', 'parent_origin')) or not isinstance(config['allowed_ids'], list):
-        raise ValueError('The bounded prototype configuration is invalid.')
-    port_text = os.environ.get('ANTIGRAVITY_SIDECAR_WEB_PORT', '')
-    if not port_text.isdigit() or not 1 <= int(port_text) <= 65535:
-        raise ValueError('The native sidecar web port is unavailable.')
-    owner = secrets.token_hex(32)
-    broker = Broker(Path.home() / '.gemini' / 'antigravity', config['allowed_ids'], owner,
-                    os.environ.get('ANTIGRAVITY_SIDECAR_UI_TOKEN', ''), config['parent_origin'])
-    server = make_server(broker, int(port_text))
-    receipt = private / 'connection.json'
-    generation = secrets.token_hex(16)
-    fd = os.open(receipt, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
+    if sys.platform != 'darwin':
+        raise navigation.NavigationError('unsupported')
+    home = Path.home()
     try:
-        with os.fdopen(fd, 'w') as f:
-            json.dump(dict(url='http://127.0.0.1:%d' % server.server_port, owner_token=owner,
-                           generation=generation), f)
-        def stop(*_):
-            raise SystemExit()
-        signal.signal(signal.SIGTERM, stop)
-        server.serve_forever(poll_interval=.25)
-    finally:
-        broker.close()
-        server.server_close()
+        if not navigation._owned_before(home):
+            return
+        navigation._installed(home, navigation._manifest(home))
+    except (OSError, navigation.NavigationError):
+        return  # An unowned/changed package cannot create a background connection.
+    with navigation.process_lock(home):
+        runtime = navigation.runtime_for_backend(os.getppid(), home)
+        port_text = os.environ.get('ANTIGRAVITY_SIDECAR_WEB_PORT', '')
+        if not port_text.isascii() or not port_text.isdigit() or not 1 <= int(port_text) <= 65535:
+            raise navigation.NavigationError()
+        owner = secrets.token_hex(32)
+        broker = Broker(home, owner, os.environ.get('ANTIGRAVITY_SIDECAR_UI_TOKEN', ''), runtime)
+        server = make_server(broker, int(port_text))
+        receipt = navigation.private_dir(home) / 'connection.json'
+        before, _ = navigation.snapshot(receipt, private=True)
+        current = navigation.process(os.getpid())
+        value = dict(protocol=1, generation=broker.generation, url='http://127.0.0.1:%d' % server.server_port,
+                     owner_token=owner, broker_pid=os.getpid(), broker_start=current['start'], runtime=runtime)
         try:
-            current = _private_read(receipt)
-            if current.get('generation') == generation:
-                receipt.unlink()
-        except (OSError, ValueError):
-            pass
+            navigation.replace(receipt, navigation.encoded(value), before)
+            def stop(*_):
+                raise SystemExit()
+            signal.signal(signal.SIGTERM, stop)
+            signal.signal(signal.SIGINT, stop)
+            server.serve_forever(poll_interval=.25)
+        finally:
+            broker.close()
+            server.server_close()
+            try:
+                if navigation.private_json(home, 'connection.json').get('generation') == broker.generation:
+                    raw, _ = navigation.snapshot(receipt, private=True)
+                    navigation.unlink(receipt, raw)
+            except (OSError, navigation.NavigationError):
+                pass
 
 
 if __name__ == '__main__':
     try:
         main()
-    except (OSError, ValueError):
-        raise SystemExit('WATCH Open Test could not start. Check its private setup; no action was performed.')
+    except (OSError, ValueError, navigation.NavigationError):
+        raise SystemExit('WATCH Navigation could not start. Reconnect it from WATCH.')

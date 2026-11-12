@@ -1,82 +1,60 @@
-# Antigravity existing-chat navigation prototype
+# WATCH Navigation for Antigravity
 
-This is a disposable connection proof, not an enabled WATCH feature. It does not
-change WATCH's Open button, install anything, send prompts, start conversations,
-call models, interrupt work, enable remote debugging, or expose arbitrary RPC.
+This user-level native extension lets WATCH request opening an existing
+Antigravity desktop chat. It never sends a message, starts work, creates a chat,
+changes permissions or calls a model. It uses a small adapter to the installed
+native UI navigation contract; it does not replace the vendor SDK.
 
-The native sidecar manifest uses the installed app's `has_web_ui` and
-`ui_config.views` fields with `SIDECAR_UI_ENTRYPOINT_AUX_PANE`. The reviewed files
-must be loaded through Antigravity's legitimate global sidecar mechanism under
-the exact sidecar ID `watch-open-prototype`. Enabling a background process alone
-does not prove that its UI has loaded. This temporary proof uses the native
-conversation-scoped Extensions panel; it does not establish a global UI
-connection. The native global sidebar surface is separately gated and has not
-been demonstrated.
+On macOS with Antigravity 2.31.2, choose **Connection → Install connector**
+on an Antigravity desk in WATCH. This installs the reviewed package once as the global `watch-navigation`
+sidecar and explicitly authorizes navigation to existing desktop chats. There
+are no per-chat installations, target lists or pairing codes. Enable **WATCH
+Navigation** once in Antigravity's **Customizations → Installed**. In any existing
+chat, open **Extensions → WATCH Navigation** once. You can hide the
+panel after it connects. WATCH offers Open only while a live connection exists.
+If it becomes unavailable, reopen that panel. Cold startup and retention after
+many chat switches are not guaranteed. No hidden flags or app restart are used.
 
-The frontend is **our small adapter to the native sidecar navigation contract**,
-not a vendored or replacement SDK. The installed SDK uses the same
-`toggle-conversation` message with a `conversationId`; Antigravity accepts it only
-from a sidecar iframe it owns. Our message uses the pinned parent origin and
-contains no credentials, arbitrary URLs, method names, or options.
+The command-line equivalent is `python3 scripts/install_antigravity_open.py install`;
+use `status`, `disconnect` or `remove` for the other lifecycle actions.
+Disconnect revokes navigation immediately. A loaded panel can reconnect when you
+connect again in WATCH; the idle extension gains no navigation authority. An
+in-flight native navigation cannot be recalled. To remove or update installed
+files, first turn WATCH Navigation off in Antigravity. Remove waits for the
+sidecar to stop and deletes only verified owned files; changed or foreign files
+are preserved. WATCH never writes Antigravity's shared configuration, so native
+settings and concurrent native edits remain untouched. A private ownership stamp
+is retained to recognize a later reinstall.
 
-## Private test preparation
+## Local protection
 
-After independent review, the operator verifies the exact native Hub origin and
-selects one already existing, visible, unarchived, idle App conversation for this
-temporary AUX-pane test.
-Their UUIDs and that origin go in an owner-only `config.json` beneath the private
-`~/.live-room/antigravity-open-prototype/` directory. The directory must have mode
-700 and the configuration mode 600. This file must never enter the repository.
+Owner authorization and ephemeral connection data live under
+`~/.live-room/antigravity-open/` in owner-only directories and files. The owner
+capability is distinct from both WATCH's API key and the native UI capability.
+It never appears in URLs, the extension page, public status, logs or model
+context. The native UI uses Antigravity's own token bootstrap. Its proxy can
+forward a canonical `localhost:<port>` Host and omit Origin; UI requests always
+require the separate native capability and reject any other supplied Origin.
+Owner routes retain exact broker Host checks and reject browser Origin headers.
 
-The private configuration has exactly `allowed_ids` (one or two canonical UUIDs)
-and `parent_origin` (the observed `https://127.0.0.1:<port>` origin). The native Hub
-HTTPS port is verified directly; it is not guessed from a language-server port.
-The operator's unarchived check is a test prerequisite, not a continuous archive
-state guarantee. Each dispatch rechecks the exact UUID's primary metadata row in
-the App's own database, without reading conversation bodies or other providers.
+Every request checks the local authorization, existing primary desktop identity
+and current process binding. CLI, IDE, duplicate identities and unsupported
+platforms or versions do not qualify. Metadata checks read only the exact UUID's
+primary database row, never conversation text or summaries. Runtime verification
+uses public process, application and listener metadata, never arguments or
+credentials. The standard macOS foreground request addresses the verified
+running app without a URL, prompt or new-instance flag.
 
-Antigravity supplies the sidecar web port and native UI capability. The native UI
-must load with its normal authenticated token bootstrap. Missing or incompatible
-bootstrap, parent identity, or plugin origin leaves it disconnected; there is no
-injected-frame or permissive browser fallback. The initial page accepts only the
-native `token` query and optional `conversationId`; a supplied conversation ID
-must be canonical and registered in the private allowlist. Duplicate or unknown
-query fields are rejected.
+## Delivery limits
 
-Native UI routes accept the desktop proxy's canonical `localhost:<port>` Host;
-owner routes still require the broker's exact listening address and port.
-The native proxy can omit Origin. UI requests require their separate capability
-in all cases and reject any supplied Origin other than the exact plugin origin.
+Commands have an immutable five-second expiry, one pending command and bounded
+terminal retention. Claiming consumes a command before responding; uncertain
+requests never replay. Repeated request IDs retain their originally accepted
+expiry. Old requests remain expired after retention ends. Multiple loaded panels
+share one active lease; other panels wait passively and cannot dispatch. Revoking
+or losing a lease prevents further admission and claim.
 
-At startup, the broker creates a separate ephemeral owner capability in a mode
-600 `connection.json` beside that configuration. Only a private diagnostic test
-client reads it. It never reaches HTML, JavaScript, URLs, native messages, or logs.
-The native UI has its own capability and cannot submit owner navigation commands.
-
-## What the proof must demonstrate
-
-1. Open the legitimate Extensions panel in the registered conversation and
-   verify that the lease is connected.
-2. Navigate to Home, then submit one explicit owner request for the registered
-   existing conversation while the loaded connector remains available.
-3. Observe that exact conversation in the native desktop window, without a new
-   conversation, prompt, send, or model run.
-4. Hide the connector view, navigate normally, and repeat. Observe whether this
-   loaded conversation-scoped frame stays connected.
-5. Verify background/foreground behavior. Global availability, cold startup, and
-   eviction after visiting many conversations remain unproven by this bounded
-   test. Do not restart the app or disturb active work to broaden the proof.
-6. Disconnect and remove the disposable sidecar and private test files through
-   the operator's reviewed procedure. No command survives a broker restart.
-
-The broker retains at most 64 request identities in memory and permits one
-unresolved navigation at a time. A UI lease lasts eight seconds; a command lasts
-five. A poll consumes a command before writing the response. Loss of a claimed
-command produces `unknown`, never a replay. Same-request retries return the old
-state. A fresh owner action requires a fresh request ID.
-
-`called` means that the native navigation message was issued. The native contract
-has no selection acknowledgment, so it **does not confirm which chat is visible**.
-The live test must verify that separately. This temporary AUX-pane proof does not
-authorize restoring the production WATCH Open button or claiming a global
-connection; those require a separate reviewed lifecycle result.
+The native contract has no selection acknowledgment. A successful response means
+**Opening requested**, not independently confirmed selection or foreground.
+WATCH never interprets that response as completed work. Process-exit races remain
+possible. Reconnect when the current generation or its native process changes.

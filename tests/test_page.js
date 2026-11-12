@@ -887,7 +887,7 @@ function deskKeyboardChecks(mutate=false){
   const watch=html.split('\n').find(x=>x.startsWith("addEventListener('keydown',e=>{")&&x.includes("if(e.key==='Escape'&&!$('#watchP').hidden)"));
   let desk=html.slice(html.indexOf('function deskKeydown('),html.indexOf('/* end desk keyboard handling */'));assert.ok(desk.includes("addEventListener('keydown',deskKeydown,true)"));
   if(mutate)desk=desk.replace('e.stopImmediatePropagation();','');
-  const bubbleStart=html.indexOf("addEventListener('keydown',e=>{\n  if((e.key==='Enter'");assert.ok(bubbleStart>=0);const bubble=html.slice(bubbleStart,html.indexOf('let wasPortrait=',bubbleStart));
+  const bubbleStart=html.lastIndexOf("addEventListener('keydown',e=>{",html.indexOf('let wasPortrait='));assert.ok(bubbleStart>=0);const bubble=html.slice(bubbleStart,html.indexOf('let wasPortrait=',bubbleStart));
   const officer=html.split('\n').find(x=>x.startsWith("addEventListener('keydown',e=>{")&&x.includes("if(!$('#cuAgentChoices').hidden)"));assert.ok(watch&&officer);
   vm.runInNewContext(deskHelpers+'\n'+watch+'\n'+desk+'\n'+bubble+'\n'+officer,ctx);
   const dispatch=(key,extra={})=>{let immediate=false,stopped=false;const e={key,target,preventDefault(){},stopImmediatePropagation(){immediate=true;stopped=true},stopPropagation(){stopped=true},...extra};for(const capture of [true,false]){if(!capture&&stopped)break;for(const c of callbacks.filter(c=>c.capture===capture)){c.fn(e);if(immediate)break}if(immediate)break}};
@@ -1758,3 +1758,138 @@ function recipientChooserChecks(){
   console.log('ok single left recipient chooser: reopen after selection, exact room target, left focus return, hidden legacy trigger and docked station scope');
 }
 recipientChooserChecks();officerModelChecks().catch(error=>{console.error(error);process.exitCode=1});
+
+/* Production Antigravity connection state and owner navigation, using actual UI code. */
+const agStart=html.indexOf('/* Antigravity opening:');
+const agEnd=html.indexOf('/* end Antigravity opening state */',agStart);
+assert.ok(agStart>=0&&agEnd>agStart,'production navigation helper markers exist');
+const agSource=html.slice(agStart,agEnd);
+const agBindings=html.slice(agEnd+'/* end Antigravity opening state */'.length,html.indexOf('let ES=null',agEnd));
+function antigravityFixture(source=agSource,nativeSource=nativeOpenSource){
+  const t=responseFixture(),requests=[],listeners=[],now=()=>t.ctx.Date.now();
+  const sid='11111111-2222-4333-8444-555555555555',other='aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee';
+  Object.assign(t.a,{id:'a:'+sid,runtime:'Antigravity',$:{go:{hidden:false,disabled:false},name:{}}});
+  t.ctx.A={[t.a.id]:t.a,['a:'+other]:{id:'a:'+other,runtime:'Antigravity',$:{go:{}}}};
+  Object.assign(t.ctx,{focus:t.a.id,KEY:'fixture-owner',locked:false,claiming:false,DEMO:false,connected:true,
+    AbortSignal:{timeout:ms=>({timeout:ms})},addEventListener:(event,fn,capture)=>listeners.push({event,fn,capture}),
+    fetch:(url,options={})=>{const record={url,options};requests.push(record);return new Promise((resolve,reject)=>Object.assign(record,{resolve,reject}))}});
+  for(const id of ['#agDialog','#agClose','#agInstall','#agDisconnect','#agRefresh','#agStatus','#agInstructions','#agNotice','#deskAntigravityConnect','#deskOpenApp','#unlock']){
+    const n=t.node(id);n.isConnected=true;n.getClientRects=()=>[n.rect];n.focus=function(){t.ctx.document.activeElement=this};
+  }
+  const dialog=t.node('#agDialog');dialog.open=false;dialog.showModal=function(){this.open=true};dialog.close=function(){this.open=false;this.closeListener?.()};
+  const oldListen=dialog.addEventListener;dialog.addEventListener=function(event,fn){if(event==='close')this.closeListener=fn;else oldListen.call(this,event,fn)};
+  const api=vm.runInContext(nativeSource+'\n'+source+'\n'+agBindings+';({AGOPEN,agOpenValue,agOpenApply,agOpenContext,agOpenRefresh,agOpenRequest,agConnectionAction,agDialogShow,agDialogClosed,agDialogForeground,nativeOpenAvailable})',t.ctx);
+  const value=(changes={})=>({supported:true,installed:true,authorized:true,available:true,state:'ready',message:'Fixture connection ready.',generation:'a'.repeat(32),eligible_agents:[t.a.id],...changes});
+  const answer=(request,value,status=200)=>request.resolve({ok:status>=200&&status<300,status,json:async()=>value});
+  const ready=()=>{api.agOpenContext();api.agOpenApply(value(),now()+9000);t.a.$.go.hidden=t.a.$.go.disabled=false};
+  return {...t,api:{...t.api,...api},requests,listeners,now,value,answer,ready};
+}
+async function antigravityStateChecks(source=agSource,nativeSource=nativeOpenSource){
+  const t=antigravityFixture(source,nativeSource),a=t.a,s=t.api.AGOPEN;
+  const invalid=[null,[],{},t.value({supported:'yes'}),t.value({protocol:1}),t.value({generation:'wrong'}),t.value({generation:''}),t.value({state:'waiting_panel'}),t.value({installed:false}),t.value({eligible_agents:[a.id,a.id]}),t.value({eligible_agents:['x:'+a.id.slice(2)]}),t.value({eligible_agents:[[a.id]]}),t.value({message:'x'.repeat(601)})];
+  for(const value of invalid)assert.throws(()=>t.api.agOpenValue(value),'strict malformed status rejected');
+  assert.equal(t.api.agOpenValue(t.value()).state,'ready');
+  t.ready();assert.equal(t.api.nativeOpenAvailable(a),true);
+  assert.equal(t.api.nativeOpenAvailable(t.ctx.A['a:aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee']),false,'connection is exact-target eligible');
+  for(const change of [()=>a.ag_open.generation='b'.repeat(32),()=>a.ag_open.epoch++,()=>a.ag_open.until=t.now()-1,()=>t.ctx.KEY='other-owner',()=>t.ctx.locked=true,()=>t.ctx.claiming=true]){
+    t.ctx.KEY='fixture-owner';t.ctx.locked=t.ctx.claiming=false;t.ready();change();assert.equal(t.api.nativeOpenAvailable(a),false,'stale key/epoch/generation/expiry/lock cannot retain Open');
+  }
+  t.ctx.KEY='fixture-owner';t.ctx.locked=t.ctx.claiming=false;t.ready();t.api.agOpenApply(t.value({eligible_agents:[]}),t.now()+9000);assert.equal(t.api.nativeOpenAvailable(a),false);
+  t.ready();t.tick(9001);assert.equal(t.api.nativeOpenAvailable(a),false,'expiry enforced without requiring another paint');
+  t.ctx.KEY='fixture-owner';const first=t.api.agOpenRefresh(true);assert.equal(t.requests.length,1);assert.equal(t.requests[0].options.headers['X-Live-Room-Key'],'fixture-owner');
+  t.ctx.KEY='replacement-owner';t.api.agOpenContext();t.answer(t.requests[0],t.value());await first;assert.equal(t.api.nativeOpenAvailable(a),false,'late old-key status cannot restore readiness');
+  const second=t.api.agOpenRefresh(true);t.answer(t.requests[1],t.value());await second;assert.equal(t.api.nativeOpenAvailable(a),true);
+  const older=t.api.agOpenRefresh(true),oldRequest=t.requests.at(-1);s.read++;s.loading=false;
+  const newer=t.api.agOpenRefresh(true),newRequest=t.requests.at(-1);t.answer(newRequest,t.value({generation:'b'.repeat(32)}));await newer;t.answer(oldRequest,t.value());await older;
+  assert.equal(s.value.generation,'b'.repeat(32),'older read cannot overwrite fresh generation');
+  const failed=t.api.agOpenRefresh(true);t.requests.at(-1).reject(Error('fictional private diagnostic'));await failed;
+  assert.equal(t.api.nativeOpenAvailable(a),false);assert.equal(s.until,0);assert.ok(!s.notice.includes('private diagnostic'));
+  const malformed=t.api.agOpenRefresh(true);t.answer(t.requests.at(-1),t.value({owner_token:'not public'}));await malformed;assert.equal(t.api.nativeOpenAvailable(a),false);
+  t.ready();const beforeHide=t.api.agOpenRefresh(true),hiddenRead=t.requests.at(-1);t.ctx.document.hidden=true;t.listeners.find(x=>x.event==='visibilitychange').fn();t.answer(hiddenRead,t.value());await beforeHide;assert.equal(t.api.nativeOpenAvailable(a),false,'visibility invalidation rejects an in-flight old status');
+}
+async function antigravityDispatchChecks(source=agSource){
+  const t=antigravityFixture(source);t.ready();
+  const first=t.api.agOpenRequest(t.a),duplicatePromise=t.api.agOpenRequest(t.a);
+  assert.equal(t.requests.length,1,'double Open sends one request');const duplicate=await duplicatePromise;assert.equal(duplicate.ok,false);
+  assert.equal(t.requests[0].url,'/open');assert.equal(t.requests[0].options.body,JSON.stringify({agent:t.a.id}));
+  assert.equal(t.requests[0].options.headers['X-Live-Room-Key'],'fixture-owner');
+  t.answer(t.requests[0],{status:'dispatched',confirmed:false,foreground_requested:true,message:'Ignored raw diagnostic'},202);
+  const result=await first;assert.equal(result.ok,true);assert.match(result.message,/Opening requested/);assert.ok(!result.message.includes('Opened'));
+  t.ready();const uncertain=t.api.agOpenRequest(t.a);t.answer(t.requests.at(-1),{status:'uncertain',confirmed:false,foreground_requested:false},202);assert.equal((await uncertain).ok,false);assert.equal(t.api.nativeOpenAvailable(t.a),false);assert.equal(t.requests.length,2,'uncertain request has no automatic POST retry');
+  t.ready();const lost=t.api.agOpenRequest(t.a);t.requests.at(-1).reject(Error('fictional lost reply'));assert.equal((await lost).ok,false);assert.equal(t.requests.length,3);assert.equal(t.api.nativeOpenAvailable(t.a),false);
+  t.ready();const stale=t.api.agOpenRequest(t.a);t.ctx.KEY='other-owner';t.api.agOpenContext();t.answer(t.requests.at(-1),{status:'dispatched',confirmed:false,foreground_requested:true},202);assert.equal((await stale).stale,true);assert.equal(t.api.nativeOpenAvailable(t.a),false);
+  const demo=antigravityFixture(source);demo.ctx.DEMO=true;demo.ready();await demo.api.agOpenRefresh(true);await demo.api.agConnectionAction('setup');await demo.api.agOpenRequest(demo.a);assert.equal(demo.requests.length,0,'demo performs no read/setup/open');
+}
+async function antigravityStaleDispatchChecks(source=agSource){
+  const t=antigravityFixture(source);t.ready();
+  const opening=t.api.agOpenRequest(t.a),oldOpen=t.requests.at(-1);
+  const refreshing=t.api.agOpenRefresh(true);t.answer(t.requests.at(-1),t.value({generation:'b'.repeat(32)}));await refreshing;
+  t.answer(oldOpen,{status:'dispatched',confirmed:false,foreground_requested:true},202);
+  assert.equal((await opening).stale,true,'old generation cannot report a current opening success');
+  assert.equal(t.api.AGOPEN.value.generation,'b'.repeat(32));assert.equal(t.api.nativeOpenAvailable(t.a),true,'old reply cannot clear the new connection');
+  const u=antigravityFixture(source);u.ready();const pending=u.api.agOpenRequest(u.a),old=u.requests.at(-1);
+  const disconnect=u.api.agConnectionAction('disconnect');assert.equal(u.api.AGOPEN.opening,false,'disconnect invalidates the pending Open context immediately');
+  u.answer(u.requests.at(-1),u.value({authorized:false,available:false,state:'disconnected',generation:'',eligible_agents:[]}));await disconnect;
+  u.answer(old,{status:'dispatched',confirmed:false,foreground_requested:true},202);
+  assert.equal((await pending).stale,true,'a disconnected request cannot report a later opening success');assert.equal(u.api.nativeOpenAvailable(u.a),false);
+  assert.equal(u.requests.length,2,'disconnect and late reply never replay the owner Open');
+}
+async function antigravityDialogChecks(){
+  const t=antigravityFixture(),button=t.node('#deskAntigravityConnect');t.api.agDialogShow(button);
+  assert.equal(t.node('#agDialog').open,true);assert.equal(t.ctx.document.activeElement,t.node('#agClose'));assert.equal(t.node('#agInstall').disabled,true);
+  t.answer(t.requests.at(-1),t.value({installed:false,authorized:false,available:false,state:'setup_needed',generation:'',eligible_agents:[]}));await new Promise(setImmediate);
+  const install=t.node('#agInstall').onclick();assert.equal(t.requests.at(-1).url,'/antigravity-open/setup');assert.equal(t.requests.at(-1).options.body,'{}');assert.equal(t.node('#agInstall').disabled,true);
+  const count=t.requests.length;await t.api.agConnectionAction('setup');await t.api.agOpenRefresh(true);assert.equal(t.requests.length,count,'pending setup prevents duplicate action/status');
+  t.answer(t.requests.at(-1),t.value());await install;assert.equal(t.node('#agDisconnect').hidden,false);
+  const disconnect=t.node('#agDisconnect').onclick();assert.equal(t.requests.at(-1).url,'/antigravity-open/disconnect');assert.equal(t.requests.at(-1).options.body,'{}');assert.equal(t.api.nativeOpenAvailable(t.a),false,'disconnect withdraws Open immediately');
+  t.answer(t.requests.at(-1),t.value({authorized:false,available:false,state:'disconnected',generation:'',eligible_agents:[]}));await disconnect;
+  t.node('#agClose').onclick();assert.equal(t.node('#agDialog').open,false);assert.equal(t.ctx.document.activeElement,button,'close returns focus without navigating');
+  t.api.agDialogShow(button);t.ctx.locked=true;t.api.agOpenContext();t.node('#agClose').onclick();assert.equal(t.ctx.document.activeElement,t.node('#unlock'),'locked dialog returns focus to Unlock');
+  // The actual permission gate and keyboard capture handlers respect this modal.
+  t.ctx.locked=false;t.ctx.KEY='fixture-owner';t.api.agOpenContext();t.perm();t.ctx.STATION={compact:true};t.ctx.narrow=null;t.ctx.portrait=()=>false;t.ctx.sideW=()=>true;
+  vm.runInContext(html.split('\n').find(line=>line.startsWith('const covered=()')),t.ctx);
+  t.ready();t.paint();t.tick(500);t.api.responseGate();assert.equal(t.allow().disabled,false);
+  t.api.agDialogShow(button);t.tick(500);t.api.responseGate();assert.equal(t.allow().disabled,true);t.click();assert.equal(t.posts.length,0,'foreground navigation dialog prevents hidden permission approval');
+  let background=0;t.ctx.watchOpen=t.ctx.ofToggle=t.ctx.deskCloseDrawer=t.ctx.deskCloseWork=()=>background++;
+  const watch=html.split('\n').find(x=>x.startsWith("addEventListener('keydown',e=>{")&&x.includes("if(e.key==='Escape'&&!$('#watchP').hidden)"));
+  const officer=html.split('\n').find(x=>x.startsWith("addEventListener('keydown',e=>{")&&x.includes("if(!$('#cuAgentChoices').hidden)"));
+  const desk=html.slice(html.indexOf('function deskKeydown('),html.indexOf('/* end desk keyboard handling */'));
+  vm.runInContext(watch+'\n'+desk+'\n'+officer,t.ctx);
+  const e={key:'Escape',target:{},preventDefault(){background++},stopImmediatePropagation(){background++}};
+  for(const listener of t.listeners.filter(x=>x.event==='keydown'&&x.capture))listener.fn(e);
+  assert.equal(background,0,'Escape in native dialog cannot close background room/Work/Officer');
+  let stopped=false;t.node('#agDialog').keydown({stopPropagation(){stopped=true}});assert.ok(stopped);
+}
+async function antigravitySurfaceChecks(){
+  const t=antigravityFixture();Object.assign(t.ctx,alertFixtures,{S:{},N:null,w:'',moved:false,esc:alertEscape,ALERTS:[],paintFace(){},faceState(){},alert:()=>{throw Error('successful dispatch must not show an error')}});t.ctx.a=t.a;t.ctx.id=t.a.id;
+  const paint=html.split('\n').find(line=>line.trim().startsWith('paintFace(a,id,faceState('));
+  const start=html.indexOf('  el.onclick=ev=>'),end=html.indexOf('  world.append(el);',start);
+  const controls=vm.runInContext(alertHelpers+'\nfunction agPaintMonitor(){'+paint+'};function agWire(el){'+html.slice(start,end)+'};({agPaintMonitor,agWire,alertMarkup,alertClick})',t.ctx);
+  const monitor={},go=t.a.$.go;controls.agWire(monitor);go.click=()=>monitor.onclick({stopPropagation(){},target:{closest:s=>s==='.go'?go:null}});
+  t.ready();controls.agPaintMonitor();assert.equal(go.hidden,false);go.click();assert.equal(t.requests.at(-1).url,'/open');t.answer(t.requests.at(-1),{status:'dispatched',confirmed:false,foreground_requested:true},202);await new Promise(setImmediate);
+  const compactWire=html.split('\n').find(line=>line.startsWith("$('#deskOpenApp').onclick="));vm.runInContext(compactWire,t.ctx);
+  t.ready();t.node('#deskOpenApp').onclick();assert.equal(t.requests.length,2);t.answer(t.requests.at(-1),{status:'dispatched',confirmed:false,foreground_requested:true},202);await new Promise(setImmediate);
+  const requestNote=()=>t.node('#responseNote').textContent;t.ready();t.a.asks={q:{text:'Fictional question',maybe:false}};t.paint();assert.equal(t.node('#responseOpenApp').hidden,false);const response=t.node('#responseOpenApp').onclick();t.answer(t.requests.at(-1),{status:'dispatched',confirmed:false,foreground_requested:false},202);await response;assert.match(requestNote(),/Opening requested/);assert.ok(!requestNote().includes('Opened'));
+  const nativeHandler=html.split('\n').find(line=>line.startsWith("$('#nativeOpenApp').onclick="));t.ctx.NATIVE={state:{agent:t.a.id,epoch:1}};t.ctx.nativePaint=()=>{};vm.runInContext(nativeHandler,t.ctx);
+  t.ready();const native=t.node('#nativeOpenApp').onclick();t.answer(t.requests.at(-1),{status:'dispatched',confirmed:false,foreground_requested:true},202);await native;assert.match(t.ctx.NATIVE.state.note,/Opening requested/);
+  const dom=alertDOM(),al={n:91,id:t.a.id,ts:100,label:'a push',text:'fictional evidence'},surface=dom.node('#needs');
+  t.ready();controls.agPaintMonitor();dom.put(surface,controls.alertMarkup(al));const open=surface.querySelector('[data-alert-open]');assert.ok(open,'live Antigravity alert renders Open');
+  const count=t.requests.length;controls.alertClick({target:open,preventDefault(){},stopPropagation(){}});assert.equal(t.requests.length,count+1);t.answer(t.requests.at(-1),{status:'dispatched',confirmed:false,foreground_requested:true},202);await new Promise(setImmediate);
+  t.api.agOpenApply(t.value(),0);controls.agPaintMonitor();assert.equal(go.hidden,true);controls.alertClick({target:open,preventDefault(){},stopPropagation(){}});t.node('#deskOpenApp').onclick();assert.equal(t.requests.length,count+1,'captured alert and compact actions recheck revoked readiness');
+  assert.ok(t.requests.every(r=>r.url==='/open'&&r.options.body===JSON.stringify({agent:t.a.id})),'all surfaces share exact owner navigation route');
+}
+(async()=>{
+  await antigravityStateChecks();await antigravityDispatchChecks();await antigravityStaleDispatchChecks();await antigravityDialogChecks();await antigravitySurfaceChecks();
+  const mutants=[
+    ['epoch',agSource,nativeOpenSource.replace('&&ag.epoch===AGOPEN.epoch','')],
+    ['generation',agSource,nativeOpenSource.replace('&&ag.generation===AGOPEN.value?.generation','')],
+    ['expiry',agSource,nativeOpenSource.replace('&&ag.until>Date.now()','')]
+  ];
+  for(const [name,source,native] of mutants){assert.notEqual(native,nativeOpenSource);let caught=false;try{await antigravityStateChecks(source,native)}catch(error){caught=true}assert.ok(caught,'native availability '+name+' mutation detected')}
+  let caught=false;try{await antigravityDispatchChecks(agSource.replace("  if(AGOPEN.opening)return {ok:false,message:'An opening request is already in progress.'};",''))}catch(error){caught=true}assert.ok(caught,'duplicate POST guard mutation detected');
+  for(const [name,mutated] of [
+    ['late generation',agSource.split('||generation!==AGOPEN.value?.generation').join('')],
+    ['disconnect pending Open',agSource.replace('AGOPEN.read++;AGOPEN.openToken++;AGOPEN.opening=false;AGOPEN.loading=false;AGOPEN.action=true','AGOPEN.read++;AGOPEN.loading=false;AGOPEN.action=true')]
+  ]){assert.notEqual(mutated,agSource);let detected=false;try{await antigravityStaleDispatchChecks(mutated)}catch(error){detected=true}assert.ok(detected,name+' mutation detected')}
+  console.log('ok production Antigravity UI: strict status, key/epoch/generation/expiry/target, stale/failure reads, one POST, setup/disconnect, demo, focus/permission/keyboard modal guards and actual monitor/compact/response/native/alert handlers; six causal mutations detected');
+})().catch(error=>{console.error(error);process.exitCode=1});

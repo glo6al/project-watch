@@ -528,4 +528,10 @@ class AntigravityTests(unittest.TestCase):
 
 
 if __name__ == '__main__':
-    unittest.main()
+    # Existing CI entry covers navigation too; discovery imports only this file's
+    # own tests, so the other suites are never repeated under unittest discovery.
+    names = ('__main__', 'test_antigravity_navigation',
+             'test_install_antigravity_open', 'test_antigravity_open')
+    suite = unittest.defaultTestLoader.loadTestsFromNames(names)
+    result = unittest.TextTestRunner(verbosity=1).run(suite)
+    raise SystemExit(not result.wasSuccessful())

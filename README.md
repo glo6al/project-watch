@@ -67,6 +67,7 @@ Observation does not imply messaging or control support. Codex messaging, contro
 | Capability | Local Codex | Claude Code | Cursor | Codex cloud on this computer | Antigravity |
 | --- | --- | --- | --- | --- | --- |
 | Observe recorded activity | Session logs | Session logs; optional hooks | Transcript; tool results not recorded | Commands from the process list | Native transcript; uncorrelated tool outcomes |
+| Open the existing chat in its app | Supported local desktop route | Supported local desktop route | Unavailable | Unavailable | Optional WATCH Navigation connector; macOS, verified app version |
 | Send a direct message | Queue to an eligible existing chat | Queue to a connected existing chat through the optional WATCH plugin | Unavailable | Unavailable | Unavailable |
 | Receive agent-to-agent messages | Reachable chats through the shared MCP | Compatible WATCH plugin with agent messaging authorized | Unavailable | Unavailable | Unavailable |
 | Steer or stop the active turn through WATCH | Supported when the control checks pass | Unavailable | Unavailable | Unavailable | Unavailable |
@@ -82,7 +83,17 @@ Recently active local Antigravity conversations appear automatically, using the 
 
 Chat names, project folders, explicit parent relationships and activity state come from a bounded read-only query of the source's optional `conversation_summaries.db`. Missing, busy or incompatible metadata leaves a generic name and unknown facts without stopping transcript observation. Duplicate native chat IDs across source roots are excluded rather than merged. Provider-added prompt metadata and settings are removed from native user messages. Tool requests are visible, but their outcomes remain unknown because these transcripts do not correlate tool calls with results. A step marked DONE is not treated as a finished turn. Context usage and the selected model remain unknown when the native records do not establish them.
 
-The Officer can read these observations and, when memory is enabled, retain new activity under the same privacy and retention rules as other local logs. Antigravity's private storage is excluded from file previews. Messaging, cross-provider delivery, steering, permission answering and a link that opens the exact native chat are not connected; use Antigravity itself for those actions.
+The Officer can read these observations and, when memory is enabled, retain new activity under the same privacy and retention rules as other local logs. Antigravity's private storage is excluded from file previews. Messaging, cross-provider delivery, steering and permission answering are not connected; use Antigravity itself for those actions.
+
+#### Open an existing Antigravity chat
+
+On **macOS with Antigravity 2.31.2**, open an Antigravity desk in WATCH and choose **Connection → Install connector**. This installs **WATCH Navigation** once for your user account and authorizes opening existing desktop chats. In Antigravity's **Customizations → Installed**, enable **WATCH Navigation** once, then open **Extensions → WATCH Navigation** in any existing chat. There is no per-chat installation, pairing code or target list. WATCH does not rewrite Antigravity's settings file.
+
+WATCH displays **Open in Antigravity** only while the native panel has a live connection and the exact desktop chat can be verified. You can hide the panel after it connects. If the connection ends, reopen that panel and refresh Connection in WATCH. Installation alone does not guarantee a connection after startup or after the app unloads a panel. CLI, IDE, ambiguous identities, other app versions and other platforms remain unavailable for opening; observation continues separately.
+
+Opening requests navigation to the existing chat and brings the verified running app forward. It sends no message, starts no model turn and creates no chat. **Opening requested** reports dispatch, not independent confirmation of the selected chat. An uncertain request is never retried automatically.
+
+Choose **Connection → Disconnect** to revoke further navigation. This leaves the native extension installed and its native toggle unchanged; **Enable connection** in WATCH restores authorization. A navigation request already issued cannot be recalled. To remove the installation, first turn **WATCH Navigation** off in Antigravity's Installed list, wait for it to stop, then run `python3 scripts/install_antigravity_open.py remove` from this repository. Updates to connector files also require turning it off first. The same script supports `install`, `status` and `disconnect`. Unrelated native settings are preserved. Private authorization and connection files stay under `~/.live-room/antigravity-open/`; credentials are excluded from public status, events and Officer context. See the [connector notes](integrations/antigravity-open/README.md) for its protections and limits.
 
 ### Where support goes next
 

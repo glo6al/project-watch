@@ -690,9 +690,36 @@ body.stepped #officer:not(.docked){max-height:calc(100dvh - 136px)}body.stepped.
 #pendingQueueHeading{display:flex;align-items:center;justify-content:space-between;gap:8px}#officer #pendingQueueDismissAll{flex:none;border:0;background:transparent;color:var(--mute);padding:3px 0;font:10px/1.5 system-ui;cursor:pointer}#officer #pendingQueueDismissAll[hidden]{display:none}#officer #pendingQueueDismissAll:focus-visible{outline:2px solid var(--hl);outline-offset:2px}#officer #pendingQueue .pending-dismiss{flex:none;margin-left:auto;align-self:flex-start;min-width:24px;min-height:24px;padding:2px;border:0;background:transparent;color:var(--mute);font:16px/1 system-ui;cursor:pointer}#officer #pendingQueue .pending-dismiss[hidden]{display:none}#officer #pendingQueue .pending-dismiss:hover{color:var(--ink)}#officer #pendingQueue .pending-dismiss:focus-visible{outline:2px solid var(--hl);outline-offset:-2px}@media(pointer:coarse),(max-width:580px){#officer #pendingQueue .pending-dismiss{min-width:32px;min-height:32px}}
 #deckLog{position:fixed;top:8vh;left:50%;transform:translateX(-50%);z-index:40;width:500px;max-width:calc(100vw - 24px);max-height:84vh;max-height:84dvh;overflow:auto;padding:22px 24px;background:var(--panel);color:var(--ink);border:1px solid var(--line);box-shadow:0 8px 40px #0005;font:13px/1.6 system-ui}#deckLog[hidden]{display:none}#deckLog>header{position:sticky;top:0;z-index:2;display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:15px;padding-bottom:6px;background:var(--panel);box-shadow:0 -24px 0 var(--panel)}#deckLog h2{margin:0;font:700 12px/1.4 ui-monospace,Menlo,monospace;letter-spacing:.09em;text-transform:uppercase}#deckLog p{margin:0}#deckLog .memory-intro{max-width:390px;color:var(--mute);font-size:13px;line-height:1.65;margin-bottom:22px}#deckLog .memory-label{display:block;color:var(--mute);font:10px/1.4 ui-monospace,Menlo,monospace;letter-spacing:.08em;text-transform:uppercase;margin:0 0 7px}#deckLog .memory-recording{padding-bottom:19px;border-bottom:1px solid var(--line)}#deckLog .memory-status-row{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:12px;align-items:center}#deckStatus{font-size:12px;line-height:1.5}#deckLog .memory-actions{display:flex;gap:2px;align-items:center;flex-wrap:wrap}#deckLog button,#deckLog summary{cursor:pointer}#deckLog button{font:12px/1.4 system-ui;color:var(--ink);background:transparent;border:1px solid transparent;padding:7px 9px;min-height:32px;max-width:100%}#deckLog button:hover{background:var(--action-hover,var(--hbg))}#deckLog #deckEnable{color:var(--hl);border-color:var(--line)}#deckLog #deckDisable{color:var(--mute)}#deckLog #deckClose{margin-left:auto;padding:5px 0 5px 9px;color:var(--mute);font-size:12px;min-height:30px}#deckLog .memory-retention{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:14px;align-items:center;padding:18px 0 21px}#deckLog .memory-retention label{display:grid;grid-template-columns:minmax(0,1fr) 64px auto;align-items:center;gap:9px;min-width:0}#deckLog .memory-unit{font-size:12px;color:var(--mute)}#deckLog input,#deckLog select{background:var(--mon,var(--panel));color:var(--ink);border:1px solid var(--line);border-radius:0;font:13px/1.5 system-ui;padding:6px 8px;min-height:32px;max-width:100%;min-width:0}#deckLog #deckRetention{width:64px;text-align:center}#deckLog #deckSave{border-color:var(--line);padding-left:13px;padding-right:13px}#deckLog details{border-top:1px solid var(--line);margin:0;padding:14px 0}#deckLog details:last-of-type{padding-bottom:0}#deckLog summary{color:var(--mute);font:11px/1.4 ui-monospace,Menlo,monospace;letter-spacing:.025em;min-height:20px}#deckLog details[open]>summary{color:var(--ink);margin-bottom:14px}#deckLog .memory-hint{color:var(--mute);font-size:12px;line-height:1.65;margin:0 0 18px}#deckLog .memory-scope+ .memory-scope{margin-top:21px;padding-top:19px;border-top:1px solid var(--line)}#deckLog .memory-scope label{display:block;min-width:0}#deckLog .memory-scope select{display:block;width:100%;margin-top:7px}#deckLog .memory-scope-actions{display:flex;align-items:center;gap:3px;margin-top:7px}#deckLog .memory-scope-actions button{padding:6px 8px}#deckLog .memory-scope-actions .memory-delete{margin-left:auto;color:var(--mute);font-size:11px}#deckLog .memory-scope-actions .memory-delete:hover,#deckLog #deckDeleteAll:hover{color:var(--del)}#deckLog .memory-delete-all{border-top:1px solid var(--line);margin-top:20px;padding-top:12px}#deckLog #deckDeleteAll{padding-left:0;color:var(--mute);font-size:12px}#deckLog button:focus-visible,#deckLog input:focus-visible,#deckLog select:focus-visible,#deckLog summary:focus-visible{outline:2px solid var(--hl);outline-offset:2px}#deckLog small{display:block;color:var(--mute)}#deckNotice:not(:empty){border-top:1px solid var(--line);margin-top:16px;padding-top:12px;font-size:12px;color:var(--mute)}#deckCoverage{color:var(--mute);font-size:12px;line-height:1.7;margin-top:12px!important}#deckEvidence{white-space:pre-wrap;overflow-wrap:anywhere;margin:16px 0;padding:12px;background:var(--hbg);max-height:45vh;overflow:auto;font-size:14px;line-height:1.65}#deckSourceMeta{display:grid;grid-template-columns:auto minmax(0,1fr);gap:7px 14px;font-size:12px;margin:14px 0}#deckSourceMeta dt{color:var(--mute)}#deckSourceMeta dd{margin:0;overflow-wrap:anywhere}#deckCoverage,#deckNotice,#deckSourceState{overflow-wrap:anywhere}@media(max-width:580px){#deckLog{top:12px;max-height:calc(100dvh - 24px);padding:18px}#deckLog .memory-intro{margin-bottom:19px}#deckLog .memory-status-row{grid-template-columns:1fr;gap:7px}#deckLog .memory-retention{gap:10px}#deckLog .memory-retention label{gap:7px}#deckLog input,#deckLog select{font-size:16px;min-height:40px}#deckLog button{min-height:40px}#deckLog #deckClose{min-height:40px}#deckLog summary{min-height:28px;display:list-item;padding:4px 0}#deckLog .memory-scope-actions{gap:0}#deckLog .memory-scope-actions .memory-delete{font-size:11px}}@media(pointer:coarse){#deckLog button,#deckLog summary{min-height:40px}}
 #ofAddress #recipient{position:relative}#ofModelPicker{position:relative;min-width:0;max-width:52%;margin-left:auto}#officer #ofModelButton{font:12px system-ui;text-transform:none;letter-spacing:0;border:0;background:transparent;color:var(--mute);padding:6px 0;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-height:32px}#ofModelMenu{position:absolute;bottom:100%;right:0;width:290px;max-width:calc(100vw - 40px);max-height:300px;overflow:auto;z-index:6;border:1px solid var(--line);background:var(--panel);padding:8px}#ofModelStatus{margin:3px 4px 7px;font:12px/1.5 system-ui;color:var(--mute)}#officer #ofModelOptions button,#officer #ofModelRetry{display:block;width:100%;text-align:left;min-height:40px;padding:8px;font:13px/1.4 system-ui;text-transform:none;letter-spacing:0;white-space:normal;overflow-wrap:anywhere;border:0;background:transparent;color:var(--ink)}#officer #ofModelOptions button:hover,#officer #ofModelRetry:hover{background:var(--action-hover)}#officer #ofModelOptions button[aria-pressed=true]{color:var(--hl)}#ofModelMenu small{display:block;margin:7px 4px 2px;color:var(--mute);font:11px/1.5 system-ui}#ofModelButton:focus-visible,#ofModelMenu button:focus-visible{outline:2px solid var(--hl);outline-offset:2px}@media(pointer:coarse),(max-width:580px){#officer #ofModelButton{min-height:40px}}
+/* Optional native Antigravity connection, using the current WATCH theme. */
+#agDialog{width:min(440px,calc(100vw - 24px));max-height:calc(100dvh - 24px);overflow:auto;padding:20px 22px;border:1px solid var(--line);background:var(--panel);color:var(--ink);box-shadow:0 8px 40px #0005;font:13px/1.6 system-ui}
+#agDialog::backdrop{background:#0006}
+#agDialog header{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:18px}
+#agDialog h2{margin:0;font:700 12px/1.4 ui-monospace,Menlo,monospace;text-transform:uppercase;letter-spacing:.06em}
+#agDialog p{margin:12px 0;overflow-wrap:anywhere}
+#agDialog #agDescription,#agDialog #agInstructions,#agDialog small{color:var(--mute)}
+#agDialog #agStatus{padding:12px 0;border-top:1px solid var(--line);border-bottom:1px solid var(--line)}
+#agDialog button{min-height:34px;padding:6px 10px;background:transparent;color:var(--ink);border:1px solid var(--line);font:12px/1.4 system-ui;cursor:pointer}
+#agDialog button:hover:not(:disabled){background:var(--action-hover,var(--hbg))}
+#agDialog button:disabled{opacity:.5;cursor:default}
+#agDialog button:focus-visible{outline:2px solid var(--hl);outline-offset:2px}
+#agDialog #agClose{border-color:transparent;color:var(--mute)}
+#agDialog #agInstall{background:var(--hl);border-color:var(--hl);color:var(--panel)}
+#agDialog .ag-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:20px}
+#agDialog #agDisconnect{margin-left:auto;color:var(--mute)}
+#agDialog #agNotice:empty{display:none}
+@media(max-width:580px),(pointer:coarse){#agDialog button{min-height:42px}}
 </style>
 </head>
 <body>
+<dialog id="agDialog" aria-labelledby="agTitle" aria-describedby="agDescription">
+  <header><h2 id="agTitle">Antigravity connection</h2><button type="button" id="agClose" aria-label="Close Antigravity connection">Close</button></header>
+  <p id="agDescription">One installation connects WATCH to existing Antigravity chats on this computer.</p>
+  <p id="agStatus" role="status">Checking connection…</p>
+  <p id="agInstructions">After setup, enable WATCH Navigation in Antigravity's Customizations → Installed, then open it from Extensions in any existing chat.</p>
+  <small>Opening a chat sends no message and starts no new work.</small>
+  <div class="ag-actions"><button type="button" id="agInstall">Install connector</button><button type="button" id="agRefresh">Refresh</button><button type="button" id="agDisconnect" hidden>Disconnect</button></div>
+  <p id="agNotice" role="status"></p>
+</dialog>
 <section id="deckLog" role="dialog" aria-modal="true" aria-labelledby="deckTitle" hidden>
 <header><h2 id="deckTitle">Officer memory</h2><button id="deckClose" type="button" aria-label="Close Officer memory">Close</button></header>
 <div id="deckSettingsPane">
@@ -728,7 +755,7 @@ body.stepped #officer:not(.docked){max-height:calc(100dvh - 136px)}body.stepped.
 <div id="compactDesk" hidden>
   <div id="deskToolbar"><button type="button" data-drawer="agents" aria-controls="deskAgents" aria-expanded="false">Agents</button><button type="button" data-drawer="facts" aria-controls="deskFacts" aria-expanded="false">Details</button><span class="theme-choices" role="group" aria-label="Visual theme"><button type="button" data-theme="original" aria-pressed="true">Original</button><button type="button" data-theme="neutral" aria-pressed="false">Neutral</button></span></div>
   <div id="deskShell"><aside id="deskAgents" aria-label="Agents"><header><h2>Agents</h2><button type="button" class="desk-rail-close" data-close-drawer aria-label="Close agents">×</button></header><ul id="deskAgentList" aria-label="Agents"></ul><div id="deskSignals" role="group" aria-label="Room signals"><button type="button" data-bay="1" aria-pressed="false">Alerts</button><button type="button" data-bay="2" aria-pressed="false">Activity</button></div><div id="deskBaySlot"></div></aside>
-    <main id="deskCenter"><header id="deskHead"><div id="deskIdentity"><h1 id="deskName"></h1><p id="deskStatus"></p><p id="deskGoal"></p></div><div id="deskActions"><button type="button" id="deskOpenApp" class="secondary">Open in app ↗</button><button type="button" id="deskPin" class="secondary">Pin</button><button type="button" id="deskDismiss" class="secondary" title="Hide this agent from the room">Hide agent</button><button type="button" id="deskWorkToggle" aria-expanded="false" aria-controls="deskWork"><svg viewBox="0 0 16 16" aria-hidden="true" focusable="false"><rect x="1.5" y="2.5" width="13" height="11" rx="0"/><path d="M10 3v10"/></svg><span>Work</span></button></div><div id="deskAlert" hidden></div></header>
+    <main id="deskCenter"><header id="deskHead"><div id="deskIdentity"><h1 id="deskName"></h1><p id="deskStatus"></p><p id="deskGoal"></p></div><div id="deskActions"><button type="button" id="deskOpenApp" class="secondary">Open in app ↗</button><button type="button" id="deskAntigravityConnect" class="secondary" aria-haspopup="dialog" aria-controls="agDialog" hidden>Connection</button><button type="button" id="deskPin" class="secondary">Pin</button><button type="button" id="deskDismiss" class="secondary" title="Hide this agent from the room">Hide agent</button><button type="button" id="deskWorkToggle" aria-expanded="false" aria-controls="deskWork"><svg viewBox="0 0 16 16" aria-hidden="true" focusable="false"><rect x="1.5" y="2.5" width="13" height="11" rx="0"/><path d="M10 3v10"/></svg><span>Work</span></button></div><div id="deskAlert" hidden></div></header>
     <div id="deskWorkspace"><section id="deskConversation" aria-label="Conversation"></section><section id="deskWork" aria-label="Work evidence" data-view="doing" hidden inert><div id="deskSizer" role="separator" tabindex="0" aria-label="Resize work panel" aria-orientation="vertical" aria-controls="deskWork" aria-valuemin="320" aria-valuemax="600" aria-valuenow="460" title="Drag to resize; arrow keys adjust; double-click resets"></div><div id="deskWorkInner"><header id="deskWorkHead"><h2>Recorded work</h2><button type="button" id="deskRespond" hidden>Respond</button><button type="button" id="deskExpand" aria-label="Expand work view">⤢</button><button type="button" id="deskCloseWork">← Conversation</button></header><nav id="deskWorkTabs" aria-label="Work views"><button type="button" data-work="seeing" aria-pressed="false">Preview</button><button type="button" data-work="changes" aria-pressed="false">Changes</button><button type="button" data-work="doing" aria-pressed="true">Activity</button></nav><div id="deskWorkContent"><div id="compactMonitor"></div><div id="compactPanels"></div></div></div></section></div></main>
     <aside id="deskFacts" aria-label="Session details"><header><h2>Session</h2><button type="button" class="desk-rail-close" data-close-drawer aria-label="Close details">×</button></header></aside></div><div id="deskScrim" hidden></div><div id="compactReadout"></div>
 </div>
@@ -823,7 +850,7 @@ function permissionDispatch(a,p,allow){const id=a.id;
 
 /* alert presentation helpers: one event identity across room, station and Work */
 function activeAlert(al,now,lifetime=180){return al&&!al.off&&now-al.ts<lifetime?al:null}
-function nativeOpenAvailable(a,control=null){const runtime=a?.runtime,id=a?.id;return !!a&&!a.observed&&['Codex','Claude'].includes(runtime)&&typeof id==='string'&&id.startsWith(runtime==='Codex'?'x:':'c:')&&(!control||!control.disabled&&!control.hidden)}
+function nativeOpenAvailable(a,control=null){const runtime=a?.runtime,id=a?.id,ag=a?.ag_open;return !!a&&!a.observed&&typeof id==='string'&&((runtime==='Codex'&&id.startsWith('x:'))||(runtime==='Claude'&&id.startsWith('c:'))||(runtime==='Antigravity'&&id.startsWith('a:')&&ag?.ready===true&&ag.until>Date.now()&&typeof AGOPEN!=='undefined'&&ag.epoch===AGOPEN.epoch&&ag.generation===AGOPEN.value?.generation&&AGOPEN.key===KEY&&!locked&&!claiming))&&(!control||!control.disabled&&!control.hidden)}
 const ALERT_EXPANDED=new Set();
 function dismissAlert(n){
   const matches=new Set([...ALERTS,...Object.values(A).map(a=>a.alert)].filter(al=>al&&al.n===n));
@@ -898,7 +925,7 @@ function agent(id){
       if(!p||p.sent||focus!==id||a.permScreen!==p.pid||!APPROVE||covered()||!onScreen(a.$.code)||Date.now()-(+yn.dataset.at||0)<450) return;      /* measured now, not when it was last painted */ permissionDispatch(a,p,yn.classList.contains('yes'));
       return}
     if(t.closest('.fx')){dismissNotice(a);return}
-    if(t.closest('.go')){if(DEMO||!nativeOpenAvailable(a,a.$.go)) return; post('/open',{agent:id}).then(async r=>{if(!r.ok)alert(await r.text()||'Could not open that session.')}).catch(()=>alert('Could not reach the W.A.T.C.H. server.'));return}
+    if(t.closest('.go')){if(DEMO||!nativeOpenAvailable(a,a.$.go)) return;if(a.runtime==='Antigravity'){agOpenRequest(a).then(result=>{if(!result.stale&&(!result.ok||result.foreground_requested===false))alert(result.message)});return} post('/open',{agent:id}).then(async r=>{if(!r.ok)alert(await r.text()||'Could not open that session.')}).catch(()=>alert('Could not reach the W.A.T.C.H. server.'));return}
     if(focus===id) return;                       /* already at this desk: clicks and text selection inside it change nothing */
     setFocus(id)};
   world.append(el);
@@ -1320,7 +1347,7 @@ function judgeNow(text){               /* the reading after the edits: the serve
 const watchOpen=on=>{const p=$('#watchP'); p.hidden=!on; $('#watchB').setAttribute('aria-expanded',String(on)); if(on) $('#watchTry').focus()};
 $('#watchB').onclick=()=>{OFUI.epoch++;watchOpen($('#watchP').hidden)};
 addEventListener('pointerdown',e=>{if(!$('#watchP').hidden&&!e.target.closest('#watchW')) watchOpen(false)},true);      /* a click anywhere else closes the panel */
-addEventListener('keydown',e=>{if(typeof deckForeground==='function'&&deckForeground())return;if(typeof officerModelEscape==='function'&&e.key==='Escape'&&officerModelEscape(e))return;if(e.key==='Escape'&&!$('#watchP').hidden){watchOpen(false); $('#watchB').focus(); e.stopImmediatePropagation()}},true);      /* so does Escape, without stepping back from a desk */
+addEventListener('keydown',e=>{if(typeof agDialogForeground==='function'&&agDialogForeground())return;if(typeof deckForeground==='function'&&deckForeground())return;if(typeof officerModelEscape==='function'&&e.key==='Escape'&&officerModelEscape(e))return;if(e.key==='Escape'&&!$('#watchP').hidden){watchOpen(false); $('#watchB').focus(); e.stopImmediatePropagation()}},true);      /* so does Escape, without stepping back from a desk */
 $('#watchKeep').onclick=()=>{const d=$('#watchDraft'); const w=d.dataset.w||'', l=d.dataset.l||''; hid(d,true); WATCH_SUG=''; if(w&&KIND_ORDER.includes(l)) teach(w,l)};      /* the one click that saves: the same path as pressing a chip */
 $('#watchDrop').onclick=()=>{hid($('#watchDraft'),true); WATCH_SUG=''; $('#watchAs').querySelectorAll('.sug').forEach(x=>x.classList.remove('sug'))};
 {let tT=null; $('#watchTry').oninput=()=>{WATCH_SUG=''; hid($('#watchDraft'),true); $('#watchAs').querySelectorAll('.sug').forEach(x=>x.classList.remove('sug')); hid($('#watchSaved'),true); clearTimeout(tT); tT=setTimeout(()=>judge($('#watchTry').value),220)};
@@ -1545,7 +1572,7 @@ function subs(now){
 $('#subs').onclick=ev=>{const b=ev.target.closest('[data-go]'); if(b) setFocus(b.dataset.go)};
 let STEPPING=false;      /* while a monitor is stepping up, periodic repaints wait: nothing competes with the move for frames */
 function render(){
-  nativeSync();
+  nativeSync();agOpenSync();
   if(STEPPING){render._deferred=true; return}
   const now=Date.now()/1000, sec=Math.floor(now);
   for(const id of order){ try{
@@ -1581,7 +1608,7 @@ function render(){
     const tf=!pos[id]?'':at?pos[id].tfF:pk?heldTf(id):pos[id].tfF+(w&&N.sure?' translateZ(150px)':'')+(kid?` scale(${KS})`:'');
     if(a.el.classList.contains('stepup')&&!at) a.el.classList.remove('stepup');      /* a step-up that did not finish (focus moved on) must not keep the transform frozen */
     if(tf&&a.el._tf!==tf&&!a.el.classList.contains('stepup')){a.el._tf=tf;a.el.style.transform=tf}      /* while stepping up, stepUp() owns the transform */
-    paintFace(a,id,faceState(S,N,w)); txt(a.$.name,a.name); a.$.go.hidden=!nativeOpenAvailable(a);a.$.go.disabled=a.$.go.hidden; a.$.go.title=a.$.go.hidden?'Open this chat directly in its app; no verified app link is available.':'Open this session in its desktop app'; txt(a.$.go,a.observed?'Lives in ChatGPT':'Open in '+(a.runtime||'app')+(a.$.go.hidden?'':' ↗'));
+    paintFace(a,id,faceState(S,N,w)); txt(a.$.name,a.name); a.$.go.hidden=!nativeOpenAvailable(a);a.$.go.disabled=a.$.go.hidden||a.ag_open?.busy===true; a.$.go.title=a.$.go.hidden?'Open this chat directly in its app; no verified app link is available.':'Open this session in its desktop app'; txt(a.$.go,a.observed?'Lives in ChatGPT':'Open in '+(a.runtime||'app')+(a.$.go.hidden?'':' ↗'));
     txt(a.$.doing,S.label); cl.toggle('slow',!!S.slow);
     {const F=fuelOf(a); hid(a.$.fuel,!F); if(F){txt(a.$.fuelTxt,F.short); const w=F.frac==null?'':Math.round(F.frac*100)+'%'; hid(a.$.fuelBar.parentNode,F.frac==null);
       if(a.$.fuelBar._w!==w){a.$.fuelBar._w=w; a.$.fuelBar.style.width=w} a.$.fuel.className='fuel'+(F.frac>=.92?' hot':F.frac>=.8?' warm':'')}}
@@ -1759,7 +1786,7 @@ function onScreen(el){
   for(const y of [r.top+Math.min(30,r.height/2),r.bottom-Math.min(30,r.height/2)]){const hit=document.elementFromPoint(r.left+r.width/2,y); if(!hit||!el.contains(hit)) return false}
   return true;
 }
-const covered=()=>!STATION.compact&&!!narrow&&!portrait()&&!sideW();      /* the log or comms is open over the monitor */
+const covered=()=>typeof agDialogForeground==='function'&&agDialogForeground()||!STATION.compact&&!!narrow&&!portrait()&&!sideW();      /* a modal or the log/comms covers the monitor */
 let narrow=null;       /* on a narrow window the log and comms open over the monitor, one at a time */
 /* station placement helpers */
 const STATION={compact:false,monitor:null,banner:null,anchors:new Map()};
@@ -1879,7 +1906,7 @@ function deskEndDrag(){if(DESK.drag!==null){try{$('#deskSizer').releasePointerCa
 /* Desk response card: UI state only, never a second message transport. */
 const RESPONSE={entries:new Map(),current:null,exposure:null};
 function responseKey(a,n){return JSON.stringify([a.id,n.source||n.perm&&'perm:'+n.perm.pid||n.kind+':'+n.text])}
-function responseOpenReason(a){return a.observed||String(a.id).startsWith('e:')?'Open this conversation in ChatGPT to answer; no app link is available.':String(a.id).startsWith('a:')||a.runtime==='Antigravity'?'Open this conversation in Antigravity to answer; no verified app link is available.':String(a.id).startsWith('k:')?'Open this conversation in Cursor to answer; no app link is recorded.':!nativeOpenAvailable(a,a.$?.go)?'Open this conversation in its app to answer; no verified app link is available.':''}
+function responseOpenReason(a){return a.observed||String(a.id).startsWith('e:')?'Open this conversation in ChatGPT to answer; no app link is available.':(String(a.id).startsWith('a:')||a.runtime==='Antigravity')&&!nativeOpenAvailable(a,a.$?.go)?'Open this conversation in Antigravity to answer. Use Connection on its desk to connect WATCH.':String(a.id).startsWith('k:')?'Open this conversation in Cursor to answer; no app link is recorded.':!nativeOpenAvailable(a,a.$?.go)?'Open this conversation in its app to answer; no verified app link is available.':''}
 function responseText(n){return n.perm?String(n.perm.tool||'Permission')+'\n\n'+String(n.perm.text||''):String(n.text||'')}
 function responseInvalidate(){RESPONSE.exposure=null;for(const b of $('#responseDecisions').children)b.disabled=true}
 function responseVisible(){
@@ -1925,7 +1952,7 @@ function responseReveal(){if(!focus||!A[focus])return;deskReveal('conversation')
 $('#responseDismiss').onclick=()=>{const v=responseCurrent();if(!v||v.n.perm||v.n.sure&&v.n.kind!=='Needs you'||responseText(v.n)!==v.c.text)return;dismissNotice(v.a)};
 $('#responseToggle').onclick=()=>{const v=responseCurrent();if(!v)return;v.c.entry.collapsed=!v.c.entry.collapsed;responseInvalidate();responsePaint(v.a,v.n)};
 $('#responseDecisions').onclick=e=>{const b=e.target.closest('button');if(!b||!responseCanDecide(b))return;const v=responseCurrent();permissionDispatch(v.a,v.n.perm,b.classList.contains('response-allow'));responseInvalidate();responsePaint(v.a,need(v.a));render()};
-$('#responseOpenApp').onclick=async()=>{const v=responseCurrent();if(!v)return;const {a,c}=v;if(responseOpenReason(a))return;if(DEMO){c.entry.note='Demo only — no app was opened.';responsePaint(a,need(a));return}c.entry.note='Opening '+(a.runtime||'the app')+'…';responsePaint(a,need(a));try{const r=await post('/open',{agent:a.id});c.entry.note=r.ok?'Opened '+(a.runtime||'the app')+'.':(await r.text()).trim().slice(0,500)||'Could not open the app. Open this session there to answer.'}catch(err){c.entry.note='Could not open the app. Open this session there to answer.'}if(responseCurrent()?.c.key===c.key)responsePaint(a,need(a))};
+$('#responseOpenApp').onclick=async()=>{const v=responseCurrent();if(!v)return;const {a,c}=v;if(responseOpenReason(a))return;if(DEMO){c.entry.note='Demo only — no app was opened.';responsePaint(a,need(a));return}c.entry.note='Opening '+(a.runtime||'the app')+'…';responsePaint(a,need(a));try{if(a.runtime==='Antigravity'){const result=await agOpenRequest(a);if(!result.stale)c.entry.note=result.message}else{const r=await post('/open',{agent:a.id});c.entry.note=r.ok?'Opened '+(a.runtime||'the app')+'.':(await r.text()).trim().slice(0,500)||'Could not open the app. Open this session there to answer.'}}catch(err){c.entry.note='Could not open the app. Open this session there to answer.'}if(responseCurrent()?.c.key===c.key)responsePaint(a,need(a))};
 $('#responseEvidence').addEventListener('scroll',responseGate,{passive:true});
 addEventListener('scroll',e=>{if(e.target===document||e.target.contains($('#responseCard')))responseInvalidate()},true);
 addEventListener('resize',responseInvalidate);
@@ -1936,7 +1963,7 @@ addEventListener('visibilitychange',()=>{responseInvalidate();if(focus)render()}
 function deskPaint(){
   if(!focus||!A[focus])return;const a=A[focus],now=Date.now()/1000,S=stateOf(a,now),request=S.need,alert=activeAlert(a.alert,now);
   txt($('#deskName'),a.name);txt($('#deskStatus'),S.label);txt($('#deskGoal'),STEADY?(a.goal?'(goal hidden in steady mode)':''):a.goal||a.task||'No first message read');$('#deskGoal').title=$('#deskGoal').textContent;
-  $('#deskOpenApp').hidden=!nativeOpenAvailable(a);$('#deskOpenApp').disabled=$('#deskOpenApp').hidden;$('#deskOpenApp').title=$('#deskOpenApp').hidden?'Open this chat directly in its app; no verified app link is available.':'Open this session in its desktop app';txt($('#deskOpenApp'),a.observed?'Lives in ChatGPT':'Open in '+(a.runtime||'app')+($('#deskOpenApp').hidden?'':' ↗'));txt($('#deskPin'),PINS[focus]?'Unpin':'Pin');$('#deskPin').setAttribute('aria-pressed',String(!!PINS[focus]));
+  $('#deskAntigravityConnect').hidden=a.observed||a.runtime!=='Antigravity'||!String(a.id).startsWith('a:');$('#deskOpenApp').hidden=!nativeOpenAvailable(a);$('#deskOpenApp').disabled=$('#deskOpenApp').hidden||a.ag_open?.busy===true;$('#deskOpenApp').title=$('#deskOpenApp').hidden?'Open this chat directly in its app; no verified app link is available.':'Open this session in its desktop app';txt($('#deskOpenApp'),a.observed?'Lives in ChatGPT':'Open in '+(a.runtime||'app')+($('#deskOpenApp').hidden?'':' ↗'));txt($('#deskPin'),PINS[focus]?'Unpin':'Pin');$('#deskPin').setAttribute('aria-pressed',String(!!PINS[focus]));
   responsePaint(a,request);$('#deskRespond').hidden=!request;
   paintAlert($('#deskAlert'),alert);
   const list=$('#deskAgentList'),forest=deskAgentForest(order,A),keep=new Set(forest.map(n=>n.id)),active=document.activeElement,cursors=new Map();
@@ -1985,7 +2012,7 @@ new ResizeObserver(()=>{if(focus){deskSize();A[focus].dirty=true;render()}}).obs
 // Preview zoom remains local to the actual evidence, without invoking room gestures.
 $('#compactDesk').addEventListener('wheel',e=>{if(!e.ctrlKey||!DESK.open||deskView!=='seeing'||!e.target.closest('#compactMonitor')||!focus)return;e.preventDefault();const a=A[focus];a.zm=Math.max(1,Math.min(5,(a.zm||1)*Math.exp(-e.deltaY*.012)));a.$.split.style.setProperty('--zm',a.zm.toFixed(3))},{passive:false});
 function deskKeydown(e){
-  if(typeof deckForeground==='function'&&deckForeground())return;if(typeof officerModelEscape==='function'&&e.key==='Escape'&&officerModelEscape(e))return;
+  if(typeof agDialogForeground==='function'&&agDialogForeground())return;if(typeof deckForeground==='function'&&deckForeground())return;if(typeof officerModelEscape==='function'&&e.key==='Escape'&&officerModelEscape(e))return;
   if(!focus)return;
   if(e.key==='Escape'){const layer=deskEscapeLayer(DESK.drawer,DESK.open);if(layer==='drawer'||layer==='work'){e.preventDefault();e.stopImmediatePropagation();if(layer==='drawer')deskCloseDrawer();else deskCloseWork();render();return}}
   if(e.key==='Tab'&&DESK.drawer){const pane=DESK.drawer==='agents'?$('#deskAgents'):$('#deskFacts'),items=[...pane.querySelectorAll('button,[href],input,textarea,[tabindex]')].filter(x=>!x.disabled&&x.tabIndex>=0&&deskVisible(x));if(!items.length)return;const first=items[0],last=items.at(-1);if(e.shiftKey&&(document.activeElement===first||!pane.contains(document.activeElement))){e.preventDefault();last.focus()}else if(!e.shiftKey&&(document.activeElement===last||!pane.contains(document.activeElement))){e.preventDefault();first.focus()}}
@@ -2093,6 +2120,7 @@ $('#deskAlert').onclick=alertClick;
 try{if(!DEMO&&!localStorage.getItem('liveRoomHinted')){localStorage.setItem('liveRoomHinted','1'); $('#hint').classList.add('show'); setTimeout(()=>$('#hint').classList.remove('show'),9000)}}catch(err){}      /* the demo shows no hint and touches no flag */
 $('#help').onclick=()=>$('#hint').classList.toggle('show');          /* a click shows the hint too, for keyboards and touch, not only hover */
 addEventListener('keydown',e=>{
+  if(typeof agDialogForeground==='function'&&agDialogForeground())return;
   if((e.key==='Enter'||e.key===' ')&&e.target&&e.target.matches&&e.target.matches('.flag.w.held .tag')){e.preventDefault(); moved=false; e.target.click(); return}      /* the held request's tag, from the keyboard; never a drag's trailing click */
   if(e.target.closest&&e.target.closest('input,textarea,select,[contenteditable],#recipient')) return;
   if(e.target.closest&&e.target.closest('#officer')&&e.key!=='/')return;
@@ -2128,7 +2156,7 @@ function canScrollX(el,dx){for(;el&&el!==document.body;el=el.parentElement){
     if(dx<0?el.scrollLeft>0:el.scrollLeft+el.clientWidth<el.scrollWidth-1) return true}} return false}
 function step(n){if(order.length){const i=order.indexOf(focus); setFocus(order[(i+n+order.length)%order.length])}}
 addEventListener('wheel',e=>{
-  if(e.target.closest&&e.target.closest('#deckLog,#officer,#compactDesk,#deskChainTools,.alert-evidence')) return;      /* the Officer's panel scrolls like any page: the room's gestures stop at its frame */
+  if(e.target.closest&&e.target.closest('#agDialog,#deckLog,#officer,#compactDesk,#deskChainTools,.alert-evidence')) return;      /* the Officer's panel scrolls like any page: the room's gestures stop at its frame */
   const now=performance.now(); if(now-gT>180){gz=0;gx=0;gFired=false} gT=now;
   const st=e.target.closest&&e.target.closest('.st'), horiz=Math.abs(e.deltaX)>Math.abs(e.deltaY);
   if(e.ctrlKey){                                   /* ---- pinch ---- */
@@ -2469,9 +2497,91 @@ function nativeSync(){
 }
 function nativeCheckQuestions(){const s=NATIVE.state;if(!s.agent||s.busy)return;NATIVE_CHECK.agent=s.agent;NATIVE_CHECK.key=s.key;NATIVE.refresh()}
 $('#nativeRefresh').onclick=$('#nativeCheck').onclick=nativeCheckQuestions;
-$('#nativeOpenApp').onclick=async()=>{const id=NATIVE.state.agent,epoch=NATIVE.state.epoch;if(!id||!A[id]||responseOpenReason(A[id]))return;try{const r=await post('/open',{agent:id});if(epoch===NATIVE.state.epoch){NATIVE.state.note=r.ok?'Opened the native app.':'Open this session in its native app to answer.';nativePaint(NATIVE.state)}}catch(e){if(epoch===NATIVE.state.epoch){NATIVE.state.note='Open this session in its native app to answer.';nativePaint(NATIVE.state)}}};
+$('#nativeOpenApp').onclick=async()=>{const id=NATIVE.state.agent,epoch=NATIVE.state.epoch;if(!id||!A[id]||responseOpenReason(A[id]))return;try{if(A[id].runtime==='Antigravity'){const result=await agOpenRequest(A[id]);if(epoch===NATIVE.state.epoch&&!result.stale){NATIVE.state.note=result.message;nativePaint(NATIVE.state)}}else{const r=await post('/open',{agent:id});if(epoch===NATIVE.state.epoch){NATIVE.state.note=r.ok?'Opened the native app.':'Open this session in its native app to answer.';nativePaint(NATIVE.state)}}}catch(e){if(epoch===NATIVE.state.epoch){NATIVE.state.note='Open this session in its native app to answer.';nativePaint(NATIVE.state)}}};
 addEventListener('visibilitychange',nativeSync);
 /* end native observation presentation */
+
+/* Antigravity opening: owner-only live readiness, separate from messaging and logs. */
+const AGOPEN={key:null,epoch:0,read:0,actionToken:0,openToken:0,loading:false,action:false,opening:false,next:0,until:0,value:null,notice:'',target:null,returnFocus:null};
+function agDialogForeground(){return !!$('#agDialog')?.open}
+function agOpenValue(value){
+  const fields=['supported','installed','authorized','available','state','message','generation','eligible_agents'];
+  if(!value||typeof value!=='object'||Array.isArray(value)||Object.keys(value).sort().join('|')!==fields.sort().join('|')||['supported','installed','authorized','available'].some(k=>typeof value[k]!=='boolean')||!['unsupported','unsupported_version','setup_needed','disconnected','waiting_app','waiting_panel','ready','unavailable'].includes(value.state)||typeof value.message!=='string'||value.message.length>600||typeof value.generation!=='string'||value.generation!==''&&!/^[a-f0-9]{32}$/.test(value.generation)||!Array.isArray(value.eligible_agents)||value.eligible_agents.length>2048||new Set(value.eligible_agents).size!==value.eligible_agents.length||value.eligible_agents.some(id=>typeof id!=='string'||!/^a:[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/.test(id))||value.available&&(!value.supported||!value.installed||!value.authorized||value.state!=='ready'||!value.generation))throw Error('Invalid connection status.');
+  return value;
+}
+function agOpenApply(value,until){
+  AGOPEN.value=value;AGOPEN.until=until;const eligible=new Set(value?.eligible_agents||[]),ready=!!value?.available&&until>Date.now()&&!!AGOPEN.key;
+  for(const a of Object.values(A)){
+    if(a.runtime!=='Antigravity'){if(a.ag_open){delete a.ag_open;a.dirty=true}continue}
+    const next={ready:ready&&eligible.has(a.id),until:ready?until:0,epoch:AGOPEN.epoch,generation:value?.generation||'',busy:AGOPEN.opening},old=a.ag_open;
+    if(!old||Object.keys(next).some(k=>old[k]!==next[k])){a.ag_open=next;a.dirty=true}
+  }
+}
+function agOpenContext(){
+  const key=!DEMO&&KEY&&!locked&&!claiming?KEY:'';
+  if(AGOPEN.key!==key){AGOPEN.key=key;AGOPEN.epoch++;AGOPEN.read++;AGOPEN.actionToken++;AGOPEN.openToken++;AGOPEN.loading=false;AGOPEN.action=false;AGOPEN.opening=false;AGOPEN.next=0;AGOPEN.notice='';agOpenApply(null,0)}
+  return !!key;
+}
+function agDialogPaint(){
+  if(!agDialogForeground())return;const v=AGOPEN.value,allowed=!!AGOPEN.key&&!DEMO,target=A[AGOPEN.target],ineligible=v?.available&&target&&!(v.eligible_agents||[]).includes(target.id);
+  txt($('#agStatus'),DEMO?'Connections are unavailable in the demo.':!allowed?'Unlock WATCH to manage this connection.':AGOPEN.action?AGOPEN.notice:ineligible?'Connected. This recorded session cannot be opened through the desktop connector.':v?.message||'Checking connection…');
+  txt($('#agInstructions'),v?.authorized?'Enable WATCH Navigation in Antigravity’s Customizations → Installed, then open it from Extensions in any existing chat. If the connection ends, reopen that panel.':'Install once for this computer, then enable WATCH Navigation in Antigravity’s Customizations → Installed and open its panel. Disconnect revokes navigation without changing that native toggle.');
+  $('#agInstructions').hidden=!!v&&!v.supported;$('#agInstall').hidden=!!v?.authorized||!!v&&!v.supported;txt($('#agInstall'),v?.installed?'Enable connection':'Install connector');
+  $('#agInstall').disabled=!allowed||AGOPEN.loading||AGOPEN.action;$('#agRefresh').disabled=!allowed||AGOPEN.loading||AGOPEN.action;$('#agDisconnect').hidden=!v?.authorized;$('#agDisconnect').disabled=!allowed||AGOPEN.action;
+  txt($('#agNotice'),AGOPEN.action?'':AGOPEN.notice);
+}
+async function agOpenRefresh(force=false){
+  if(!agOpenContext()||AGOPEN.loading||AGOPEN.action||!force&&Date.now()<AGOPEN.next)return;
+  const token=++AGOPEN.read,epoch=AGOPEN.epoch,key=AGOPEN.key;AGOPEN.loading=true;AGOPEN.next=Date.now()+4000;agDialogPaint();
+  try{
+    const response=await fetch('/antigravity-open/status',{headers:{'X-Live-Room-Key':key},cache:'no-store',signal:AbortSignal.timeout(5000)}),value=agOpenValue(await response.json());
+    if(token!==AGOPEN.read||epoch!==AGOPEN.epoch||key!==KEY||locked||claiming)return;
+    if(!response.ok)throw Error('Connection unavailable.');agOpenApply(value,Date.now()+9000);
+  }catch(err){if(token===AGOPEN.read&&epoch===AGOPEN.epoch&&key===KEY){agOpenApply(null,0);AGOPEN.notice='Could not check the connection. Refresh to try again.'}}
+  finally{if(token===AGOPEN.read){AGOPEN.loading=false;agDialogPaint()}}
+}
+function agOpenSync(){
+  agOpenContext();agOpenApply(AGOPEN.value,AGOPEN.until);agDialogPaint();
+  if(!document.hidden&&(agDialogForeground()||Object.values(A).some(a=>a.runtime==='Antigravity'&&!a.gone)))void agOpenRefresh();
+}
+async function agConnectionAction(action){
+  if(!agOpenContext()||AGOPEN.action||!['setup','disconnect'].includes(action))return;
+  const key=AGOPEN.key,epoch=AGOPEN.epoch,token=++AGOPEN.actionToken;AGOPEN.read++;AGOPEN.openToken++;AGOPEN.opening=false;AGOPEN.loading=false;AGOPEN.action=true;AGOPEN.notice=action==='setup'?'Setting up the connection…':'Disconnecting…';agOpenApply(AGOPEN.value,0);agDialogPaint();
+  try{
+    const response=await fetch('/antigravity-open/'+action,{method:'POST',headers:{'X-Live-Room-Key':key,'Content-Type':'application/json'},body:'{}',cache:'no-store',signal:AbortSignal.timeout(25000)}),value=agOpenValue(await response.json());
+    if(token!==AGOPEN.actionToken||epoch!==AGOPEN.epoch||key!==KEY||locked||claiming)return;
+    agOpenApply(value,response.ok?Date.now()+9000:0);AGOPEN.notice=response.ok?'':value.message;
+  }catch(err){if(token===AGOPEN.actionToken&&epoch===AGOPEN.epoch&&key===KEY){agOpenApply(null,0);AGOPEN.notice='The connection change could not be confirmed. Refresh its status before trying again.'}}
+  finally{if(token===AGOPEN.actionToken){AGOPEN.action=false;AGOPEN.next=0;agDialogPaint()}}
+}
+async function agOpenRequest(a){
+  if(DEMO)return {ok:false,message:'Demo only — no app was opened.'};
+  if(!agOpenContext()||!nativeOpenAvailable(a))return {ok:false,message:'Connect Antigravity from Connection on this desk first.'};
+  if(AGOPEN.opening)return {ok:false,message:'An opening request is already in progress.'};
+  const key=AGOPEN.key,epoch=AGOPEN.epoch,generation=AGOPEN.value?.generation,token=++AGOPEN.openToken,id=a.id;AGOPEN.opening=true;agOpenApply(AGOPEN.value,AGOPEN.until);
+  try{
+    const response=await fetch('/open',{method:'POST',headers:{'X-Live-Room-Key':key,'Content-Type':'application/json'},body:JSON.stringify({agent:id}),signal:AbortSignal.timeout(12000)}),value=await response.json();
+    if(token!==AGOPEN.openToken||epoch!==AGOPEN.epoch||generation!==AGOPEN.value?.generation||key!==KEY||locked||claiming)return {ok:false,stale:true,message:'The connection changed while opening was requested.'};
+    if(response.status===202&&value?.confirmed===false&&typeof value.foreground_requested==='boolean'&&['dispatched','uncertain'].includes(value.status)){
+      if(value.status==='dispatched')return {ok:true,foreground_requested:value.foreground_requested,message:value.foreground_requested?'Opening requested in Antigravity.':'Opening requested. Switch to Antigravity to view this chat.'};
+      agOpenApply(AGOPEN.value,0);return {ok:false,message:'Opening could not be confirmed. Check Antigravity.'};
+    }
+    agOpenApply(AGOPEN.value,0);return {ok:false,message:'Antigravity is not connected to this chat. Open Connection on this desk to reconnect.'};
+  }catch(err){const stale=token!==AGOPEN.openToken||epoch!==AGOPEN.epoch||generation!==AGOPEN.value?.generation||key!==KEY||locked||claiming;if(!stale)agOpenApply(AGOPEN.value,0);return {ok:false,stale,message:'Opening could not be confirmed. Check Antigravity.'}}
+  finally{if(token===AGOPEN.openToken){AGOPEN.opening=false;agOpenApply(AGOPEN.value,AGOPEN.until);AGOPEN.next=0}}
+}
+function agDialogShow(origin=document.activeElement){
+  agOpenContext();AGOPEN.target=focus;AGOPEN.returnFocus=origin;AGOPEN.notice='';const dialog=$('#agDialog');if(!dialog.open)dialog.showModal();responseInvalidate();$('#agClose').focus();agDialogPaint();void agOpenRefresh(true);
+}
+function agDialogClosed(){
+  responseInvalidate();const target=locked?$('#unlock'):AGOPEN.returnFocus;
+  if(target?.isConnected&&!target.disabled&&target.getClientRects?.().length)target.focus({preventScroll:true});else if(!locked&&focus&&nativeOpenAvailable(A[focus]))$('#deskOpenApp').focus({preventScroll:true});
+}
+/* end Antigravity opening state */
+$('#deskAntigravityConnect').onclick=()=>agDialogShow($('#deskAntigravityConnect'));
+$('#agClose').onclick=()=>$('#agDialog').close();$('#agRefresh').onclick=()=>agOpenRefresh(true);$('#agInstall').onclick=()=>agConnectionAction('setup');$('#agDisconnect').onclick=()=>agConnectionAction('disconnect');
+$('#agDialog').addEventListener('close',agDialogClosed);$('#agDialog').addEventListener('keydown',event=>event.stopPropagation());
+addEventListener('visibilitychange',()=>{AGOPEN.read++;AGOPEN.loading=false;agOpenApply(AGOPEN.value,0);if(!document.hidden)void agOpenRefresh(true)});
 
 let ES=null, authN=0;       /* one stream at a time; an answer about an older key never touches newer state */
 function connect(){
@@ -2781,7 +2891,7 @@ addEventListener('pointerdown',e=>{if(!$('#recipient').contains(e.target))cuChoo
 $('#ofModelButton').onclick=()=>{if(!$('#ofModelMenu').hidden){officerModelClose();return}cuChooserClose(false);officerModelContext();$('#ofModelMenu').hidden=false;officerModelPaint();officerModelEnsure(true)};
 $('#ofModelRetry').onclick=()=>officerModelEnsure(true);
 $('#ofModelPicker').onkeydown=e=>{e.stopPropagation();if(e.key==='Escape'){e.preventDefault();officerModelClose()}};
-addEventListener('pointerdown',e=>{if(typeof deckForeground==='function'&&deckForeground())return;if(!$('#ofModelPicker').contains(e.target))officerModelClose(false)});
+addEventListener('pointerdown',e=>{if(typeof agDialogForeground==='function'&&agDialogForeground())return;if(typeof deckForeground==='function'&&deckForeground())return;if(!$('#ofModelPicker').contains(e.target))officerModelClose(false)});
 $('#recipient').onkeydown=e=>e.stopPropagation();
 ofIn.addEventListener('input',cuDraftSave);
 $('#compactDesk').addEventListener('pointerdown',()=>{moved=false;drop()});
@@ -3059,8 +3169,8 @@ setInterval(()=>{ofMessagePoll();if(OFUI.recipient==='agent'&&String(cuTarget())
 $('#ofB').onclick=()=>ofToggle(ofEl.classList.contains('fold')); $('#ofSend').onclick=cuSend;
 $('#ofQuick').onclick=ev=>{const b=ev.target.closest('[data-q]'); if(b&&!OF.busy){$('#ofSuggestions').open=false;if(OFUI.recipient!=='watch'){cuDraftSave();OFUI.recipient='watch';OFUI.epoch++;cuDraftRestore();ofContextPaint()}ofIn.value=b.dataset.q; ofSend()}};      /* the three questions you ask most, one tap each */
 ofIn.addEventListener('keydown',ev=>{if(deskSubmitKey(ev)){ev.preventDefault();cuSend()}});
-addEventListener('keydown',e=>{if(typeof deckForeground==='function'&&deckForeground())return;if(e.key!=='Escape')return;if(typeof officerModelEscape==='function'&&officerModelEscape(e))return;if(!$('#cuAgentChoices').hidden){e.preventDefault();e.stopImmediatePropagation();cuChooserClose();return}if($('#ofSuggestions').open){e.preventDefault();e.stopImmediatePropagation();$('#ofSuggestions').open=false;$('#ofSuggestions summary').focus();return}if(OFUI.docked){if(ofEl.contains(e.target)||e.target===$('#ofScope')){e.preventDefault();e.stopImmediatePropagation();OFUI.epoch++;$('#recipient [aria-pressed="true"]').focus()}}else if(!ofEl.classList.contains('fold')){ofToggle(false);e.stopImmediatePropagation()}},true);
-addEventListener('pointerdown',e=>{if(typeof deckForeground==='function'&&deckForeground())return;if(!OFUI.docked&&!ofEl.classList.contains('fold')&&!ofEl.contains(e.target))ofToggle(false)},true);
+addEventListener('keydown',e=>{if(typeof agDialogForeground==='function'&&agDialogForeground())return;if(typeof deckForeground==='function'&&deckForeground())return;if(e.key!=='Escape')return;if(typeof officerModelEscape==='function'&&officerModelEscape(e))return;if(!$('#cuAgentChoices').hidden){e.preventDefault();e.stopImmediatePropagation();cuChooserClose();return}if($('#ofSuggestions').open){e.preventDefault();e.stopImmediatePropagation();$('#ofSuggestions').open=false;$('#ofSuggestions summary').focus();return}if(OFUI.docked){if(ofEl.contains(e.target)||e.target===$('#ofScope')){e.preventDefault();e.stopImmediatePropagation();OFUI.epoch++;$('#recipient [aria-pressed="true"]').focus()}}else if(!ofEl.classList.contains('fold')){ofToggle(false);e.stopImmediatePropagation()}},true);
+addEventListener('pointerdown',e=>{if(typeof agDialogForeground==='function'&&agDialogForeground())return;if(typeof deckForeground==='function'&&deckForeground())return;if(!OFUI.docked&&!ofEl.classList.contains('fold')&&!ofEl.contains(e.target))ofToggle(false)},true);
 
 function demo(){
   const now=()=>Date.now()/1000; let t=now()-900;
