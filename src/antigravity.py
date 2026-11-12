@@ -18,6 +18,57 @@ TRANSCRIPT = ('.system_generated', 'logs', 'transcript.jsonl')
 ROOT_NAMES = ('antigravity', 'antigravity-cli', 'antigravity-ide')
 
 
+def user_text(content):
+    """Extract only the person's native request, without provider prompt data.
+
+    User prose is not XML. Plain text, including literal wrapper-like markup,
+    remains unchanged unless the native opening and provider suffix markers are
+    both present. Recognized but malformed/ambiguous envelopes are omitted.
+    Candidate scans are bounded and never interpret embedded instructions.
+    """
+    if not isinstance(content, str):
+        return None
+    opening, closing = '<USER_REQUEST>', '</USER_REQUEST>'
+    sections = (('ADDITIONAL_METADATA', False), ('USER_SETTINGS_CHANGE', True))
+    markers = tuple('<' + slash + name + '>' for name, _ in sections for slash in ('', '/'))
+    if not content.startswith(opening) or not any(marker in content for marker in markers):
+        return content
+    if len(content) > 1000000:
+        return None
+
+    def suffix_valid(suffix):
+        rest = suffix.strip()
+        for name, optional in sections:
+            if optional and not rest:
+                return True
+            start, end = '<' + name + '>', '</' + name + '>'
+            if not rest.startswith(start):
+                return False
+            stop = rest.find(end, len(start))
+            if stop < 0 or start in rest[len(start):stop]:
+                return False
+            rest = rest[stop + len(end):].strip()
+        return not rest
+
+    candidates, position, examined = [], len(opening), 0
+    while True:
+        stop = content.find(closing, position)
+        if stop < 0:
+            break
+        examined += 1
+        if examined > 16:
+            return None
+        if suffix_valid(content[stop + len(closing):]):
+            candidates.append(stop)
+        position = stop + len(closing)
+    if len(candidates) != 1:
+        return None
+    request = content[len(opening):candidates[0]]
+    # A malformed earlier boundary may already have started provider metadata.
+    # Never reinterpret that prefix as human prose by choosing a later close.
+    return None if any(marker in request for marker in markers) else request
+
+
 def roots(home):
     return tuple(os.path.join(home, '.gemini', name) for name in ROOT_NAMES)
 

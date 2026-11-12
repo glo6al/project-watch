@@ -2511,16 +2511,22 @@ class AntigravityTail(Tail):
         self.step_index = index
         self.close_open(old, ts)
         aid = self.aid
-        if source == 'USER_EXPLICIT' and kind == 'USER_INPUT' and isinstance(content, str) and content.strip():
-            remember_prompt(aid, content, ts, old)
-            emit(aid, 'user', old, ts, text=content)
-            emit(aid, 'turn_start', old, ts)
-            self.native_idle = False
+        if source == 'USER_EXPLICIT' and kind == 'USER_INPUT':
+            request = antigravity.user_text(content)
+            if isinstance(request, str) and request.strip():
+                remember_prompt(aid, request, ts, old)
+                emit(aid, 'user', old, ts, text=request)
+                emit(aid, 'turn_start', old, ts)
+                self.native_idle = False
         elif source == 'MODEL' and kind == 'PLANNER_RESPONSE':
+            # A fresh continuation can arrive between metadata samples. Let the
+            # next native idle observation reconcile that new activity.
+            self.native_idle = None
             emit(aid, 'beat', old, ts)
             if isinstance(content, str) and content.strip():
                 emit(aid, 'say', old, ts, text=content)
         elif kind == 'GENERIC' and isinstance(content, str) and content.strip():
+            self.native_idle = None
             emit(aid, 'tool', old, ts, name='Antigravity activity', text=content, done=True, unknown=True)
         # Thinking and token counters are deliberately not read: their context
         # semantics are not established. Unknown system records are omitted.
@@ -2531,6 +2537,7 @@ class AntigravityTail(Tail):
             if not isinstance(call, dict) or not isinstance(call.get('name'), str) or not isinstance(call.get('args'), dict):
                 continue
             name, inp, cid = call['name'][:200], call['args'], 'a%d:%d' % (index, position)
+            self.native_idle = None
             self.calls[cid] = name
             path = text_of(inp.get('Path'), 4096)
             if name == 'read_file':

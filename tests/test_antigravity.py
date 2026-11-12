@@ -210,6 +210,45 @@ class AntigravityTests(unittest.TestCase):
         finally:
             conn.close()
 
+    def test_fresh_native_continuation_is_ended_by_current_idle_metadata(self):
+        conn = self.metadata_db()
+        try:
+            conn.execute("UPDATE conversation_summaries SET status='CASCADE_RUN_STATUS_IDLE',not_fully_idle=0")
+            conn.commit()
+            base = self.stamp.timestamp()
+            with patch.object(server.time, 'time', return_value=base):
+                tail = server.AntigravityTail(str(self.path)); tail.poll()
+            initial_end = [e for e in self.events() if e['kind'] == 'turn_end'][-1]
+            # A fresh native continuation can arrive between metadata samples.
+            # Its timestamp is after the last idle observation, so the actual
+            # page's historical-event guard admits this beat as active work.
+            self.append(self.record(0, 'PLANNER_RESPONSE', 'A fresh fictional continuation.',
+                                    created_at=datetime.fromtimestamp(base + 1, timezone.utc).isoformat()))
+            with patch.object(server.time, 'time', return_value=base + 1.1):
+                tail.poll()
+            visible_beat = [e for e in self.events() if e['kind'] == 'beat'][-1]
+            self.assertGreater(visible_beat['ts'], initial_end['ts'])
+            before_refresh = len(self.events())
+            tail.metadata_at = 0
+            with patch.object(server.time, 'time', return_value=base + 2):
+                tail.refresh_metadata(False)
+            new_ends = [e for e in self.events()[before_refresh:] if e['kind'] == 'turn_end']
+            self.assertTrue(new_ends, 'Fresh native idle must end the visibly active continuation.')
+            self.assertGreaterEqual(new_ends[-1]['ts'], visible_beat['ts'])
+            # An ignored system record does not reopen the station or trigger
+            # another idle end simply by passing through the parser.
+            before_system = len(self.events())
+            self.append(self.record(1, 'SYSTEM_MESSAGE', 'Ignored fictional system text.', source='SYSTEM',
+                                    created_at=datetime.fromtimestamp(base + 3, timezone.utc).isoformat()))
+            with patch.object(server.time, 'time', return_value=base + 3.1):
+                tail.poll()
+            tail.metadata_at = 0
+            with patch.object(server.time, 'time', return_value=base + 3.2):
+                tail.refresh_metadata(False)
+            self.assertFalse(any(e['kind'] in ('beat', 'turn_end') for e in self.events()[before_system:]))
+        finally:
+            conn.close()
+
     def test_nonlocal_or_nonfile_workspace_uri_never_becomes_cwd(self):
         for uri in ('https://example.invalid/project', 'file://remote.invalid/share/project',
                     'file:///fictional/project?token=fixture', 'file:///fictional/project#fragment'):
@@ -288,6 +327,74 @@ class AntigravityTests(unittest.TestCase):
         self.assertFalse(a.get('ctxmax'))
         self.assertFalse(a.get('ctx'))
         self.assertNotIn('THINKING_SHOULD_NOT_BE_PUBLISHED', json.dumps(self.events()))
+
+    def test_native_user_envelope_preserves_exact_owner_text_and_discards_runtime_sections(self):
+        user = '  First line.\nUse <aside class="note">literal markup</aside> & keep spacing.  '
+        envelope = ('<USER_REQUEST>' + user + '</USER_REQUEST>\n'
+                    '<ADDITIONAL_METADATA>NATIVE_METADATA_NOT_FOR_WATCH</ADDITIONAL_METADATA>\n'
+                    '<USER_SETTINGS_CHANGE>NATIVE_SETTINGS_NOT_FOR_WATCH</USER_SETTINGS_CHANGE>')
+        self.assertEqual(antigravity.user_text(envelope), user)
+        self.append(self.record(0, content=envelope))
+        server.AntigravityTail(str(self.path)).poll()
+        self.assertEqual([e['text'] for e in self.events() if e['kind'] == 'user'], [user])
+        self.assertEqual(server.AGENTS[self.aid]['goal'], ' '.join(user.split()))
+        exposed = json.dumps([self.events(), server.AGENTS[self.aid]])
+        for marker in ('NATIVE_METADATA_NOT_FOR_WATCH', 'NATIVE_SETTINGS_NOT_FOR_WATCH',
+                       '<ADDITIONAL_METADATA>', '<USER_SETTINGS_CHANGE>'):
+            self.assertNotIn(marker, exposed)
+
+    def test_plain_user_markup_and_literal_closing_tag_remain_verbatim(self):
+        plain = 'Compare <section>one</section> with <span>two</span>.\nKeep these examples.'
+        self.assertEqual(antigravity.user_text(plain), plain)
+        literal = 'Explain the literal token </USER_REQUEST> and keep this newline.\nSecond line.'
+        wrapped = ('<USER_REQUEST>' + literal + '</USER_REQUEST>'
+                   '<ADDITIONAL_METADATA>Excluded fictional runtime text.</ADDITIONAL_METADATA>')
+        self.assertEqual(antigravity.user_text(wrapped), literal)
+        self.append(self.record(0, content=plain), self.record(1, content=wrapped))
+        server.AntigravityTail(str(self.path)).poll()
+        self.assertEqual([e['text'] for e in self.events() if e['kind'] == 'user'], [plain, literal])
+
+    def test_malformed_or_ambiguous_native_envelope_never_becomes_user_text(self):
+        malformed = [
+            '<USER_REQUEST>Missing close<ADDITIONAL_METADATA>Runtime section.</ADDITIONAL_METADATA>',
+            '<USER_REQUEST>Owner text.</USER_REQUEST><ADDITIONAL_METADATA>Unclosed runtime section.',
+            '<USER_REQUEST>Owner text.</USER_REQUEST><ADDITIONAL_METADATA>Runtime.</ADDITIONAL_METADATA>unexpected trailing data',
+            '<USER_REQUEST>Owner text.</USER_REQUEST><ADDITIONAL_METADATA>Runtime.</ADDITIONAL_METADATA><USER_SETTINGS_CHANGE>Unclosed settings.',
+            '<USER_REQUEST>Owner text.</USER_REQUEST><ADDITIONAL_METADATA>First possible suffix.</USER_REQUEST><ADDITIONAL_METADATA>Second possible suffix.</ADDITIONAL_METADATA>',
+        ]
+        for index, value in enumerate(malformed):
+            with self.subTest(case=index):
+                self.assertIsNone(antigravity.user_text(value))
+                self.append(self.record(index, content=value))
+        server.AntigravityTail(str(self.path)).poll()
+        self.assertFalse(any(e['kind'] in ('user', 'turn_start') for e in self.events()))
+        self.assertFalse(server.AGENTS[self.aid].get('goal'))
+
+    def test_native_envelope_is_clean_before_officer_reads_or_future_memory_capture(self):
+        from deck_log import DeckLog
+        user = 'Summarize the fictional fixture in one sentence.'
+        wrapped = ('<USER_REQUEST>' + user + '</USER_REQUEST>'
+                   '<ADDITIONAL_METADATA>EXCLUDED_RUNTIME_METADATA</ADDITIONAL_METADATA>'
+                   '<USER_SETTINGS_CHANGE>EXCLUDED_RUNTIME_SETTINGS</USER_SETTINGS_CHANGE>')
+        history = DeckLog(str(self.home / 'private-envelope-memory'))
+        server.HISTORY = history
+        try:
+            self.assertTrue(history.available, history.reason)
+            history.configure(enabled=True)
+            server.history_arm()
+            self.append(self.record(0, content=wrapped))
+            server.AntigravityTail(str(self.path)).poll()
+            self.assertTrue(history.flush(10), history.reason)
+            saved = history.search(limit=100)['events']
+            self.assertEqual([e['text'] for e in saved if e['kind'] == 'message'], [user])
+            timeline = server.officer_tool('agent_timeline', {'agent': self.aid}, [])
+            exposed = json.dumps([saved, timeline, self.events(), server.AGENTS[self.aid]])
+            self.assertIn(user, exposed)
+            self.assertNotIn('EXCLUDED_RUNTIME_METADATA', exposed)
+            self.assertNotIn('EXCLUDED_RUNTIME_SETTINGS', exposed)
+            self.assertNotIn('<USER_REQUEST>', exposed)
+        finally:
+            history.close()
 
     def test_partial_append_and_repoll_emit_one_message(self):
         tail = server.AntigravityTail(str(self.path))
