@@ -35,7 +35,7 @@ def inspect(state_dir):
         # Schema creation and migration operate only on the private memory copy.
         peer_bridge.shared_schema(snapshot)
         counts = dict(snapshot.execute('SELECT execution,COUNT(*) FROM peer_execution GROUP BY execution'))
-        unresolved = snapshot.execute("SELECT COUNT(DISTINCT agent) FROM peer_execution WHERE execution NOT IN ('completed','dropped')").fetchone()[0]
+        unresolved = snapshot.execute("SELECT COUNT(DISTINCT agent) FROM peer_execution WHERE execution NOT IN ('completed','dropped','retired')").fetchone()[0]
         return {'read_only': True, 'execution_counts': counts,
                 'recipients_with_unresolved_execution': unresolved,
                 'server_execution_allows_downgrade': peer_lifecycle.downgrade_ready(snapshot),

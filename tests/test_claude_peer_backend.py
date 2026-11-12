@@ -90,6 +90,53 @@ class ClaudePeerBackendTests(unittest.TestCase):
         fields.update(extra)
         return self.event(claim, 'completed', **fields)
 
+    def test_owner_retirement_v1_late_answer_is_acknowledged_without_capture_or_reclaim(self):
+        import peer_lifecycle as life
+        self.setup_global(); sent = self.send()
+        claim = self.global_poll(self.body['client_id'])[1]['claim']
+        self.assertEqual(self.event(claim, 'started', turn_id='fictional-turn')[0], 200)
+        with self.store.lock, self.store.db:
+            retired = life.retire(self.store.db, claim['request_id'], life.RETIRE_REASON)
+        before = self.store.db.execute('SELECT count(*) FROM shared_bridge_requests').fetchone()[0]
+        for _ in range(2):
+            status, response = self.event(claim)
+            self.assertEqual(status, 200, response); self.assertTrue(response['retired'])
+            self.assertIn('Provider outcome remains unknown', response['message'])
+        self.assertEqual(life.get(self.store.db, claim['request_id']), retired)
+        result = self.store.shared.result(sent['request_id'])
+        self.assertEqual(result['state'], 'unknown'); self.assertEqual(result['reply'], '')
+        self.assertIn('retired by the owner', result['error'])
+        self.assertEqual(self.store.db.execute('SELECT count(*) FROM shared_bridge_requests').fetchone()[0], before)
+        # Native turn/attempt authentication remains mandatory after retirement.
+        self.assertEqual(self.event(claim, turn_id='different-turn')[0], 409)
+        self.assertEqual(self.event(dict(claim, attempt_id=uid()))[0], 409)
+        followup = self.send('A separately authorized fictional follow-up.')
+        new_claim = self.global_poll(self.body['client_id'])[1]['claim']
+        self.assertEqual(new_claim['request_id'], self.peer_row(followup['request_id'])['request_id'])
+        self.assertNotEqual(new_claim['request_id'], claim['request_id'])
+        self.assertIsNone(self.global_poll(self.body['client_id'])[1]['claim'])
+
+    def test_owner_retirement_v2_pruned_completion_remains_unknown_withheld(self):
+        import peer_lifecycle as life
+        self.enable_lifecycle(); sent = self.send()
+        claim = self.global_poll(self.body['client_id'])[1]['claim']
+        self.assertEqual(self.event(claim, 'started', turn_id='fictional-turn')[0], 200)
+        with self.store.lock, self.store.db:
+            retired = life.retire(self.store.db, claim['request_id'], life.RETIRE_REASON)
+            self.store.db.execute('DELETE FROM requests WHERE id=?', (claim['request_id'],))
+        event_id = uid()
+        for _ in range(2):
+            status, response = self.completion(claim, 'answered', event_id=event_id)
+            self.assertEqual(status, 200, response); self.assertTrue(response['retired'])
+        self.assertEqual(life.get(self.store.db, claim['request_id']), retired)
+        self.assertIsNone(self.store.db.execute('SELECT data FROM requests WHERE id=?', (claim['request_id'],)).fetchone())
+        result = self.store.shared.result(sent['request_id'])
+        self.assertEqual(result['state'], 'unknown'); self.assertEqual(result['reply'], '')
+        self.assertIn('retired by the owner', result['error'])
+        self.assertEqual(self.event(claim, 'unknown')[0], 200)
+        self.assertEqual(self.event(claim, 'dropped')[0], 200)
+        self.assertEqual(life.get(self.store.db, claim['request_id']), retired)
+
     def test_v2_terminal_execution_releases_capacity_and_cannot_regress(self):
         import peer_lifecycle
         self.enable_lifecycle(); sent = self.send()

@@ -115,6 +115,14 @@ Old plugins and servers keep their existing wire format. New completion features
 
 Diagnostic history is local, bounded, and contains event metadata rather than prompts, answers, filesystem paths, or credentials. Uncertain historical attempts are not silently converted into success during migration. Existing attempts with missing evidence may require recovery before that recipient can accept another request.
 
+### Historical recovery and owner clearing
+
+`scripts/watch_bridge_recover.py` previews recovery for an explicit list of old client request IDs. It validates the original admission and native evidence; an audit report saying “verified” is not sufficient. Applying recovery requires stopping the bridge and obtaining its existing exclusive storage lock. Every selected proof must pass again before the transaction commits.
+
+Verified historical completion releases the execution reservation while keeping expired replies unavailable. An owner can separately select uncertain reservations to clear. Those remain recorded as **retired**, with the provider outcome unknown and answer capture withheld. Clearing a reservation does not cancel native work, resend the question, erase its replay guard, or claim that the provider finished it. Late reports cannot restore its answer or make it block the recipient again. A database containing retired reservations cannot be downgraded to a version that does not understand retirement.
+
+Use the tool's `--help` for the explicit request-selection and native-source options. It defaults to a dry run; `--apply` is a separate operator action. Keep request manifests, source evidence, and database backups private. Review the exact selected set before applying either recovery or owner clearing.
+
 ## Installation and rollout
 
 The shared bridge currently requires WATCH running on macOS with the supported native transports. Linux and Windows installation is not supported.

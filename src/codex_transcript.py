@@ -24,6 +24,26 @@ def filename_id(name):
     return tail if re.fullmatch(UUID, tail) else None
 
 
+def pure_text(content, role):
+    """Return complete native text, or None when a part is not understood.
+
+    Missing type is retained for the older text-only record shape. Native output
+    annotations/logprobs are output metadata; user input has no such exceptions.
+    Unknown parts and fields must not disappear from a peer envelope comparison.
+    """
+    assistant = role == 'assistant'
+    kinds = (None, 'text', 'output_text') if assistant else (None, 'text', 'input_text')
+    keys = {'type', 'text', 'annotations', 'logprobs'} if assistant else {'type', 'text'}
+    if not isinstance(content, list) or any(
+            not isinstance(part, dict) or not isinstance(part.get('text'), str)
+            or part.get('type') not in kinds or set(part) - keys
+            or 'annotations' in part and not isinstance(part['annotations'], list)
+            or 'logprobs' in part and part['logprobs'] is not None and not isinstance(part['logprobs'], list)
+            for part in content):
+        return None
+    return ''.join(part['text'] for part in content)
+
+
 def open_regular(root, path):
     """Validate every component and keep the descriptor used to read evidence."""
     root, path = os.path.abspath(root), os.path.abspath(path)

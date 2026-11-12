@@ -22,6 +22,14 @@ class FilenameTests(unittest.TestCase):
         self.assertEqual(c.filename_id('rollout-' + thread + '_' + instance + '.jsonl'), thread)
         self.assertIsNone(c.filename_id('not-a-native-rollout.jsonl'))
 
+    def test_native_output_metadata_is_supported_only_on_output(self):
+        part = dict(type='output_text', text='Fictional answer.', annotations=[], logprobs=None)
+        self.assertEqual(c.pure_text([part], 'assistant'), 'Fictional answer.')
+        self.assertIsNone(c.pure_text([dict(part, type='input_text')], 'user'))
+        self.assertEqual(c.pure_text([dict(type='input_text', text='Fictional instruction.')], 'developer'), 'Fictional instruction.')
+        self.assertIsNone(c.pure_text([dict(part, image_url='fictional')], 'assistant'))
+        self.assertIsNone(c.pure_text([dict(part, annotations='malformed')], 'assistant'))
+
 
 @unittest.skipIf(os.name == 'nt', 'POSIX native metadata and private messaging storage')
 class TranscriptTests(unittest.TestCase):
@@ -362,6 +370,57 @@ class TranscriptTests(unittest.TestCase):
                 self.poll(); self.store.peers.reconcile([self.row])
                 self.assertFalse(self.row.get('settled')); self.assertTrue(self.row.get('codex_gap_needs_envelope'))
                 self.assertEqual(self.row['reply'], ''); self.assertEqual(self.row['capture_disposition'], 'withheld')
+
+    def test_pure_native_user_text_content_shapes_remain_correlatable(self):
+        original = json.loads(json.dumps(self.row)); header = self.old.read_bytes()
+        for kind in ('input_text', 'text', None):
+            with self.subTest(kind=kind):
+                self.old.write_bytes(header); self.row = json.loads(json.dumps(original))
+                part = dict(text=self.row['envelope'])
+                if kind is not None: part['type'] = kind
+                self.append(self.old, 'event_msg', dict(type='task_started', turn_id='pure'))
+                self.append(self.old, 'response_item', dict(type='message', role='user', content=[part],
+                            internal_chat_message_metadata_passthrough=dict(turn_id='pure')))
+                self.append(self.old, 'event_msg', dict(type='task_complete', turn_id='pure',
+                            last_agent_message='WATCH_REPLY ' + self.rid + '\nFictional answer.'))
+                self.poll(); self.store.peers.reconcile([self.row])
+                self.assertEqual(self.row['state'], 'answered')
+                self.assertEqual(self.row['reply'], 'Fictional answer.')
+
+    def test_extra_native_image_or_malformed_part_cannot_be_dropped_from_envelope(self):
+        original = json.loads(json.dumps(self.row)); header = self.old.read_bytes()
+        extras = [dict(type='input_image', image_url='fictional-image'), dict(type='image', source='fictional'),
+                  dict(type='unknown', text=''), dict(type='input_text', text=123), 'invalid part', None]
+        for kind in ('input_text', 'text'):
+            for extra in extras:
+                with self.subTest(kind=kind,extra=extra):
+                    self.old.write_bytes(header); self.row = json.loads(json.dumps(original))
+                    self.append(self.old, 'event_msg', dict(type='task_started', turn_id='mixed'))
+                    self.append(self.old, 'response_item', dict(type='message', role='user',
+                                content=[dict(type=kind,text=self.row['envelope']),extra],
+                                internal_chat_message_metadata_passthrough=dict(turn_id='mixed')))
+                    self.append(self.old, 'event_msg', dict(type='task_complete', turn_id='mixed',
+                                last_agent_message='WATCH_REPLY ' + self.rid + '\nPrivate combined answer.'))
+                    self.poll(); self.store.peers.reconcile([self.row])
+                    self.assertFalse(self.row.get('settled')); self.assertEqual(self.row['reply'], '')
+                    self.assertEqual(self.row['capture_disposition'], 'withheld')
+                    self.assertTrue(self.row.get('codex_gap_needs_envelope'))
+
+    def test_unknown_content_field_is_not_assumed_to_be_text_metadata(self):
+        self.append(self.old, 'event_msg', dict(type='task_started', turn_id='mixed'))
+        self.append(self.old, 'response_item', dict(type='message', role='user',
+                    content=[dict(type='input_text',text=self.row['envelope'],image_url='fictional-image')],
+                    internal_chat_message_metadata_passthrough=dict(turn_id='mixed')))
+        self.append(self.old, 'event_msg', dict(type='task_complete', turn_id='mixed',
+                    last_agent_message='WATCH_REPLY ' + self.rid + '\nMust stay withheld.'))
+        self.poll(); self.assertFalse(self.row.get('settled')); self.assertEqual(self.row['reply'], '')
+        # Only later pure input can restore execution evidence, never clean capture.
+        self.message(self.old, 'mixed', self.row['envelope'])
+        self.append(self.old, 'event_msg', dict(type='task_complete', turn_id='mixed',
+                    last_agent_message='WATCH_REPLY ' + self.rid + '\nStill withheld.'))
+        self.poll(); self.store.peers.reconcile([self.row])
+        self.assertTrue(self.row.get('settled')); self.assertEqual(self.row['reply'], '')
+        self.assertEqual(self.row['capture_disposition'], 'withheld')
 
     def test_postauthorization_failure_only_releases_proven_no_native_submission(self):
         for failure in ('metadata', 'spawn', 'nonzero', 'timeout'):

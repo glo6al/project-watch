@@ -427,7 +427,7 @@ class ClaudeMod:
         self.validate_poll(entry, data)
         self.db.execute('UPDATE claude_mod_enrollments SET last_seen=? WHERE id=?', (time.time(), entry['id']))
         rows = self.rows()
-        busy = any(r.get('mod_enrollment') == entry['id'] and r.get('launched') and not r.get('settled') and r['state'] in ('queued', 'awaiting_reply') for r in rows)
+        busy = any(not peer_lifecycle.is_retired(self.db, r['request_id']) and r.get('mod_enrollment') == entry['id'] and r.get('launched') and not r.get('settled') and r['state'] in ('queued', 'awaiting_reply') for r in rows)
         busy = busy or any(state != 'reserved' for _, state, _ in peer_lifecycle.blockers(self.db, entry['agent']))
         busy = busy or self.store.reply_delivery.busy(entry['id'])
         claim = None
@@ -435,7 +435,8 @@ class ClaudeMod:
         can_claim = local_parent(entry['agent'], item) and item.get('cwd') == entry['project']
         if data['accept'] and can_claim and not busy and not self.store.worker_failed:
             for row in sorted(rows, key=lambda r: r['created']):
-                if row.get('mod_enrollment') != entry['id'] or row.get('launched') or row['state'] != 'sending':
+                if (peer_lifecycle.is_retired(self.db, row['request_id']) or row.get('mod_enrollment') != entry['id']
+                        or row.get('launched') or row['state'] != 'sending'):
                     continue
                 # Deadline checked inside the same serialized reservation transaction.
                 if row['created'] + TTL <= time.time():
@@ -485,7 +486,7 @@ class ClaudeMod:
         lifecycle = peer_lifecycle.get(self.db, data['request_id'])
         row = next((r for r in self.rows() if r['request_id'] == data['request_id']), None)
         payload_expired = row is None
-        if payload_expired and lifecycle:
+        if lifecycle and (payload_expired or lifecycle['execution'] == 'retired'):
             evidence = lifecycle['evidence']
             if evidence.get('project_digest') != digest(entry['project']):
                 raise ModError(409, 'Original Claude project evidence is unavailable.')
@@ -515,6 +516,14 @@ class ClaudeMod:
                 raise ModError(400, 'Invalid Claude turn identifier.')
             if row.get('mod_turn') and row['mod_turn'] != turn:
                 raise ModError(409, 'Claude request is already bound to another turn.')
+        if lifecycle and lifecycle['execution'] == 'retired':
+            # Original identity, claim, protocol and turn checks above still apply.
+            # Retirement is not a provider completion; never retain the late answer
+            # or change immutable outcome evidence even on repeated v1/v2 reports.
+            peer_lifecycle.record_event(self.db, row['request_id'], 'retired_late_event', kind,
+                                        'retired', 'retired')
+            return dict(request_id=row['request_id'], state='unknown', turn_id=row.get('mod_turn', ''),
+                        retired=True, message=peer_lifecycle.RETIRE_MESSAGE)
         answered = kind == 'answered' or kind == 'completed' and data['outcome'] == 'answered'
         reply = None
         if answered:

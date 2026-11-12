@@ -45,6 +45,23 @@ class PreflightTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 preflight.inspect(str(root / 'alias'))
 
+    def test_owner_retirement_is_reported_without_counting_a_blocked_recipient(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp).resolve()
+            root.chmod(0o700)
+            path = root / 'officer-messages.sqlite3'
+            with sqlite3.connect(path) as db:
+                preflight.peer_bridge.shared_schema(db)
+                db.execute('INSERT INTO peer_execution VALUES (?,?,?,?,?,?)',
+                           ('fictional-request', 'c:fictional-recipient', 1,
+                            'retired', 'withheld', '{}'))
+            path.chmod(0o600)
+            before = path.read_bytes()
+            result = preflight.inspect(str(root))
+            self.assertEqual(result['execution_counts'], {'retired': 1})
+            self.assertEqual(result['recipients_with_unresolved_execution'], 0)
+            self.assertEqual(path.read_bytes(), before)
+
 
 if __name__ == '__main__':
     unittest.main()

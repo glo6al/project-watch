@@ -855,7 +855,13 @@ class MessagingStore:
             row['current_turn'] = p['turn_id']
         elif typ == 'response_item' and p.get('type') == 'message':
             content = p.get('content', [])
-            text = ''.join(c.get('text', '') for c in content if isinstance(c, dict) and isinstance(c.get('text'), str)) if isinstance(content, list) else ''
+            if row.get('origin') == 'peer':
+                text = codex_transcript.pure_text(content, p.get('role'))
+                if text is None:
+                    self._codex_gap(row)
+                    return
+            else:
+                text = ''.join(c.get('text', '') for c in content if isinstance(c, dict) and isinstance(c.get('text'), str)) if isinstance(content, list) else ''
             outgoing = outgoing_message(row)
             # The native Codex host may append exactly one record-ending LF.
             # Do not trim whitespace or change the stored message/dedupe digest.

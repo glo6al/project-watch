@@ -314,6 +314,7 @@ class PeerBridge:
                 raise ValueError()
         except (ValueError, TypeError):
             row = {'state': 'unknown', 'error': 'Peer transport record is unavailable.'}
+        peer_lifecycle.project_retired(self.store.db, item[1], row)
         state = row.get('state', 'unknown')
         if state == 'quarantined':
             state = 'awaiting_reply'
@@ -363,10 +364,10 @@ class PeerBridge:
                 return self.result(sender['id'], client_id)
             if db.execute('SELECT COUNT(*) FROM peer_requests').fetchone()[0] >= MAX_TOMBSTONES:
                 raise PeerError(429, 'Peer request tombstone storage is full; owner maintenance is required.')
-            rows = db.execute('SELECT p.sender,p.target,p.created,r.data FROM peer_requests p LEFT JOIN requests r ON p.transport_id=r.id WHERE p.created>?', (now - RETENTION,)).fetchall()
+            rows = db.execute('SELECT p.sender,p.target,p.created,r.data,p.transport_id FROM peer_requests p LEFT JOIN requests r ON p.transport_id=r.id WHERE p.created>?', (now - RETENTION,)).fetchall()
             pending = []
-            for source, dest, created, raw in rows:
-                if raw:
+            for source, dest, created, raw, tid in rows:
+                if raw and not peer_lifecycle.is_retired(db, tid):
                     try:
                         r = json.loads(raw)
                         if not isinstance(r, dict): r = {}
@@ -379,8 +380,8 @@ class PeerBridge:
             capacity = peer_lifecycle.capacity_error(db, row['agent'], now, TTL)
             if capacity:
                 raise PeerError(429, capacity)
-            if (sum(source == sender['id'] and created > now - 3600 for source, _, created, _ in rows) >= 10
-                    or sum({source, dest} == {sender['id'], target_id} for source, dest, _, _ in rows) >= 30 or len(rows) >= 100):
+            if (sum(source == sender['id'] and created > now - 3600 for source, _, created, _, _ in rows) >= 10
+                    or sum({source, dest} == {sender['id'], target_id} for source, dest, _, _, _ in rows) >= 30 or len(rows) >= 100):
                 raise PeerError(429, 'Peer message rate limit exceeded.')
             db.execute('INSERT INTO peer_requests VALUES (?,?,?,?,?,?,NULL)', (sender['id'], client_id, target_id, payload_hash, transport_id, now))
             db.execute('INSERT INTO requests VALUES (?,?)', (transport_id, json.dumps(row)))
@@ -431,6 +432,8 @@ class PeerBridge:
                     and codex_transcript.segment(owner).get('cursor', 0) >= peer.get('complete_offset', float('inf')))
         controls = [json.loads(raw) for (raw,) in self.store.db.execute('SELECT data FROM controls')]
         for row in rows:
+            if peer_lifecycle.project_retired(self.store.db, row.get('request_id'), row):
+                continue
             if row.get('origin') != 'peer' or row.get('runtime') != 'codex' or row.get('state') != 'quarantined':
                 continue
             owners = [o for o in rows if o.get('origin') != 'peer' and o.get('agent') == row['agent']]
@@ -944,6 +947,7 @@ class SharedBridge:
             row.get('reply', '').encode('utf-8')
         except (ValueError, TypeError, UnicodeError):
             row = {'state': 'unknown', 'error': 'Shared transport record is unavailable.'}
+        peer_lifecycle.project_retired(self.store.db, item[2], row)
         state = 'awaiting_reply' if row['state'] == 'quarantined' else row['state']
         reply = row.get('reply', '') if include_reply and state == 'answered' else ''
         if not isinstance(reply, str) or len(reply) > 16000:
@@ -1009,7 +1013,8 @@ class SharedBridge:
             raise PeerError(409, 'Shared Claude claim metadata is unavailable or already launched.')
         service_credential(db, ledger[1])
         if peer_lifecycle.blockers(db, row['agent'], excluding=row['request_id']) or any(r['request_id'] != row['request_id'] and r.get('mod_enrollment') == entry['id']
-               and r.get('launched') and not r.get('settled') and r['state'] in ('queued', 'awaiting_reply', 'unknown', 'expired') for r in self.store.mods.rows()):
+               and r.get('launched') and not r.get('settled') and not peer_lifecycle.is_retired(db, r['request_id'])
+               and r['state'] in ('queued', 'awaiting_reply', 'unknown', 'expired') for r in self.store.mods.rows()):
             raise PeerError(409, 'The Claude conversation already has an active WATCH claim.')
         db.execute('UPDATE shared_bridge_requests SET launched=? WHERE transport_id=?',
                    (time.time(), row['request_id']))

@@ -1,7 +1,8 @@
 """Durable execution ownership, separate from expiring message content.
 
-Only verified completion/drop releases ownership. Connection loss and elapsed
-retention never imply that a provider discarded its native input. No I/O on import.
+Verified completion/drop or explicit owner retirement releases ownership. Retirement
+is policy only: it does not establish any provider outcome. Connection loss and
+elapsed retention never imply that a provider discarded its native input. No I/O on import.
 """
 import hashlib
 import json
@@ -9,7 +10,10 @@ import math
 import uuid
 import time
 
-TERMINAL = ('completed', 'dropped')
+TERMINAL = ('completed', 'dropped', 'retired')
+RETIRE_REASON = 'owner_requested_clear_unresolved_attempt'
+RETIRE_MESSAGE = ('This attempt was retired by the owner. Provider outcome remains unknown; '
+                  'late replies are withheld. Nothing was cancelled or resent.')
 MAX_RESERVATIONS = 200000  # Both immutable ledgers are individually capped at 100000.
 MAX_EVENTS, EVENT_RETENTION = 2048, 86400
 
@@ -19,7 +23,10 @@ def schema(db):
         request_id TEXT PRIMARY KEY, agent TEXT NOT NULL, created REAL NOT NULL,
         execution TEXT NOT NULL, capture TEXT NOT NULL, evidence TEXT NOT NULL)''')
     db.execute('CREATE INDEX IF NOT EXISTS peer_execution_agent ON peer_execution(agent,execution)')
-    db.execute("CREATE INDEX IF NOT EXISTS peer_execution_active_created ON peer_execution(created) WHERE execution NOT IN ('completed','dropped')")
+    index = db.execute("SELECT sql FROM sqlite_master WHERE type='index' AND name='peer_execution_active_created'").fetchone()
+    if index and "'retired'" not in index[0]:
+        db.execute('DROP INDEX peer_execution_active_created')
+    db.execute("CREATE INDEX IF NOT EXISTS peer_execution_active_created ON peer_execution(created) WHERE execution NOT IN ('completed','dropped','retired')")
     db.execute('''CREATE TABLE IF NOT EXISTS peer_execution_events (
         event_id TEXT PRIMARY KEY, request_id TEXT NOT NULL, kind TEXT NOT NULL,
         reason TEXT NOT NULL, received REAL NOT NULL, occurred REAL,
@@ -42,6 +49,72 @@ def get(db, request_id):
     return dict(request_id=request_id, agent=r[0], created=r[1], execution=r[2], capture=r[3], evidence=json.loads(r[4])) if r else None
 
 
+def is_retired(db, request_id):
+    row = get(db, request_id)
+    return bool(row and row['execution'] == 'retired')
+
+
+def project_retired(db, request_id, row):
+    """Suppress mutable payload state without asserting provider completion."""
+    if not is_retired(db, request_id):
+        return False
+    row.update(state='unknown', reply='', candidate_reply='', tracking_stopped=True,
+               capture_disposition='withheld', error=RETIRE_MESSAGE)
+    row.pop('settled', None)
+    row.pop('execution_outcome', None)
+    return True
+
+
+def retire(db, transport_id, owner_reason, *, expected_agent=None):
+    """Offline owner action; caller holds exclusive service lock and transaction.
+
+    Preserve immutable admission/launch and attempt receipts. No native I/O and
+    no completion claim. The explicit reason is a metadata code, never user text.
+    """
+    if owner_reason != RETIRE_REASON:
+        raise ValueError('Retirement requires the explicit owner decision code.')
+    identities = db.execute('SELECT target,created,launched FROM shared_bridge_requests WHERE transport_id=?',
+                            (transport_id,)).fetchall()
+    legacy = db.execute('SELECT transport_id FROM peer_requests WHERE transport_id=?', (transport_id,)).fetchall()
+    if len(identities) + len(legacy) != 1:
+        raise ValueError('Retirement requires one exact immutable admission.')
+    meta = metadata(db, transport_id).get(transport_id)
+    if (not meta or not meta[0] or meta[2] is None
+            or expected_agent is not None and meta[0] != expected_agent):
+        raise ValueError('Retirement requires the original launched recipient identity.')
+    schema(db)
+    old = get(db, transport_id)
+    if old and (old['agent'] != meta[0] or old['created'] != meta[1]):
+        raise ValueError('Retirement identity conflicts with its immutable admission.')
+    if old and old['execution'] == 'retired':
+        if old['evidence'].get('owner_retirement', {}).get('reason') != owner_reason:
+            raise ValueError('Retirement conflicts with its original owner decision.')
+        return old
+    if old and old['execution'] in TERMINAL:
+        raise ValueError('A verified terminal attempt cannot be retired.')
+    raw = db.execute('SELECT data FROM requests WHERE id=?', (transport_id,)).fetchone()
+    try:
+        row = json.loads(raw[0]) if raw else None
+    except (ValueError, TypeError):
+        row = None
+    if not valid_payload(transport_id, row, meta):
+        row = dict(request_id=transport_id, agent=meta[0], state='unknown')
+    reconcile(db, row, meta)
+    old = get(db, transport_id)
+    if old['execution'] in TERMINAL or old['capture'] == 'captured':
+        raise ValueError('A verified terminal attempt cannot be retired.')
+    evidence = dict(old['evidence'])
+    evidence['owner_retirement'] = dict(reason=owner_reason, decided_at=time.time(),
+                                        source='offline_owner_decision', provider_outcome='unknown')
+    db.execute("UPDATE peer_execution SET execution='retired',capture='withheld',evidence=? WHERE request_id=?",
+               (json.dumps(evidence, sort_keys=True), transport_id))
+    if raw:
+        project_retired(db, transport_id, row)
+        db.execute('UPDATE requests SET data=? WHERE id=?', (json.dumps(row), transport_id))
+    record_event(db, transport_id, 'owner_retirement', owner_reason, old['execution'], 'retired')
+    return get(db, transport_id)
+
+
 def reconcile(db, row, meta=None, *, missing_payload=False):
     """Called inside the caller's request-write transaction. No payload retained."""
     tid = row.get('request_id')
@@ -57,6 +130,12 @@ def reconcile(db, row, meta=None, *, missing_payload=False):
         raise ValueError('Peer execution identity requires owner recovery before migration.')
     if old and old['agent'] != target:
         raise ValueError('Peer execution identity conflicts with its immutable admission.')
+    if old and old['execution'] == 'retired':
+        project_retired(db, tid, row)
+        # Some callers persist JSON before reconciliation; overwrite that retained
+        # copy too. Never recreate an expired payload merely to project retirement.
+        db.execute('UPDATE requests SET data=? WHERE id=?', (json.dumps(row), tid))
+        return
     if not missing_payload and not valid_payload(tid, row, meta):
         row = dict(request_id=tid, agent=target, state='unknown')
 
@@ -192,18 +271,18 @@ def migrate(db):
 
 
 def blockers(db, agent, *, excluding=None):
-    rows = db.execute("SELECT request_id,execution,created FROM peer_execution WHERE agent=? AND execution NOT IN ('completed','dropped')", (agent,)).fetchall()
+    rows = db.execute("SELECT request_id,execution,created FROM peer_execution WHERE agent=? AND execution NOT IN ('completed','dropped','retired')", (agent,)).fetchall()
     return [r for r in rows if r[0] != excluding]
 
 
 def capacity_error(db, agent, now, ttl):
-    blocked = db.execute("SELECT request_id,execution,created FROM peer_execution WHERE agent=? AND execution NOT IN ('completed','dropped') ORDER BY created LIMIT 1", (agent,)).fetchall()
+    blocked = db.execute("SELECT request_id,execution,created FROM peer_execution WHERE agent=? AND execution NOT IN ('completed','dropped','retired') ORDER BY created LIMIT 1", (agent,)).fetchall()
     if blocked:
         tid, state, created = blocked[0]
         if state == 'uncertain' or created <= now - ttl:
             return 'Earlier delivery requires recovery for this recipient (' + tid + '). The new request was not accepted; nothing was resent.'
         return 'This recipient has an active request (' + tid + '). The new request was not accepted.'
-    count = db.execute("SELECT COUNT(*) FROM peer_execution WHERE execution NOT IN ('completed','dropped') AND created>?", (now - ttl,)).fetchone()[0]
+    count = db.execute("SELECT COUNT(*) FROM peer_execution WHERE execution NOT IN ('completed','dropped','retired') AND created>?", (now - ttl,)).fetchone()[0]
     if count >= 4:
         return 'Four peer deliveries are active. The new request was not accepted.'
     return None
@@ -222,9 +301,13 @@ def record_event(db, request_id, kind, reason, before, after, *, event_id=None, 
 
 
 def downgrade_ready(db):
-    """Administrative preflight: never discard unresolved v2 execution evidence."""
+    """Administrative preflight: preserve unresolved v2 and owner policy evidence."""
+    # Earlier lifecycle implementations do not recognize this terminal policy and
+    # can resurrect its reservation or publish a late answer on migration.
+    if db.execute("SELECT 1 FROM peer_execution WHERE execution='retired' LIMIT 1").fetchone():
+        return False
     if any(json.loads(evidence).get('lifecycle_protocol') == 2 for (evidence,) in db.execute(
-            "SELECT evidence FROM peer_execution WHERE execution NOT IN ('completed','dropped')")):
+            "SELECT evidence FROM peer_execution WHERE execution NOT IN ('completed','dropped','retired')")):
         return False
     for (raw,) in db.execute('SELECT data FROM requests'):
         try:

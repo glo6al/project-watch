@@ -5,6 +5,7 @@ import sys
 import time
 import unittest
 import uuid
+from types import SimpleNamespace
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'src'))
 import peer_bridge
@@ -33,6 +34,81 @@ class LifecycleTests(unittest.TestCase):
                     state='unknown', origin='peer', runtime='claude', transport='claude_mod', bridge_version=2,
                     mod_enrollment=uid(), mod_attempt_id=uid(), mod_generation=uid(), mod_turn='fictional-turn',
                     mod_project='/fictional/project', target_project='/fictional/project')
+
+    def test_owner_retirement_releases_only_policy_capacity_and_survives_late_save(self):
+        row = self.admitted(); row['lifecycle_protocol'] = 2
+        self.db.execute('INSERT INTO requests VALUES (?,?)', (self.tid, json.dumps(row)))
+        result = life.retire(self.db, self.tid, life.RETIRE_REASON, expected_agent=self.target)
+        self.assertEqual((result['execution'], result['capture']), ('retired', 'withheld'))
+        self.assertEqual(result['evidence']['owner_retirement']['provider_outcome'], 'unknown')
+        self.assertNotIn('execution_outcome', result['evidence'])
+        self.assertIsNone(life.capacity_error(self.db, self.target, time.time(), 900))
+        self.assertEqual(life.blockers(self.db, self.target), [])
+        self.assertFalse(life.downgrade_ready(self.db))
+        self.assertEqual(life.retire(self.db, self.tid, life.RETIRE_REASON), result)
+        late = dict(row, state='answered', settled=True, execution_outcome='completed', reply='Fictional late reply')
+        # Covers MessagingStore's write-before-reconcile ordering.
+        self.db.execute('UPDATE requests SET data=? WHERE id=?', (json.dumps(late), self.tid))
+        life.reconcile(self.db, late)
+        saved = json.loads(self.db.execute('SELECT data FROM requests WHERE id=?', (self.tid,)).fetchone()[0])
+        self.assertEqual(saved['state'], 'unknown'); self.assertEqual(saved['reply'], '')
+        self.assertNotIn('settled', saved); self.assertNotIn('execution_outcome', saved)
+        self.assertTrue(saved['tracking_stopped'])
+        life.migrate(self.db)
+        self.assertEqual(life.get(self.db, self.tid), result)
+        self.db.execute('DELETE FROM requests')
+        life.migrate(self.db)
+        self.assertEqual(life.get(self.db, self.tid), result)
+        self.assertEqual(self.db.execute('SELECT count(*) FROM requests').fetchone()[0], 0)
+        self.assertEqual(self.db.execute('SELECT count(*) FROM shared_bridge_requests').fetchone()[0], 1)
+
+    def test_legacy_retirement_preserves_tombstone_and_public_unknown_after_pruning(self):
+        native, principal, sender, client_id = uid(), uid(), uid(), uid()
+        self.db.execute('INSERT INTO peer_principals VALUES (?,?,?,?,?,?,?,?,?,?,?)',
+                        (principal, 'Fictional recipient', 'codex', native, '/fictional/project',
+                         'exact', '{}', 'fictional-secret', 1, 1, self.created))
+        self.db.execute('INSERT INTO peer_requests VALUES (?,?,?,?,?,?,?)',
+                        (sender, client_id, principal, 'fictional-hash', self.tid, self.created, self.created))
+        retired = life.retire(self.db, self.tid, life.RETIRE_REASON, expected_agent='x:'+native)
+        self.assertEqual(retired['execution'], 'retired')
+        bridge = peer_bridge.PeerBridge.__new__(peer_bridge.PeerBridge)
+        bridge.store = SimpleNamespace(db=self.db)
+        result = bridge.result(sender, client_id)
+        self.assertEqual(result['state'], 'unknown'); self.assertEqual(result['reply'], '')
+        self.assertIn('retired by the owner', result['error'])
+        self.assertEqual(self.db.execute('SELECT transport_id FROM peer_requests').fetchall(), [(self.tid,)])
+        life.migrate(self.db)
+        self.assertEqual(life.get(self.db, self.tid), retired)
+
+    def test_retirement_rejects_unlaunched_terminal_and_wrong_identity(self):
+        row = self.admitted(launched=False)
+        with self.assertRaisesRegex(ValueError, 'launched'):
+            life.retire(self.db, self.tid, life.RETIRE_REASON)
+        self.db.execute('UPDATE shared_bridge_requests SET launched=created')
+        row['launched'] = True
+        with self.assertRaisesRegex(ValueError, 'identity'):
+            life.retire(self.db, self.tid, life.RETIRE_REASON, expected_agent='c:'+uid())
+        with self.assertRaisesRegex(ValueError, 'decision'):
+            life.retire(self.db, self.tid, 'invented_reason')
+        for state in ('completed', 'dropped'):
+            self.db.execute('DELETE FROM peer_execution')
+            terminal = dict(row, state='failed' if state == 'dropped' else 'unknown', execution_outcome=state)
+            life.reconcile(self.db, terminal)
+            with self.assertRaisesRegex(ValueError, 'terminal'):
+                life.retire(self.db, self.tid, life.RETIRE_REASON)
+
+    def test_retirement_migrates_partial_index_and_preserves_recent_global_capacity(self):
+        row = self.admitted(); self.created = time.time()
+        self.db.execute('UPDATE shared_bridge_requests SET created=?,launched=?', (self.created, self.created))
+        row['created'] = self.created
+        self.db.execute('INSERT INTO requests VALUES (?,?)', (self.tid, json.dumps(row)))
+        self.db.execute('DROP INDEX peer_execution_active_created')
+        self.db.execute("CREATE INDEX peer_execution_active_created ON peer_execution(created) WHERE execution NOT IN ('completed','dropped')")
+        life.schema(self.db)
+        self.assertIn("'retired'", self.db.execute("SELECT sql FROM sqlite_master WHERE name='peer_execution_active_created'").fetchone()[0])
+        life.retire(self.db, self.tid, life.RETIRE_REASON)
+        count = self.db.execute("SELECT count(*) FROM peer_execution WHERE execution NOT IN ('completed','dropped','retired') AND created>?", (time.time()-900,)).fetchone()[0]
+        self.assertEqual(count, 0)
 
     def test_expired_payload_does_not_release_uncertain_execution(self):
         row = self.admitted()
