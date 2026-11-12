@@ -1039,15 +1039,37 @@ def test_officer():
             return {'stop_reason': 'tool_use', 'content': [{'type': 'tool_use', 'id': 't%d' % n[0], 'name': 'list_agents', 'input': {}}]}, ''
         out = server.officer_ask([{'role': 'user', 'content': 'x'}], call=endless)
         check('the tool loop is bounded', n[0] == server.OFFICER_ROUNDS and 'did not get to an answer' in out['text'])
-        m = [0]
+        from unittest.mock import patch
+        m, supplied_refs, read_refs = [0], set(), []
+        canonical_refs = lambda result: {'live:' + server.BOOT + ':' + str(step['n']) for step in result.get('steps', [])}
+        real_tool = server.officer_tool
+        def capture_read(name, inp, actions, **kwargs):
+            result = real_tool(name, inp, actions, **kwargs)
+            if name == 'agent_timeline':
+                read_refs.append(canonical_refs(result))
+            return result
         def late(body, end=None):
             m[0] += 1
+            for message in body['messages']:
+                for block in message.get('content', []) if isinstance(message.get('content'), list) else []:
+                    if block.get('type') == 'tool_result':
+                        supplied_refs.update(canonical_refs(json.loads(block['content'])))
             if m[0] <= server.OFFICER_ROUNDS:
-                return {'stop_reason': 'tool_use', 'content': [{'type': 'tool_use', 'id': 'l%d' % m[0], 'name': 'agent_timeline', 'input': {'agent': 'codex'}}]}, ''
+                # The final read exposes an older, already snapshotted source for the first time.
+                # Three records are needed because the latest operation and its result share one ID.
+                limit = 3 if m[0] == server.OFFICER_ROUNDS else 1
+                return {'stop_reason': 'tool_use', 'content': [{'type': 'tool_use', 'id': 'l%d' % m[0], 'name': 'agent_timeline', 'input': {'agent': 'codex', 'limit': limit}}]}, ''
             return {'stop_reason': 'end_turn', 'content': [{'type': 'text', 'text': 'late'}]}, ''
-        out = server.officer_ask([{'role': 'user', 'content': 'x'}], call=late)
-        nsteps = len(server.officer_tool('agent_timeline', {'agent': 'codex'}, [])['steps'])
-        check('entries in a result the model never received are not cited', m[0] == server.OFFICER_ROUNDS and len(out['cites']) == min(40, nsteps * (server.OFFICER_ROUNDS - 1)))
+        with patch.object(server, 'officer_tool', side_effect=capture_read):
+            out = server.officer_ask([{'role': 'user', 'content': 'x'}], call=late)
+        unsupplied_refs = read_refs[-1] - supplied_refs
+        cited_refs = [cite['ref'] for cite in out['cites']]
+        check('entries in a result the model never received are not cited',
+              m[0] == server.OFFICER_ROUNDS and len(read_refs) == server.OFFICER_ROUNDS and
+              'did not get to an answer' in out['text'] and
+              bool(supplied_refs) and bool(unsupplied_refs) and
+              len(cited_refs) == len(supplied_refs) and set(cited_refs) == supplied_refs and
+              not (set(cited_refs) & unsupplied_refs))
         def leak(body, end=None):
             if len(body['messages']) == 1:
                 return {'stop_reason': 'tool_use', 'content': [{'type': 'tool_use', 'id': 'k1', 'name': 'search_events', 'input': {'text': 'the key is'}}]}, ''
