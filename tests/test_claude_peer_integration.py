@@ -24,6 +24,14 @@ NATIVE = ['11111111-1111-4111-8111-111111111111', '22222222-2222-4222-8222-22222
 @unittest.skipIf(os.name == 'nt' or not shutil.which('node') or not SDK.is_dir(), 'Requires POSIX, Node and optional MCP dependencies')
 class ClaudePeerIntegration(unittest.TestCase):
     def test_actual_mcp_to_production_plugin_reply_and_owner_isolation(self):
+        for label,text in [('unicode','🚀'*16000),('escaped-controls','\x01'*15999+'🚀')]:
+            with self.subTest(message=label):
+                self.exercise_peer_and_owner_isolation(text)
+
+    def exercise_peer_and_owner_isolation(self,large_text):
+        # Near-worst escape expansion crosses the old HTTP response limit while
+        # the non-BMP scalar verifies Unicode character counting end to end.
+        self.assertEqual(len(large_text),16000)
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp).resolve(); root.chmod(0o700)
             project=root/'fictional-project'; project.mkdir()
@@ -62,7 +70,7 @@ class ClaudePeerIntegration(unittest.TestCase):
                         self.assertEqual(server.AGENTS,{})
                         return result
                     with patch.object(store.mods,'call',side_effect=idle_call):
-                        process=subprocess.run(['node',str(ROOT/'integrations/claude-mod/tests/peer.integration.mjs')],input=json.dumps(dict(port=httpd.server_port,code=setup['pair_code'],project=str(project),owner_key=server.KEY,native=NATIVE,credential=str(credential_file))),text=True,capture_output=True,timeout=40)
+                        process=subprocess.run(['node',str(ROOT/'integrations/claude-mod/tests/peer.integration.mjs')],input=json.dumps(dict(port=httpd.server_port,code=setup['pair_code'],project=str(project),owner_key=server.KEY,native=NATIVE,credential=str(credential_file),peer_text=large_text)),text=True,capture_output=True,timeout=40)
                     self.assertEqual(process.returncode,0,process.stdout+'\n'+process.stderr+'\nDirectory: '+json.dumps(store.shared.directory.list_agents()))
                     self.assertEqual(server.AGENTS,{})
                     result=json.loads(process.stdout)
@@ -70,6 +78,8 @@ class ClaudePeerIntegration(unittest.TestCase):
                     rows=store._rows();peers=[r for r in rows if r.get('origin')=='peer']
                     self.assertEqual(len(peers),1);self.assertEqual(peers[0]['state'],'answered')
                     self.assertEqual(peers[0]['agent'],'c:'+NATIVE[0]);self.assertEqual(peers[0]['transport'],'claude_mod')
+                    self.assertEqual(peers[0]['question'],large_text)
+                    self.assertEqual(json.loads(peers[0]['envelope'].splitlines()[1].removeprefix('Message: ')),large_text)
                     self.assertEqual(store.db.execute('SELECT COUNT(*) FROM shared_bridge_requests WHERE launched IS NOT NULL').fetchone()[0],1)
                     owner=store.snapshot()['requests'];self.assertEqual(len(owner),1);self.assertEqual(owner[0]['agent'],'c:'+NATIVE[1])
                     self.assertEqual(store.db.execute('SELECT COUNT(*) FROM claude_mod_grants WHERE active=1').fetchone()[0],0)

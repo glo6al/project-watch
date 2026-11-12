@@ -15,7 +15,9 @@ export function sessionResponse(value, nativeId) {
     [undefined, 0, 1].includes(value.supported_reply_notice_protocol) &&
     [undefined, 0, 1].includes(value.reply_notice_protocol) &&
     [undefined, 0, 2].includes(value.supported_lifecycle_protocol) &&
-    [undefined, 0, 2].includes(value.lifecycle_protocol);
+    [undefined, 0, 2].includes(value.lifecycle_protocol) &&
+    [undefined, 4000, 100000].includes(value.peer_envelope_limit) &&
+    [undefined, 100000].includes(value.supported_peer_envelope_limit);
 }
 
 export function validClaim(value, state, now) {
@@ -23,7 +25,8 @@ export function validClaim(value, state, now) {
     value && (value.origin === undefined || value.origin === 'owner') ? 'WATCH_REQUEST ' : null;
   return prefix !== null && value && value.kind === undefined && UUID.test(value.request_id) && UUID.test(value.attempt_id) &&
     value.native_id === state.native_id && value.generation === state.generation &&
-    typeof value.envelope === 'string' && [...value.envelope].length <= 4000 &&
+    typeof value.envelope === 'string' && [...value.envelope].length <=
+      (value.origin === 'peer' && state.peer_envelope_limit === 100000 ? 100000 : 4000) &&
     value.envelope.startsWith(prefix + value.request_id + '\n') &&
     Number.isFinite(value.expires_at) && value.expires_at > now / 1000;
 }

@@ -30,6 +30,24 @@ def jsonl(path, records):
     path.write_text(''.join(json.dumps(r) + '\n' for r in records))
 
 
+class EnvelopeEncodingTests(unittest.TestCase):
+    def test_old_ascii_and_new_unicode_envelopes_require_same_immutable_hash(self):
+        key='a'*64;tid=ident();target='x:'+ident();revision='b'*64
+        for text in ('😀'*16000, '\x01'*16000, 'Fictional \x85\u2028\u2029<> line'):
+            sender='Fictional 😀 sender'
+            ledger=dict(transport_id=tid,target=target,snapshot={'identity_revision':revision},
+                payload_hash=peer_bridge.mac(key,'watch-bridge-dedupe-v2',json.dumps([target,revision,text,sender],ensure_ascii=True)))
+            current=recovery.compact_envelope(tid,sender,text)
+            self.assertEqual(recovery.envelope_proof(ledger,key,current),current)
+            # Historical ASCII envelopes were admitted under the old 2000-point raw cap.
+            old_text=text[:1000]
+            old=dict(ledger,payload_hash=peer_bridge.mac(key,'watch-bridge-dedupe-v2',json.dumps([target,revision,old_text,sender],ensure_ascii=True)))
+            historical=recovery.compact_envelope(tid,sender,old_text,ensure_ascii=True)
+            self.assertEqual(recovery.envelope_proof(old,key,historical),historical)
+            with self.assertRaises(recovery.RecoveryError):
+                recovery.envelope_proof(dict(ledger,payload_hash='c'*64),key,current)
+
+
 class PlatformTests(unittest.TestCase):
     def test_unsupported_platform_refuses_before_state_access(self):
         with patch.object(recovery.os, 'name', 'nt'), \

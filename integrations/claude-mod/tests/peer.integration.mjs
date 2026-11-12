@@ -14,7 +14,7 @@ async function runtime(native,index){
  const $={session:{id:async()=>native,cwd:async()=>config.project,surfaces:async()=>clone(roster)},store:{keys:async()=>[...storage.keys()],get:async k=>storage.has(k)?clone(storage.get(k)):undefined,set:async(k,v)=>storage.set(k,clone(v))},command:{register:async()=>{}},clock:{now:async()=>Date.now(),every:(ms,fn)=>{const t={fn,cancelled:false,cancel(){this.cancelled=true}};timers.push(t);return t}},http:{fetch:async(address,init)=>{const r=await fetch(address,init),text=await r.text();if(r.ok&&address.endsWith('/poll'))heartbeats.push(JSON.parse(init.body));return {ok:r.ok,status:r.status,headers:{},text}}},prompt:{submit:async value=>{
   assert.equal(value.asUser,false);assert.deepEqual(roster,[],'peer and owner input are admitted while both runtimes are backgrounded');submissions.push(value.text);
   const prefix=index===0?'WATCH_PEER_REQUEST':'WATCH_REQUEST';const match=new RegExp('^'+prefix+' ([0-9a-f-]+)\\n').exec(value.text);assert(match,'origin/prefix preserved');
-  if(index===0){assert.match(value.text,/Origin: peer/);assert.match(value.text,/UNVERIFIED/);assert.match(value.text,/Do not call send_message/);assert.match(value.text,/Cedar/);assert.doesNotMatch(value.text,/The owner asks/);}
+  if(index===0){assert.match(value.text,/Origin: peer/);assert.match(value.text,/UNVERIFIED/);assert.match(value.text,/Do not call send_message/);assert.equal(JSON.parse(value.text.split('\n')[1].slice('Message: '.length)),config.peer_text);assert.doesNotMatch(value.text,/The owner asks/);}
   const turn='fixture-main-'+index,wrapped='The watch-owner plugin sent a message:\n'+value.text+"\n\nThis is how Claude Code surfaces a prompt a plugin submits between turns — it starts this turn in the user's place. Address the message above.";
   await api.call('turn.start',{text:wrapped,turnId:turn});
   await api.call('turn.complete',{turnId:turn,answer:'WATCH_REPLY '+match[1]+'\n'+(index===0?'Cedar is blue.':'Fictional owner reply.'),isAborted:false,reason:'answer'});
@@ -43,7 +43,12 @@ try{
  assert.equal((await owner('/claude-mod-setup-status',{})).connected_chats,2,'both background enrollments retain live backend leases');
  let directory;await until(async()=>{directory=await rpc('list_agents',{provider:'claude'});return directory.directory.complete&&directory.agents.length===2&&directory.agents.every(a=>a.capability==='reachable')});
  const target=directory.agents.find(a=>a.name==='Atlas');assert(target);assert.equal(target.supported_transport,'claude_mod');
- const request={agent_id:target.agent_id,identity_revision:target.identity_revision,text:'Fictional check: Cedar is blue. What color is Cedar? No tools, files or forwarding.',declared_sender:'UNVERIFIED fictional caller',request_id:crypto.randomUUID()};
+ assert.equal([...config.peer_text].length,16000);
+ const request={agent_id:target.agent_id,identity_revision:target.identity_revision,text:config.peer_text,declared_sender:'UNVERIFIED fictional caller',request_id:crypto.randomUUID()};
+ const oversized=await client.callTool({name:'send_message',arguments:{...request,text:config.peer_text+'x',request_id:crypto.randomUUID()}});
+ assert(oversized.isError);assert.match(oversized.content[0].text,/16001/);assert.match(oversized.content[0].text,/16000/);
+ assert.deepEqual((await rpc('list_requests')).requests,[],'oversize rejection creates no receipt');
+ assert.deepEqual(runtimes.map(r=>r.submissions.length),[0,0],'oversize rejection never reaches native submit');
  const sent=await rpc('send_message',request);assert.equal(sent.duplicate,false);
  const duplicate=await rpc('send_message',request);assert.equal(duplicate.duplicate,true);assert.equal(duplicate.request_id,sent.request_id);
  await until(async()=>runtimes[0].submissions.length===1&&[...storage.values()].some(v=>v?.requests&&Object.values(v.requests).some(r=>r.phase==='completed'&&r.capture==='answered'&&r.completed===true&&r.events.length===0)));

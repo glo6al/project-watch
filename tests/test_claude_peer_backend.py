@@ -297,11 +297,97 @@ class ClaudePeerBackendTests(unittest.TestCase):
 
     def test_unicode_envelope_rejected_before_reservation_without_consuming_id(self):
         self.setup_global();rid=uid()
-        for text in ('😀'*1000,'\x01'*1000):
+        for text in ('😀'*4000,'\x01'*1000):
             with self.assertRaisesRegex(peer_bridge.PeerError,'4000'):
                 self.send(text,rid)
             self.assertEqual(self.store.db.execute('SELECT COUNT(*) FROM shared_bridge_requests').fetchone()[0],0)
         self.assertEqual(self.send('Short fictional message.',rid)['request_id'],rid)
+
+    def large_peer_registration(self, limit=100000):
+        self.body = dict(self.body, connection_seq=self.body['connection_seq']+1, peer_envelope_limit=limit)
+        status, registration = self.http('/claude-mod/register', self.body, token=self.grant['grant'])
+        self.assertEqual(status, 200, registration)
+        self.generation, self.token = registration['generation'], registration['token']
+        self.assertEqual(registration['peer_envelope_limit'], limit)
+        return registration
+
+    def test_peer_capacity_is_explicit_persisted_and_strictly_negotiated(self):
+        self.setup_global()
+        self.assertEqual(self.registration['supported_peer_envelope_limit'], 100000)
+        self.assertEqual(self.registration['peer_envelope_limit'], 4000)
+        for limit in (True, '100000', 99999, 100001, None):
+            self.assertEqual(self.http('/claude-mod/register', dict(self.body, connection_seq=1,
+                peer_envelope_limit=limit), token=self.grant['grant'])[0], 400)
+        self.assertEqual(self.http('/claude-mod/register', dict(self.body,
+            peer_envelope_limit=100000), token=self.grant['grant'])[0], 409)
+        registration = self.large_peer_registration()
+        self.assertEqual(self.store.mods.get(registration['enrollment_id'])['peer_envelope_limit'], 100000)
+
+    def test_large_peer_claim_is_exact_and_owner_limit_is_unchanged(self):
+        self.setup_global(); self.large_peer_registration()
+        for text in ('a'*16000, '😀'*16000, '\x01'*16000):
+            with self.subTest(kind=text[0]):
+                sent = self.send(text)
+                row = self.peer_row(sent['request_id'])
+                self.assertEqual(row['question'], text)
+                self.assertLessEqual(len(row['envelope'].encode('utf-8')), 100000)
+                status, data = self.global_poll(self.body['client_id'])
+                self.assertEqual(status, 200)
+                self.assertEqual(data['claim']['envelope'], row['envelope'])
+                self.assertEqual(json.loads(data['claim']['envelope'].splitlines()[1][9:]), text)
+                self.assertEqual(self.event(data['claim'])[0], 200)
+        # The owner endpoint retains its existing raw input bound.
+        self.assertEqual(self.http('/agent-message', dict(agent=self.aid, question='a'*4001, request_id=uid()), owner=True)[0], 400)
+
+    def test_oversized_peer_rejected_before_any_reservation(self):
+        self.setup_global(); self.large_peer_registration(); rid=uid()
+        for text in ('a'*16001, '😀'*16001):
+            with self.assertRaisesRegex(peer_bridge.PeerError,
+                    'Message too long: 16001 characters; maximum is 16000. Nothing was sent.'):
+                self.send(text, rid)
+        for table in ('requests', 'shared_bridge_requests', 'peer_execution', 'peer_reply_admissions'):
+            self.assertEqual(self.store.db.execute('SELECT COUNT(*) FROM '+table).fetchone()[0], 0)
+        self.assertEqual(self.send('Valid follow-up.', rid)['request_id'], rid)
+
+    def test_capacity_downgrade_before_reservation_creates_nothing(self):
+        self.setup_global(); self.large_peer_registration()
+        original=self.store.shared._preflight
+        def downgrade(target):
+            result=original(target)
+            self.large_peer_registration(4000)
+            return result
+        with patch.object(self.store.shared, '_preflight', side_effect=downgrade):
+            with self.assertRaisesRegex(peer_bridge.PeerError, 'capacity changed before reservation'):
+                self.send('a'*16000)
+        self.assertEqual(self.store.db.execute('SELECT COUNT(*) FROM shared_bridge_requests').fetchone()[0], 0)
+        self.assertEqual(self.store.db.execute('SELECT COUNT(*) FROM peer_execution').fetchone()[0], 0)
+
+    def test_capacity_downgrade_after_reservation_cannot_claim_large_message(self):
+        self.setup_global(); self.large_peer_registration()
+        sent=self.send('a'*16000)
+        self.large_peer_registration(4000)
+        status,data=self.global_poll(self.body['client_id'])
+        self.assertEqual(status,200);self.assertIsNone(data['claim'])
+        row=self.peer_row(sent['request_id'])
+        self.assertFalse(row['launched']);self.assertEqual(row['state'],'failed')
+        self.assertIsNone(self.store.db.execute('SELECT launched FROM shared_bridge_requests WHERE client_id=?',
+            (sent['request_id'],)).fetchone()[0])
+
+    def test_reconnect_during_claim_preparation_cannot_use_stale_capacity(self):
+        self.setup_global(); self.large_peer_registration()
+        sent=self.send('a'*16000)
+        original=self.store.shared.prepare_mod_claim
+        def downgrade(row):
+            prepared=original(row)
+            self.large_peer_registration(4000)
+            return prepared
+        with patch.object(self.store.shared,'prepare_mod_claim',side_effect=downgrade):
+            status,data=self.global_poll(self.body['client_id'])
+        self.assertEqual(status,409)
+        row=self.peer_row(sent['request_id'])
+        self.assertFalse(row['launched']);self.assertNotIn('mod_attempt_id',row)
+        self.assertIsNone(self.store.db.execute('SELECT launched FROM shared_bridge_requests WHERE client_id=?',
+            (sent['request_id'],)).fetchone()[0])
 
     def test_double_poll_and_busy_owner_share_one_atomic_claim(self):
         self.setup_global();sent=self.send();owner,_=self.request('A distinct owner question.')

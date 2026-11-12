@@ -46,7 +46,7 @@ async function post($, state, path, body, options = {}) {
     try {
       const response = await $.http.fetch('http://127.0.0.1:' + port + '/claude-mod/' + path,
         {method:'POST',headers,body:JSON.stringify(body)});
-      if (typeof response.text !== 'string' || response.text.length > 100000) throw Error('Invalid WATCH response.');
+      if (typeof response.text !== 'string' || response.text.length > 650000) throw Error('Invalid WATCH response.');
       const value = JSON.parse(response.text);
       if (!response.ok) {
         const error = Error('WATCH service unavailable.');
@@ -302,7 +302,7 @@ async function poll($, state) {
   if (state.data.requests[claim.request_id]) {await failRequest($,state,state.data.requests[claim.request_id]); return;}
   const request = {request_id:claim.request_id,attempt_id:claim.attempt_id,expires_at:claim.expires_at,lifecycle_protocol:state.lifecycleProtocol,origin:claim.origin??'owner',
     generation:state.generation,attempted:false,phase:'claimed',events:[]};
-  if (!validClaim(claim,{...state.data,generation:state.generation,peer_protocol:state.peerProtocol},await $.clock.now())) {
+  if (!validClaim(claim,{...state.data,generation:state.generation,peer_protocol:state.peerProtocol,peer_envelope_limit:state.peerEnvelopeLimit},await $.clock.now())) {
     if (UUID.test(claim.request_id) && UUID.test(claim.attempt_id)) {
       request.envelope_digest = await fingerprint(claim.envelope ?? '');
       await save($,state,data=>{data.requests[request.request_id] = request;});
@@ -328,6 +328,7 @@ async function activate($, state, response, eligibilityEpoch) {
   state.noticeProtocol = state.data.mode==='derived' && response.reply_notice_protocol===1 ? 1 : 0;
   state.noticeData=null;state.noticeKey=null;
   state.peerProtocol = state.data.mode === 'derived' && response.peer_protocol === 1 ? 1 : 0;
+  state.peerEnvelopeLimit = state.data.mode === 'derived' && response.peer_envelope_limit === 100000 ? 100000 : 4000;
   state.lifecycleProtocol = state.data.mode === 'derived' && response.lifecycle_protocol === 2 ? 2 : 0;
   await save($,state,data=>{checkEligibility(state,eligibilityEpoch); data.active = true; data.generation = response.generation; data.peer_protocol = state.peerProtocol;});
   checkEligibility(state,eligibilityEpoch);
@@ -345,21 +346,22 @@ async function activate($, state, response, eligibilityEpoch) {
 
 async function connectDerived($, state, id, project, config, eligibilityEpoch) {
   state.config = config;
-  async function registration(notices=false,lifecycle=false){
+  async function registration(notices=false,lifecycle=false,largePeer=false){
     // Reserve before I/O, including while not connected: lost commits never reuse a tuple's episode.
     if(!Number.isSafeInteger(state.sequence+1))throw Error('WATCH connection sequence exhausted.');
     const sequence=++state.sequence;
-    const body={native_id:id,project,client_id:state.clientId,connection_seq:sequence,peer_protocol:1,...notices?{reply_notice_protocol:1}:{},...lifecycle?{lifecycle_protocol:2}:{}};
+    const body={native_id:id,project,client_id:state.clientId,connection_seq:sequence,peer_protocol:1,...notices?{reply_notice_protocol:1}:{},...lifecycle?{lifecycle_protocol:2}:{},...largePeer?{peer_envelope_limit:100000}:{}};
     const response=await post($,state,'register',body,{port:config.port,token:config.grant});
     checkEligibility(state,eligibilityEpoch);
     if(!sessionResponse(response,id)||response.grant_id!==config.grant_id||!UUID.test(response.enrollment_id)||
        !/^[a-f0-9]{64}$/.test(response.token)||response.client_id!==state.clientId||response.connection_seq!==sequence)throw Error('Invalid WATCH registration.');
     if(notices && response.reply_notice_protocol!==1)throw Error('Invalid WATCH notice negotiation.');
     if(lifecycle && response.lifecycle_protocol!==2)throw Error('Invalid WATCH lifecycle negotiation.');
+    if(largePeer && response.peer_envelope_limit!==100000)throw Error('Invalid WATCH peer capacity negotiation.');
     return response;
   }
   let response=await registration();
-  if(response.supported_reply_notice_protocol===1 || response.supported_lifecycle_protocol===2)response=await registration(response.supported_reply_notice_protocol===1,response.supported_lifecycle_protocol===2);
+  if(response.supported_reply_notice_protocol===1 || response.supported_lifecycle_protocol===2 || response.supported_peer_envelope_limit===100000)response=await registration(response.supported_reply_notice_protocol===1,response.supported_lifecycle_protocol===2,response.supported_peer_envelope_limit===100000);
   if (await $.session.id() !== id || await $.session.cwd() !== project) throw Error('Native conversation changed.');
   checkEligibility(state,eligibilityEpoch);
   const same = state.data?.mode === 'derived' && state.data.native_id === id && state.data.project === project && state.data.enrollment_id === response.enrollment_id;

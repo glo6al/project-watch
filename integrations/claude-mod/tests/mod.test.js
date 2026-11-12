@@ -1204,3 +1204,50 @@ test('new runtime reads legacy receipts without modifying their namespace or res
   assert.equal(JSON.stringify(h.storage.get(legacyKey)),before);assert.equal(reload.submissions.length,0);
   assert(runtimeRows(h.storage).some(([,r])=>r.requests[REQUEST]?.phase==='unknown'));
 });
+
+test('large peer capacity admits Unicode points only when negotiated and keeps owner bound',()=>{
+ const state={native_id:NATIVE,generation:GENERATION,peer_protocol:1,peer_envelope_limit:100000};
+ const prefix='WATCH_PEER_REQUEST '+REQUEST+'\n';
+ const claim={request_id:REQUEST,attempt_id:ATTEMPT,native_id:NATIVE,generation:GENERATION,origin:'peer',expires_at:1000,
+   envelope:prefix+'😀'.repeat(100000-[...prefix].length)};
+ assert.equal(validClaim(claim,state,100000),true);
+ assert.equal(validClaim({...claim,envelope:claim.envelope+'a'},state,100000),false);
+ for(const limit of [undefined,4000,'100000',true,100001])assert.equal(validClaim(claim,{...state,peer_envelope_limit:limit},100000),false);
+ const owner={...claim,origin:'owner',envelope:'WATCH_REQUEST '+REQUEST+'\n'+'a'.repeat(4000)};
+ assert.equal(validClaim(owner,state,100000),false);
+});
+
+test('large peer negotiation is additive and full escaped response reaches native submission once',async()=>{
+ for(const advertised of [false,true]){
+  const h=await harness({storage:new Map([[GLOBAL_KEY,CONFIG]]),fetch:(url,body)=>{
+   if(url.endsWith('/register'))return responseJSON(registered(body,{peer_protocol:1,
+    ...(advertised?{supported_peer_envelope_limit:100000,peer_envelope_limit:body.peer_envelope_limit??4000}:{})}));
+  }});
+  const text='\x01'.repeat(16000),envelope='WATCH_PEER_REQUEST '+REQUEST+'\nMessage: '+JSON.stringify(text)+'\nOrigin: peer. Sender UNVERIFIED.';
+  Object.assign(h.claim,{origin:'peer',envelope});
+  await h.tick();await h.tick();
+  if(advertised){await h.waitSubmission();await h.waitForEvent('submitted');assert.deepEqual(h.submissions,[{text:envelope,asUser:false}]);}
+  else{await h.waitForEvent('dropped');assert.equal(h.submissions.length,0);}
+  const calls=h.calls.filter(c=>c.url.endsWith('/register'));
+  assert.equal(calls.length,advertised?2:1);
+  assert.equal(calls[0].body.peer_envelope_limit,undefined);
+  if(advertised)assert.equal(calls[1].body.peer_envelope_limit,100000);
+  const poll=h.calls.find(c=>c.url.endsWith('/poll')&&c.response?.text.includes('envelope'));
+  assert(poll.response.text.length>100000,'Old response parser bound must fail this fixture.');
+  await h.tick();assert.equal(h.submissions.length,advertised?1:0);
+ }
+});
+
+test('bad large peer negotiation and oversized HTTP response never submit native input',async()=>{
+ for(const mode of ['missing_echo','oversized_response']){
+  const h=await harness({storage:new Map([[GLOBAL_KEY,CONFIG]]),fetch:(url,body)=>{
+   if(url.endsWith('/register'))return responseJSON(registered(body,{peer_protocol:1,supported_peer_envelope_limit:100000,
+     peer_envelope_limit:mode==='missing_echo'?4000:(body.peer_envelope_limit??4000)}));
+   if(url.endsWith('/poll')&&mode==='oversized_response')return responseJSON({version:1,native_id:NATIVE,generation:GENERATION,peer_protocol:1,peer_envelope_limit:100000,requests:[],
+     claim:{request_id:REQUEST,attempt_id:ATTEMPT,native_id:NATIVE,generation:GENERATION,origin:'peer',expires_at:1000,envelope:PEER_ENVELOPE},padding:' '.repeat(650001)});
+  }});
+  await h.drive(async()=>h.submissions.length>0 || JSON.parse((await h.command('watch-status')).text).error, 'rejected size capability or response');
+  assert.equal(h.submissions.length,0);
+  assert.match(JSON.parse((await h.command('watch-status')).text).error,/connection interrupted/);
+ }
+});

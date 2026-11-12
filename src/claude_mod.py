@@ -74,7 +74,8 @@ class ClaudeMod:
         for name, kind in (('grant_id', 'TEXT'), ('client_id', 'TEXT'), ('connection_seq', 'INTEGER'),
                            ('peer_protocol', 'INTEGER NOT NULL DEFAULT 0'),
                            ('reply_notice_protocol', 'INTEGER NOT NULL DEFAULT 0'),
-                           ('lifecycle_protocol', 'INTEGER NOT NULL DEFAULT 0')):
+                           ('lifecycle_protocol', 'INTEGER NOT NULL DEFAULT 0'),
+                           ('peer_envelope_limit', 'INTEGER NOT NULL DEFAULT 4000')):
             if name not in columns:
                 self.db.execute(f'ALTER TABLE claude_mod_enrollments ADD COLUMN {name} {kind}')
         self.db.execute('CREATE INDEX IF NOT EXISTS claude_mod_agents ON claude_mod_enrollments(agent,active)')
@@ -152,13 +153,14 @@ class ClaudeMod:
     def session(self, entry):
         result = dict(version=1, native_id=entry['agent'][2:], generation=entry['generation'], heartbeat_interval_ms=2000, lease_seconds=LEASE, peer_protocol=entry['peer_protocol'],
                       reply_notice_protocol=entry['reply_notice_protocol'], supported_reply_notice_protocol=1,
-                      lifecycle_protocol=entry['lifecycle_protocol'], supported_lifecycle_protocol=2)
+                      lifecycle_protocol=entry['lifecycle_protocol'], supported_lifecycle_protocol=2,
+                      peer_envelope_limit=entry['peer_envelope_limit'], supported_peer_envelope_limit=100000)
         if entry['grant_id']:
             result.update(grant_id=entry['grant_id'], client_id=entry['client_id'], connection_seq=entry['connection_seq'])
         return result
 
     def get(self, eid):
-        fields = ('id', 'agent', 'project', 'generation', 'last_seen', 'active', 'grant_id', 'client_id', 'connection_seq', 'peer_protocol', 'reply_notice_protocol', 'lifecycle_protocol')
+        fields = ('id', 'agent', 'project', 'generation', 'last_seen', 'active', 'grant_id', 'client_id', 'connection_seq', 'peer_protocol', 'reply_notice_protocol', 'lifecycle_protocol', 'peer_envelope_limit')
         row = self.db.execute('SELECT '+','.join(fields)+' FROM claude_mod_enrollments WHERE id=?', (eid,)).fetchone()
         return dict(zip(fields, row)) if row else None
 
@@ -221,11 +223,13 @@ class ClaudeMod:
 
     def registration_access(self, data, token):
         fields = ('native_id', 'project', 'client_id', 'connection_seq')
-        schema(data, fields + tuple(k for k in ('peer_protocol', 'reply_notice_protocol', 'lifecycle_protocol') if isinstance(data, dict) and k in data))
+        schema(data, fields + tuple(k for k in ('peer_protocol', 'reply_notice_protocol', 'lifecycle_protocol', 'peer_envelope_limit') if isinstance(data, dict) and k in data))
         if type(data.get('reply_notice_protocol', 0)) is not int or data.get('reply_notice_protocol', 0) not in (0, 1):
             raise ModError(400, 'Unsupported reply-notice protocol.')
         if type(data.get('lifecycle_protocol', 0)) is not int or data.get('lifecycle_protocol', 0) not in (0, 2):
             raise ModError(400, 'Unsupported Claude lifecycle protocol.')
+        if type(data.get('peer_envelope_limit', 4000)) is not int or data.get('peer_envelope_limit', 4000) not in (4000, 100000):
+            raise ModError(400, 'Unsupported Claude peer envelope capacity.')
         protocol = data.get('peer_protocol', 0)
         if type(protocol) is not int or protocol not in (0, 1):
             raise ModError(400, 'Unsupported Claude peer protocol.')
@@ -273,20 +277,20 @@ class ClaudeMod:
                 raise ModError(409, 'This registration episode is stale.', 'stale_connection')
             if not same_client and entry['generation']:
                 raise ModError(409, 'Another Claude host currently owns this chat connection.', 'host_conflict')
-            if same_client and seq == entry['connection_seq'] and (protocol != entry['peer_protocol'] or data.get('reply_notice_protocol', 0) != entry['reply_notice_protocol'] or data.get('lifecycle_protocol', 0) != entry['lifecycle_protocol']):
+            if same_client and seq == entry['connection_seq'] and (protocol != entry['peer_protocol'] or data.get('reply_notice_protocol', 0) != entry['reply_notice_protocol'] or data.get('lifecycle_protocol', 0) != entry['lifecycle_protocol'] or data.get('peer_envelope_limit', 4000) != entry['peer_envelope_limit']):
                 raise ModError(409, 'This registration episode has a different peer protocol.', 'stale_connection')
             if not (same_client and seq == entry['connection_seq'] and entry['generation']):
                 self.uncertain(entry['id'], 'Claude reconnected after an earlier claim. Delivery remains unknown; it will not resubmit.')
-                self.db.execute('UPDATE claude_mod_enrollments SET generation=?,client_id=?,connection_seq=?,last_seen=?,peer_protocol=?,reply_notice_protocol=?,lifecycle_protocol=? WHERE id=?',
-                                (str(uuid.uuid4()), data['client_id'], seq, time.time(), protocol, data.get('reply_notice_protocol', 0), data.get('lifecycle_protocol', 0), entry['id']))
+                self.db.execute('UPDATE claude_mod_enrollments SET generation=?,client_id=?,connection_seq=?,last_seen=?,peer_protocol=?,reply_notice_protocol=?,lifecycle_protocol=?,peer_envelope_limit=? WHERE id=?',
+                                (str(uuid.uuid4()), data['client_id'], seq, time.time(), protocol, data.get('reply_notice_protocol', 0), data.get('lifecycle_protocol', 0), data.get('peer_envelope_limit', 4000), entry['id']))
         else:
             if self.db.execute('SELECT COUNT(*) FROM claude_mod_enrollments WHERE active=1').fetchone()[0] >= MAX_ENROLLMENTS:
                 raise ModError(429, 'Too many active Claude connections.', 'connection_limit')
             eid = str(uuid.uuid4())
             self.db.execute('''INSERT INTO claude_mod_enrollments
-                (id,token_hash,agent,project,generation,last_seen,active,grant_id,client_id,connection_seq,peer_protocol,reply_notice_protocol,lifecycle_protocol)
-                VALUES (?,?,?,?,?,?,1,?,?,?,?,?,?)''', (eid, digest(service_token), aid, data['project'], str(uuid.uuid4()),
-                                               time.time(), gid, data['client_id'], seq, protocol, data.get('reply_notice_protocol', 0), data.get('lifecycle_protocol', 0)))
+                (id,token_hash,agent,project,generation,last_seen,active,grant_id,client_id,connection_seq,peer_protocol,reply_notice_protocol,lifecycle_protocol,peer_envelope_limit)
+                VALUES (?,?,?,?,?,?,1,?,?,?,?,?,?,?)''', (eid, digest(service_token), aid, data['project'], str(uuid.uuid4()),
+                                               time.time(), gid, data['client_id'], seq, protocol, data.get('reply_notice_protocol', 0), data.get('lifecycle_protocol', 0), data.get('peer_envelope_limit', 4000)))
             entry = self.get(eid)
         entry = self.get(entry['id'])
         peer_lifecycle.record_event(self.db, 'enrollment:' + entry['id'], 'registered', 'connection_episode', '', entry['generation'],
@@ -465,7 +469,7 @@ class ClaudeMod:
                 break
         if claim is None and data['accept'] and can_claim and not busy:
             claim = self.store.reply_delivery.claim_in_transaction(entry, notice_proofs or {})
-        return dict(version=1, native_id=entry['agent'][2:], generation=entry['generation'], peer_protocol=entry['peer_protocol'], reply_notice_protocol=entry['reply_notice_protocol'], lifecycle_protocol=entry['lifecycle_protocol'], supported_lifecycle_protocol=2, claim=claim, requests=self.statuses(entry))
+        return dict(version=1, native_id=entry['agent'][2:], generation=entry['generation'], peer_protocol=entry['peer_protocol'], reply_notice_protocol=entry['reply_notice_protocol'], lifecycle_protocol=entry['lifecycle_protocol'], supported_lifecycle_protocol=2, peer_envelope_limit=entry['peer_envelope_limit'], supported_peer_envelope_limit=100000, claim=claim, requests=self.statuses(entry))
 
     def event(self, entry, data):
         if hasattr(self.store, 'reply_delivery'):

@@ -60,6 +60,11 @@ process.on('SIGTERM',async()=>{await c.close();process.exit(0)});
                  'Needs POSIX, Node.js, and optional channel npm dependencies')
 class PeerIntegrationTests(unittest.TestCase):
     def test_shared_outbound_codex_and_blocked_claude_with_owner_channel(self):
+        for label,text in [('unicode','🚀'*16000),('escaped-controls','\x01'*15999+'🚀')]:
+            with self.subTest(message=label):
+                self.exercise_shared_outbound(text)
+
+    def exercise_shared_outbound(self,large_text):
         """Shared access is independent of native caller, target provider, and project."""
         with tempfile.TemporaryDirectory() as temporary:
             base = Path(temporary).resolve()
@@ -124,7 +129,7 @@ with open(LAUNCHES,'a') as f:f.write(json.dumps(args)+'\\n')
                 def rpc(endpoint, method, params=None, expect_error=False):
                     rpc_env = dict(env,TEST_ADAPTER=str(CONNECTOR/'peer.mjs'),
                         TEST_CREDENTIAL=str(credentials/(endpoint['credential_id']+'.json')),
-                        TEST_METHOD=method,TEST_PARAMS=json.dumps(params or {}))
+                        TEST_METHOD=method,TEST_PARAMS=json.dumps(params or {},ensure_ascii=False))
                     result = subprocess.run([shutil.which('node'),'--input-type=module','-e',RPC],
                         cwd=project,env=rpc_env,capture_output=True,text=True,timeout=15)
                     self.assertEqual(result.returncode,0,result.stderr[:1500])
@@ -146,8 +151,18 @@ with open(LAUNCHES,'a') as f:f.write(json.dumps(args)+'\\n')
                     self.assertEqual({p['provider']:p['capability'] for p in peers}, {'codex':'reachable','claude':'unavailable'})
                     codex = next(p for p in peers if p['provider']=='codex')
                     claude = next(p for p in peers if p['provider']=='claude')
+                    # Exercise the actual argv transport near the worst JSON-escape
+                    # expansion, including a non-BMP scalar counted as one character.
+                    self.assertEqual(len(large_text),16000)
                     first = {'agent_id':codex['agent_id'],'identity_revision':codex['identity_revision'],
-                        'text':'Inspect the fixture progress','request_id':str(uuid.uuid4()),'declared_sender':'Unverified fixture label'}
+                        'text':large_text,'request_id':str(uuid.uuid4()),'declared_sender':'Unverified fixture label'}
+                    oversized = dict(first,text=large_text+'x',request_id=str(uuid.uuid4()))
+                    rejected_size = rpc(client_one,'send_message',oversized,expect_error=True)
+                    self.assertIn('16001',rejected_size['content'][0]['text'])
+                    self.assertIn('16000',rejected_size['content'][0]['text'])
+                    with store.lock:
+                        self.assertEqual(store.db.execute('SELECT COUNT(*) FROM shared_bridge_requests').fetchone()[0],0)
+                    self.assertFalse(launches.exists())
                     accepted = rpc(client_one,'send_message',first)
                     self.assertEqual(accepted['state'],'sending')
                     self.assertFalse(accepted['duplicate'])
@@ -160,10 +175,15 @@ with open(LAUNCHES,'a') as f:f.write(json.dumps(args)+'\\n')
                     queued = rpc(client_two,'get_reply',{'request_id':first['request_id']})
                     self.assertEqual((queued['state'],queued['reply']),('queued',''))
                     self.assertEqual(len(launches.read_text().splitlines()),1)
+                    native_args=json.loads(launches.read_text())
+                    native_envelope=native_args[native_args.index('--message')+1]
+                    self.assertEqual(json.loads(native_envelope.splitlines()[1].removeprefix('Message: ')),large_text)
                     with store.lock:
                         transport_id = store.db.execute('SELECT transport_id FROM shared_bridge_requests WHERE client_id=?',
                             (first['request_id'],)).fetchone()[0]
                         late = next(row for row in store._rows() if row['request_id'] == transport_id)
+                        self.assertEqual(late['question'],large_text)
+                        self.assertEqual(late['envelope'],native_envelope)
                         late['created'] = time.time()-peer_bridge.TTL-60
                         store._save(late)
                         store.db.execute('UPDATE shared_bridge_requests SET created=? WHERE transport_id=?',(late['created'],transport_id))

@@ -34,8 +34,8 @@ async function fixture(){
   const record={origin:'peer',request_id:mode==='mismatched'?randomUUID():p.params.request_id,agent_id:p.params.agent_id||agent,state:'queued',reply:'<untrusted>',error:'',created_at:Date.now()/1000,target:{...target,agent_id:p.params.agent_id||agent},duplicate:false,text_preview:'Please inspect',secret:'SHOULD NOT DISPLAY'};
   const result=p.method==='list_agents'?{agents:[{...target,native_id:native,capability:'unavailable',reason:'No transport',last_seen:Date.now()/1000,supported_transport:'codex_queue',secret:'SHOULD NOT DISPLAY'}],next_cursor:null,directory:{complete:false,reasons:['Scan bounded'],refreshed_at:Date.now()/1000}}:p.method==='list_requests'?{requests:[{...record,request_id:randomUUID()}],next_cursor:null}:record;
   if(mode==='claude_mod')Object.assign(result.agents[0],{agent_id:'c:'+native,provider:'claude',capability:'reachable',reason:'',supported_transport:'claude_mod'});
-  const status=mode==='reject409'||mode==='reject-long'||mode==='reject-control'?409:['reject429','not-accepted'].includes(mode)?429:mode==='error500'?500:200;
-  const reason=mode==='not-accepted'?'Four peer deliveries are active. The new request was not accepted.':mode==='reject-long'?'x'.repeat(201):mode==='reject-control'?'Invalid\nreason':status===409?'Answer your incoming peer request first.':status===429?'Peer delivery capacity is full.':'Peer service failed.';
+  const status=mode==='message-too-long'?400:mode==='reject409'||mode==='reject-long'||mode==='reject-control'?409:['reject429','not-accepted'].includes(mode)?429:mode==='error500'?500:200;
+  const reason=mode==='message-too-long'?'Message too long for this Claude plugin: 4500 envelope characters; maximum is 4000. Reload the updated WATCH plugin or reduce the message. Nothing was sent.':mode==='not-accepted'?'Four peer deliveries are active. The new request was not accepted.':mode==='reject-long'?'x'.repeat(201):mode==='reject-control'?'Invalid\nreason':status===409?'Answer your incoming peer request first.':status===429?'Peer delivery capacity is full.':'Peer service failed.';
   const body=mode==='huge'?'x'.repeat(65537):JSON.stringify(status===200?{result}:{error:reason}),signature=hmac(credential.secret,['watch-bridge-response-v2',String(credential.port),run,n,String(status),hash(body)]);
   res.writeHead(status,{'Content-Length':Buffer.byteLength(body),'X-Watch-Signature':mode==='altered'?'b'.repeat(64):signature});res.end(body);
  });
@@ -46,7 +46,7 @@ test('real signed HTTP authenticates before body on the same socket, filters out
  const f=await fixture();try{
   const c=new PeerClient(f.credential),params={agent_id:'x:'+randomUUID(),identity_revision:'d'.repeat(64),text:'Sensitive message',request_id:randomUUID()};
   const result=await c.call('send_message',params);assert.equal(result.origin,'peer');assert.equal(result.reply,'<untrusted>');assert.equal(result.secret,undefined);assert.equal(f.seen.length,2);assert.equal(f.seen[0].socket,f.seen[1].socket,'proof and sensitive request share TCP socket');assert.equal(f.seen[0].raw.includes(params.text),false);assert.equal(f.seen[0].raw.includes(f.credential.secret),false);assert.equal(JSON.stringify(f.seen.map(r=>r.headers)).includes(f.credential.secret),false);
-  assert.equal((await c.call('send_message',{...params,text:'\u0001'.repeat(2000)})).state,'queued','valid maximum escaped message fits RPC bound');
+  assert.equal((await c.call('send_message',{...params,text:'\u0001'.repeat(16000)})).state,'queued','valid maximum escaped message fits RPC bound');
   for(const mode of ['squatter','close','altered','huge','loss','mismatched']){
    f.setMode(mode);const before=f.seen.length;await assert.rejects(c.call('send_message',params),/No request was retried/);const calls=f.seen.slice(before);assert.equal(calls.filter(r=>r.path==='/bridge/v2/rpc').length,mode==='squatter'||mode==='close'?0:1,mode+' dispatch count');
   }
@@ -77,7 +77,7 @@ test('official SDK peer adapter exposes only four narrow tools and wraps untrust
  }finally{if(connected)await client.close();await f.close()}
 });
 test('strict tool validation and response bounds',()=>{
- assert.equal(validArgs('list_agents',{}),true);assert.equal(validArgs('list_requests',{sender:'fake'}),false);assert.equal(validArgs('send_message',{agent_id:'x:'+randomUUID(),identity_revision:'d'.repeat(64),request_id:randomUUID(),text:'😀'.repeat(2000)}),true);assert.equal(validArgs('send_message',{agent_id:'x:'+randomUUID(),identity_revision:'d'.repeat(64),request_id:randomUUID(),text:'x'.repeat(2001)}),false);
+ assert.equal(validArgs('list_agents',{}),true);assert.equal(validArgs('list_requests',{sender:'fake'}),false);assert.equal(validArgs('send_message',{agent_id:'x:'+randomUUID(),identity_revision:'d'.repeat(64),request_id:randomUUID(),text:'😀'.repeat(16000)}),true);assert.equal(validArgs('send_message',{agent_id:'x:'+randomUUID(),identity_revision:'d'.repeat(64),request_id:randomUUID(),text:'x'.repeat(16001)}),false);
  assert.throws(()=>safeResult('list_requests',{requests:Array(51).fill({}),next_cursor:null}));assert.throws(()=>safeResult('get_reply',{request_id:'wrong'}));
 });
 test('optional request UUIDs are minted once and retained after uncertain delivery and signed rejection',async()=>{
@@ -201,5 +201,41 @@ test('explicit signed capacity rejection does not suggest an unconfirmed accepta
   f.setMode('loss');
   const lost=await client.callTool({name:'send_message',arguments:{agent_id:f.target.agent_id,identity_revision:f.target.identity_revision,text:'Fictional uncertain check'}});
   assert.match(lost.content[1].text,/Acceptance is not confirmed/);
+ }finally{if(connected)await client.close();await f.close()}
+});
+
+test('MCP message limit accepts full Unicode boundary and rejects oversize explicitly before HTTP or request allocation',async()=>{
+ const f=await fixture(),client=new Client({name:'Message size host',version:'1'});let connected=false;
+ try{
+  await client.connect(new StdioClientTransport({command:process.execPath,args:[script,'--credential',f.file],cwd:here,stderr:'pipe'}));connected=true;
+  const send=(await client.listTools()).tools.find(t=>t.name==='send_message');
+  assert.equal(send.inputSchema.properties.text.maxLength,16000);
+  const args={agent_id:f.target.agent_id,identity_revision:f.target.identity_revision};
+  for(const text of ['x'.repeat(2030),'😀'.repeat(16000),'\u0001'.repeat(16000)]){
+   const before=f.seen.length;
+   const response=await client.callTool({name:'send_message',arguments:{...args,text}});
+   assert.equal(response.isError,undefined);
+   const calls=f.seen.slice(before).filter(r=>r.path==='/bridge/v2/rpc');
+   assert.equal(calls.length,1);assert.equal(JSON.parse(calls[0].raw).params.text,text);
+  }
+  for(const text of ['x'.repeat(16001),'😀'.repeat(16001)]){
+   const before=f.seen.length;
+   const response=await client.callTool({name:'send_message',arguments:{...args,text}});
+   assert.equal(response.isError,true);
+   assert.deepEqual(response.content,[{type:'text',text:'Message too long: 16001 characters; maximum is 16000. Nothing was sent.'}]);
+   assert.equal(f.seen.length,before,'no challenge or RPC for an oversized message');
+  }
+ }finally{if(connected)await client.close();await f.close()}
+});
+
+test('signed old-plugin size rejection is explicit nonacceptance rather than uncertain delivery',async()=>{
+ const f=await fixture(),client=new Client({name:'Old plugin host',version:'1'});let connected=false;
+ try{
+  await client.connect(new StdioClientTransport({command:process.execPath,args:[script,'--credential',f.file],cwd:here,stderr:'pipe'}));connected=true;f.setMode('message-too-long');
+  const response=await client.callTool({name:'send_message',arguments:{agent_id:f.target.agent_id,identity_revision:f.target.identity_revision,text:'A valid message for an older receiving plugin'}});
+  assert.equal(response.isError,true);assert.match(response.content[0].text,/Message too long for this Claude plugin/);
+  assert.match(response.content[1].text,/This attempt was not accepted/);
+  assert.doesNotMatch(JSON.stringify(response),/Acceptance is not confirmed/);
+  assert.equal(f.seen.filter(r=>r.path==='/bridge/v2/rpc').length,1);
  }finally{if(connected)await client.close();await f.close()}
 });

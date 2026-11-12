@@ -539,6 +539,80 @@ class SharedTests(unittest.TestCase):
         finally:
             httpd.shutdown(); httpd.server_close(); thread.join(); server.MESSAGING = previous
 
+    def test_large_messages_cross_real_signed_http_without_truncation(self):
+        previous=server.MESSAGING;server.MESSAGING=self.store
+        httpd=server.Server(('127.0.0.1',0),server.H)
+        thread=threading.Thread(target=httpd.serve_forever,daemon=True);thread.start()
+        port=httpd.server_address[1]
+        try:
+            for text in ('a'*16000, '😀'*16000, '\x01'*16000, '\x85\u2028\u2029<>"\\'*2000, '😀'*16001):
+                target=self.target('Fictional size boundary')
+                rid=uid();raw=json.dumps(dict(method='send_message',params=dict(agent_id=target['agent_id'],
+                    identity_revision=target['identity_revision'],text=text,request_id=rid)),ensure_ascii=True).encode()
+                self.assertLess(len(raw),262144)
+                conn=http.client.HTTPConnection('127.0.0.1',port,timeout=2)
+                challenge_nonce=uuid.uuid4().hex*2
+                conn.request('POST','/bridge/v2/challenge',json.dumps(dict(credential_id=self.auth['id'],nonce=challenge_nonce)))
+                response=conn.getresponse();proof=json.loads(response.read());self.assertEqual(response.status,200)
+                self.assertEqual(proof['proof'],p.mac(self.auth['secret'],'watch-bridge-server-v2',port,self.auth['id'],challenge_nonce,proof['run_id']))
+                stamp=str(int(time.time()));nonce=uuid.uuid4().hex*2;run=proof['run_id']
+                headers={'X-Watch-Bridge':self.auth['id'],'X-Watch-Time':stamp,'X-Watch-Nonce':nonce,'X-Watch-Run':run}
+                headers['X-Watch-Signature']=p.mac(self.auth['secret'],'watch-bridge-request-v2',port,'POST',
+                    '/bridge/v2/rpc',stamp,nonce,run,p.digest(raw))
+                try:
+                    conn.request('POST','/bridge/v2/rpc',raw,headers);response=conn.getresponse();body=response.read()
+                    self.assertEqual(response.status,400 if len(text)>16000 else 200,body)
+                    self.assertEqual(response.getheader('X-Watch-Signature'),p.mac(self.auth['secret'],
+                        'watch-bridge-response-v2',port,run,nonce,response.status,p.digest(body)))
+                finally:conn.close()
+                if len(text)>16000:
+                    self.assertEqual(json.loads(body),{'error':'Message too long: 16001 characters; maximum is 16000. Nothing was sent.'})
+                    self.assertIsNone(self.store.db.execute('SELECT transport_id FROM shared_bridge_requests WHERE client_id=?',(rid,)).fetchone())
+                    continue
+                row=self.row(rid)
+                self.assertEqual(row['question'],text)
+                self.assertEqual(json.loads(row['envelope'].splitlines()[1][9:]),text)
+                self.assertLessEqual(len(row['envelope'].encode('utf-8')),100000)
+                self.assertEqual(len(row['envelope'].splitlines()),7)
+            before=self.store.db.execute('SELECT COUNT(*) FROM shared_bridge_requests').fetchone()[0]
+            rid=uid()
+            with self.assertRaisesRegex(p.PeerError,'16001 characters; maximum is 16000'):
+                self.send(rid=rid,text='😀'*16001)
+            self.assertEqual(self.store.db.execute('SELECT COUNT(*) FROM shared_bridge_requests').fetchone()[0],before)
+        finally:
+            httpd.shutdown();httpd.server_close();thread.join();server.MESSAGING=previous
+
+    def test_signed_rpc_exact_byte_limit_and_headers_only_over_limit(self):
+        previous=server.MESSAGING;server.MESSAGING=self.store
+        httpd=server.Server(('127.0.0.1',0),server.H)
+        thread=threading.Thread(target=httpd.serve_forever,daemon=True);thread.start()
+        port=httpd.server_address[1]
+        conn=http.client.HTTPConnection('127.0.0.1',port,timeout=2)
+        try:
+            challenge_nonce=uuid.uuid4().hex*2
+            conn.request('POST','/bridge/v2/challenge',json.dumps(dict(credential_id=self.auth['id'],nonce=challenge_nonce)))
+            response=conn.getresponse();proof=json.loads(response.read());self.assertEqual(response.status,200)
+            self.assertEqual(proof['proof'],p.mac(self.auth['secret'],'watch-bridge-server-v2',port,self.auth['id'],challenge_nonce,proof['run_id']))
+            raw=json.dumps(dict(method='list_requests',params={})).encode().ljust(262144,b' ')
+            stamp=str(int(time.time()));nonce=uuid.uuid4().hex*2;run=proof['run_id']
+            headers={'X-Watch-Bridge':self.auth['id'],'X-Watch-Time':stamp,'X-Watch-Nonce':nonce,'X-Watch-Run':run}
+            headers['X-Watch-Signature']=p.mac(self.auth['secret'],'watch-bridge-request-v2',port,'POST',
+                '/bridge/v2/rpc',stamp,nonce,run,p.digest(raw))
+            conn.request('POST','/bridge/v2/rpc',raw,headers)
+            response=conn.getresponse();body=response.read();self.assertEqual(response.status,200,body)
+            self.assertEqual(json.loads(body)['result']['requests'],[])
+            self.assertEqual(response.getheader('X-Watch-Signature'),p.mac(self.auth['secret'],
+                'watch-bridge-response-v2',port,run,nonce,response.status,p.digest(body)))
+            # Oversized declared bodies are rejected before reading; no upload race.
+            conn.putrequest('POST','/bridge/v2/rpc')
+            conn.putheader('Content-Length','262145');conn.endheaders()
+            response=conn.getresponse();body=response.read();self.assertEqual(response.status,413)
+            self.assertEqual(json.loads(body),{'error':'Shared WATCH request is too large.'})
+            for table in ('requests','shared_bridge_requests','peer_execution','peer_reply_admissions'):
+                self.assertEqual(self.store.db.execute('SELECT COUNT(*) FROM '+table).fetchone()[0],0)
+        finally:
+            conn.close();httpd.shutdown();httpd.server_close();thread.join();server.MESSAGING=previous
+
     def test_enabled_service_starts_directory_before_first_rpc(self):
         refreshed = threading.Event()
         directory = Mock(work_pending=False)
