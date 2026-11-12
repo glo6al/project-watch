@@ -107,9 +107,14 @@ class ServiceTests(unittest.TestCase):
 
     def test_model_whitelist_cache_and_capabilities(self):
         calls = []
-        s = self.service(model_reader=lambda aid: (calls.append(aid), model())[1])
+        s = self.service(model_reader=lambda aid: (calls.append(aid), model(1100))[1],
+                         clock=lambda: 100, wall=lambda: 1100)
         self.assertEqual(s.request_read(AID, ['model_settings'])[0], 202)
-        wait_for(lambda: not s.snapshot(AID)['model_settings']['read_active'])
+        def finalized():
+            # Publishing the observation precedes the worker's job cleanup.
+            with s.lock:
+                return (AID, 'model_settings') not in s.jobs
+        wait_for(finalized)
         view = s.snapshot(AID)
         p = view['model_settings']
         self.assertEqual(p['settings']['model'], 'fictional-model')
