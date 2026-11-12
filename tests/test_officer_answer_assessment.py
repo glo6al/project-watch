@@ -15,6 +15,23 @@ class AnswerAssessmentTests(unittest.TestCase):
     def setUp(self):
         self.f = fixtures.OfficerCapabilityTests(); self.f.setUp(); self.addCleanup(self.f.tearDown)
 
+    def test_excerpt_keeps_early_epoch_time_without_naive_local_conversion(self):
+        record = dict(seq=0, provider='codex', chat_id='x:demo-ada', chat_name='Ada',
+                      project_id='', project_name='', source_ts=100, time_basis='source',
+                      certainty='recorded', kind='message', role='assistant', text='Recorded example.')
+        session = EvidenceService(self.f.history, lambda: dict(boot=server.BOOT, cutoff_seq=0, events=[record])).start()
+        real_datetime = server.datetime
+        class AwareRequired:
+            @staticmethod
+            def fromtimestamp(value, tz=None):
+                if tz is None:
+                    raise OSError('synthetic Windows naive-local conversion rejection')
+                return real_datetime.fromtimestamp(value, tz)
+        with patch.object(server, 'datetime', AwareRequired):
+            result = server.officer_surviving_answer(session, ['live:' + server.BOOT + ':0'])
+        self.assertIn(real_datetime.fromtimestamp(100, server.timezone.utc).astimezone().isoformat(timespec='seconds'), result['text'])
+        self.assertNotIn('time not recorded', result['text'])
+
     def two_source_answer(self, erase_during=False):
         f = self.f
         f.add('REMOVED_ALPHA: owner private decision.', chat='x:demo-ada', name='Ada')

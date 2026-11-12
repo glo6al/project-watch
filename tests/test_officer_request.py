@@ -10,6 +10,7 @@ import sys
 import threading
 import textwrap
 import unittest
+from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'src'))
 import officer_request as request
@@ -286,7 +287,7 @@ class AssertionTests(unittest.TestCase):
         item = request.AssertionRegistry(); item.register({'quantities': [first, second]}); item.mark_supplied()
         a, b = item.render_assertion(first), item.render_assertion(second)
         self.assertNotEqual(a, b)
-        for expected in ('live room', 'c:demo-ada', 'source time', request.datetime.fromtimestamp(100).astimezone().isoformat(sep=' ', timespec='seconds')):
+        for expected in ('live room', 'c:demo-ada', 'source time', request.datetime.fromtimestamp(100, request.timezone.utc).astimezone().isoformat(sep=' ', timespec='seconds')):
             self.assertIn(expected, a)
         for expected in ('retained records', 'x:demo-bram', 'c' * 64, 'observation time', 'outcome: failure', 'operation: run'):
             self.assertIn(expected, b)
@@ -295,6 +296,32 @@ class AssertionTests(unittest.TestCase):
         with self.assertRaises(request.EvidenceRejected):
             item.validate_assertion(changed)
         self.assertEqual(set(item.receipt(SCOPE, SNAPSHOT)['scope']), {'sources', 'chat_ids', 'project_ids'})
+
+    def test_interval_rendering_starts_from_aware_utc_for_low_timestamps(self):
+        real_datetime = request.datetime
+        converted = []
+        class AwareOnlyDatetime:
+            @staticmethod
+            def fromtimestamp(stamp, tz=None):
+                if tz is not request.timezone.utc:
+                    raise OSError('synthetic naive-local conversion failure')
+                converted.append(stamp)
+                return real_datetime.fromtimestamp(stamp, tz)
+        item = registry()
+        # Patch the function globals so this also exercises the compiled guard mutant.
+        with patch.dict(request.AssertionRegistry.render_assertion.__globals__, {'datetime': AwareOnlyDatetime}):
+            rendered = item.render_assertion(quantity())
+        self.assertEqual(converted, [100, 200])
+        for stamp in (100, 200):
+            self.assertIn(real_datetime.fromtimestamp(stamp, request.timezone.utc).astimezone().isoformat(sep=' ', timespec='seconds'), rendered)
+
+    def test_unrenderable_interval_still_fails_closed(self):
+        value = dict(quantity(), interval={'since': 1e30, 'until': 2e30, 'time_basis': 'source'})
+        item = request.AssertionRegistry()
+        item.register({'quantities': [value]})
+        item.mark_supplied()
+        with self.assertRaisesRegex(request.EvidenceRejected, '^unrenderable_evidence_interval$'):
+            item.render_assertion(value)
 
     def test_text_match_binding_uses_digest_not_raw_query(self):
         value = dict(quantity(), scope=dict(SCOPE, match={'mode': 'terms', 'digest': 'd' * 64}))
@@ -358,6 +385,8 @@ class AssertionTests(unittest.TestCase):
 class GuardMutationTests(unittest.TestCase):
     def test_concrete_guards_are_causally_required(self):
         cases = [
+            (request.AssertionRegistry, 'render_assertion', 'datetime.fromtimestamp(stamp, timezone.utc)',
+             'datetime.fromtimestamp(stamp)', AssertionTests, 'test_interval_rendering_starts_from_aware_utc_for_low_timestamps'),
             (request, '_quantity', "type(number) not in (int, float)", "not isinstance(number, (int, float))",
              AssertionTests, 'test_registration_rejects_bool_quantities'),
             (request.RequestBudget, '_totals', "sum(v['output_tokens'] for v in values)",

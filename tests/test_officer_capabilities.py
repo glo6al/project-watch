@@ -767,17 +767,17 @@ class OfficerCapabilityTests(unittest.TestCase):
 
     def test_live_projection_omits_raw_payloads_and_uses_stable_keyed_project_ids(self):
         aid = 'c:demo-ada'
-        cwd = '/fictional/private/Orchard'
+        cwd = os.path.join(self.home, 'fictional', 'private', 'Orchard')
         agents = {aid: {'name': 'Ada', 'runtime': 'Claude', 'cwd': cwd, 'model': MODEL}}
         shape = 'sk-' + 'ant-' + 'x' * 25
         log = [dict(seq=1, agent=aid, kind='run', ts=self.now, id='op', cmd='PRIVATE RAW COMMAND'),
-               dict(seq=2, agent=aid, kind='edit', ts=self.now, id='edit', path=cwd + '/src/example.py', before='PRIVATE BEFORE CODE', after='PRIVATE AFTER CODE'),
+               dict(seq=2, agent=aid, kind='edit', ts=self.now, id='edit', path=os.path.join(cwd, 'src', 'example.py'), before='PRIVATE BEFORE CODE', after='PRIVATE AFTER CODE'),
                dict(seq=3, agent=aid, kind='say', ts=self.now, text='Credential ' + shape)]
         first = officer_capabilities.live_view('fictional-boot', agents, log, {}, now=self.now)
         second = officer_capabilities.live_view('fictional-boot', agents, log, {}, now=self.now + 1)
         encoded = json.dumps(first)
         for omitted in (cwd, 'PRIVATE RAW COMMAND', 'PRIVATE BEFORE CODE', 'PRIVATE AFTER CODE', shape):
-            self.assertNotIn(omitted, encoded)
+            self.assertNotIn(json.dumps(omitted)[1:-1], encoded)
         identity = first['subjects'][0]['project_id']
         self.assertRegex(identity, '^[0-9a-f]{64}$')
         self.assertEqual(identity, second['subjects'][0]['project_id'])

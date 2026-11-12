@@ -8,7 +8,7 @@ conversation receipts; these helpers cannot make publication atomic themselves.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 from decimal import Decimal, InvalidOperation
 import hashlib
 import json
@@ -444,7 +444,7 @@ class AssertionRegistry:
         projects = 'projects ' + ', '.join(scope['project_ids']) if scope['project_ids'] else 'all recorded projects'
         def when(stamp):
             try:
-                return datetime.fromtimestamp(stamp).astimezone().isoformat(sep=' ', timespec='seconds')
+                return datetime.fromtimestamp(stamp, timezone.utc).astimezone().isoformat(sep=' ', timespec='seconds')
             except (ValueError, OverflowError, OSError):
                 raise EvidenceRejected('unrenderable_evidence_interval') from None
         start, end = interval['since'], interval['until']

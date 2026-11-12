@@ -35,7 +35,7 @@ Env:  PORT (8793), WINDOW_MIN (20: how recently a session must have been active 
 """
 import glob, hashlib, hmac, http.client, json, math, mimetypes, os, re, secrets, select, socket, sqlite3, ssl, subprocess, sys, threading, time, urllib.parse
 from contextlib import nullcontext
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from officer_policy import AUTOMATIC, RoutingSnapshot, load_policy
 from officer_instructions import BUILTIN_PLAIN_ENGLISH, BUILTIN_OFFICER_SYSTEM, load_instructions, load_skill, skill_menu
 from officer_messaging import MessagingStore, MessagingError, validate_question, validate_target, valid_uuid
@@ -3939,7 +3939,7 @@ def officer_surviving_answer(session, refs, omitted=0, actions=None, reason='era
         if type(stamp) not in (int, float):
             stamp = row.get('source_ts') or row.get('observed_ts')
         try:
-            dated = datetime.fromtimestamp(stamp).astimezone().isoformat(timespec='seconds') if type(stamp) in (int, float) and math.isfinite(stamp) else 'time not recorded'
+            dated = datetime.fromtimestamp(stamp, timezone.utc).astimezone().isoformat(timespec='seconds') if type(stamp) in (int, float) and math.isfinite(stamp) else 'time not recorded'
         except (ValueError, OverflowError, OSError):
             dated = 'time not recorded'
         basis = str(row.get('time_basis') or 'observation time')
