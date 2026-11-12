@@ -55,7 +55,11 @@ class IntegrationTests(unittest.TestCase):
         server.history_arm()
 
     def events(self):
-        self.assertTrue(server.HISTORY.flush())
+        # Bulk synthetic batches retain per-record private-file checks. Allow
+        # slower Windows runners to drain them without changing runtime limits.
+        self.assertTrue(server.HISTORY.flush(10),
+                        'Synthetic archive writes did not settle: reason=%r, queued=%d, inflight=%d' %
+                        (server.HISTORY.reason, len(server.HISTORY.queue), server.HISTORY.inflight))
         return server.HISTORY.search(limit=100)['events']
 
     def test_future_fence_old_first_poll_and_recreation_receipt(self):

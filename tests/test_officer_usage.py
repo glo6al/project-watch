@@ -252,13 +252,15 @@ class UsageTests(unittest.TestCase):
         self.assertIsNone(total['rates_date'])
 
     def test_malformed_rate_snapshot_fails_closed(self):
-        self.root.mkdir(mode=0o700)
-        pricing = self.root / 'pricing.json'
+        # Keep public test pricing outside the private ledger directory, whose
+        # platform-specific permissions must be established by the real loader.
+        pricing = Path(self.tmp.name) / 'pricing.json'
         value = json.loads(usage.PRICING_PATH.read_text())
         value['models']['claude-haiku-5-5']['input'] = 'NaN'
         pricing.write_text(json.dumps(value))
         with patch.object(usage, 'PRICING_PATH', pricing):
             ledger = self.ledger()
+        self.assertTrue(ledger.available)
         self.record(ledger)
         self.assertIsNone(ledger.summary()['estimated_usd'])
         self.assertEqual(ledger.summary()['observed_tokens']['input_tokens'], 1000)

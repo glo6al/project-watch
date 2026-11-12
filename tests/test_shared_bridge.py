@@ -14,9 +14,11 @@ import unittest
 import uuid
 from unittest.mock import Mock, patch
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'src'))
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'scripts'))
+ROOT = Path(__file__).resolve().parents[1]
+# Keep backend modules ahead of same-named CLI scripts in clean standalone runs.
+sys.path[:0] = [str(ROOT / 'src'), str(ROOT / 'scripts')]
 import officer_messaging as m
+import officer_usage
 import peer_bridge as p
 import server
 import watch_peer
@@ -24,6 +26,11 @@ import watch_peer
 
 def uid():
     return str(uuid.uuid4())
+
+
+class BootstrapTests(unittest.TestCase):
+    def test_usage_import_is_backend_not_cli(self):
+        self.assertEqual(Path(officer_usage.__file__).resolve(), ROOT / 'src' / 'officer_usage.py')
 
 
 class FixtureDirectory:
