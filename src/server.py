@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
 """W.A.T.C.H. — Window on Agents, Tools, Changes and Hand-offs.
 
-A local observer for Claude Code and Codex sessions. (Working title during development: Live Room. Internal
+A local observer for Claude Code, Codex, Cursor and Antigravity sessions. (Working title during development: Live Room. Internal
 identifiers such as ~/.live-room, the X-Live-Room-Key header and the hook marker keep that name so existing keys,
 hooks and saved page settings continue to work.)
 
 What it does
   * Reads the session logs the tools already write (~/.claude/projects, ~/.codex/sessions,
-    ~/.cursor/projects/*/agent-transcripts) and streams what it finds to the page.
+    ~/.cursor/projects/*/agent-transcripts and Antigravity brain transcripts) and streams what it finds to the page.
   * Optionally answers Claude Code permission prompts from the page (Allow / Deny), through the
     PermissionRequest hook that scripts/install_hooks.py adds. That part is NOT read-only.
   * Can ask macOS or Windows to open a session in its desktop app.
@@ -44,6 +44,7 @@ from officer_capabilities import (ANSWER_CHARS, ANSWER_SCHEMA, EVIDENCE_SYSTEM, 
 from officer_evidence import EvidenceService
 from anthropic_reporting import report as anthropic_report
 from officer_request import BudgetPolicy, RequestBudget, BudgetExceeded, AssertionRegistry
+import antigravity
 
 MESSAGING = None
 NATIVE_OBSERVATIONS = None
@@ -102,7 +103,7 @@ KNOWN_NAMES = {}            # the last name seen for every agent id, kept after 
 CODES = {}                   # one-time unlock codes: code -> time issued
 KEEP = {}                    # agents windows have pinned: aid -> {window: when it last said so}. Their logs are followed for a day, not 20 min
 KEEP_DAYS, KEEP_LEASE = 1, 15 * 60      # a window re-sends its whole pin list every few minutes; a list not refreshed in 15 min lapses
-AID_LETTERS = 'cxke'                               # c claude, x codex, k cursor, e a Codex cloud exec server (see CloudExec)
+AID_LETTERS = 'cxkea'                              # c claude, x codex, k cursor, e cloud exec, a Antigravity
 AID_RX = re.compile(r'[%s]:[0-9a-f-]{8,64}\Z' % AID_LETTERS)
 
 
@@ -146,18 +147,21 @@ def tool_uses(d):
 
 
 def aid_of(path):
-    """The agent id a log file would get, without opening it (see ClaudeTail / CodexTail)."""
+    """The agent id a native source gets, without reading its content."""
     stem = os.path.basename(path)[:-6]
     if '/.codex/' in path:
         m = re.search(r'([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$', stem)
         return 'x:' + (m.group(1) if m else stem)
     if '/.cursor/' in path:
         return 'k:' + stem
+    proof = antigravity.identity(path, HOME)
+    if proof:
+        return 'a:' + proof[0]
     return 'c:' + (stem.replace('agent-', '') if os.path.basename(os.path.dirname(path)) == 'subagents' else stem)
 
 
-def last_record_ts(path, limit=4_000_000):
-    """When a log last recorded anything, by its own clock: the top-level "timestamp" of its last complete record
+def last_record_ts(path, limit=4_000_000, timestamp_key='timestamp'):
+    """When a log last recorded anything, by its own clock: the requested top-level timestamp field of its last complete record
     that states one, found by reading the file's tail backwards one chunk at a time (a record can be far longer than
     a chunk). Only a record's own timestamp counts, never one nested in a tool input or a quoted document. None when
     no such record was found within the last `limit` bytes (never more than that is read), or the tail could not be
@@ -178,10 +182,13 @@ def last_record_ts(path, limit=4_000_000):
                         d = json.loads(raw)
                     except ValueError:
                         continue
-                    t = d.get('timestamp') if isinstance(d, dict) else None
+                    t = d.get(timestamp_key) if isinstance(d, dict) else None
                     if isinstance(t, str):
                         try:
-                            return datetime.fromisoformat(t.replace('Z', '+00:00')).timestamp()
+                            parsed = datetime.fromisoformat(t.replace('Z', '+00:00'))
+                            if timestamp_key == 'created_at' and parsed.tzinfo is None:
+                                return None
+                            return parsed.timestamp()
                         except ValueError:
                             return None
                 if n >= size or n >= limit:
@@ -191,7 +198,7 @@ def last_record_ts(path, limit=4_000_000):
         return None
 
 
-def active(path, now, timed=True, limit=4_000_000):
+def active(path, now, timed=True, limit=4_000_000, timestamp_key='timestamp'):
     """A log worth starting to follow: changed within the window, and, for a log whose records carry timestamps, by
     its own clock too. A file's modification time alone is not evidence of activity: something can touch a log without
     adding a record (seen: nine sub-agent logs touched in one second, weeks after their last record), and such a log
@@ -202,8 +209,13 @@ def active(path, now, timed=True, limit=4_000_000):
         return False
     if not timed:
         return True
-    ts = last_record_ts(path, limit)
+    ts = last_record_ts(path, limit, timestamp_key)
     return ts is not None and now - ts < WINDOW
+
+
+def source_active(path, now, cls):
+    return active(path, now, timed=cls is not CursorTail,
+                  timestamp_key='created_at' if cls is AntigravityTail else 'timestamp')
 
 
 def kept(path, now):
@@ -373,6 +385,7 @@ def native_sources():
              + glob.glob(HOME + '/.claude/projects/*/*/subagents/*.jsonl')]
     found += [(p, CodexTail) for p in glob.glob(HOME + '/.codex/sessions/*/*/*/*.jsonl')]
     found += [(p, CursorTail) for p in glob.glob(HOME + '/.cursor/projects/*/agent-transcripts/*/*.jsonl')]
+    found += [(p, AntigravityTail) for p in antigravity.inventory(HOME)]
     return [(p.replace('\\', '/') if WIN else p, cls) for p, cls in found]
 
 
@@ -473,7 +486,7 @@ def history_handle(tail, record, start, end, raw):
     """Parse unchanged live events, then atomically offer their bounded projections."""
     with HISTORY_LOCK:
         aid = getattr(tail, 'aid', '')
-        provider = {'x:': 'codex', 'c:': 'claude', 'k:': 'cursor'}.get(aid[:2])
+        provider = {'x:': 'codex', 'c:': 'claude', 'k:': 'cursor', 'a:': 'antigravity'}.get(aid[:2])
         fence_key = (os.path.abspath(tail.path), tail.dev, tail.ino)
         if HISTORY_BASELINED and fence_key not in HISTORY_FENCES:
             # A replacement at a known path is not a newly created conversation.
@@ -495,7 +508,7 @@ def history_handle(tail, record, start, end, raw):
                 generation = HISTORY_GENERATIONS.setdefault(fence_key, HISTORY_SOURCE_SEED)
                 stream = HISTORY.opaque_identity('stream', provider, fence_key[0], tail.dev, tail.ino, generation)
                 try:
-                    stamp = datetime.fromisoformat(record['timestamp'].replace('Z', '+00:00')).timestamp()
+                    stamp = datetime.fromisoformat(record['created_at' if provider == 'antigravity' else 'timestamp'].replace('Z', '+00:00')).timestamp()
                 except (KeyError, TypeError, ValueError, AttributeError):
                     stamp = None
                 valid = type(stamp) in (int, float) and math.isfinite(stamp) and stamp > 0
@@ -1426,7 +1439,7 @@ def saw(aid, old, ts, path, label):
     emit(aid, 'see', old, ts, img=real, label=label)
 
 
-PRIVATE_ROOTS = tuple(os.path.join(HOME, p) + os.sep for p in ('.live-room', '.ssh', '.claude', '.codex', '.aws', '.gnupg', '.config', 'Library')
+PRIVATE_ROOTS = tuple(os.path.join(HOME, p) + os.sep for p in ('.live-room', '.ssh', '.claude', '.codex', '.gemini', '.aws', '.gnupg', '.config', 'Library')
                       + (('AppData',) if WIN else ()))
 
 
@@ -2434,6 +2447,100 @@ def cursor_query(text):
     (a timestamp, instructions) is not shown as their message."""
     m = re.search(r'<user_query>\s*(.*?)\s*</user_query>', text or '', re.S)
     return m.group(1).strip() if m else ''
+
+
+class AntigravityTail(Tail):
+    """Observe direct native JSONL steps; no hooks, messages or control protocol.
+
+    A DONE step is not a completed turn, and native tool calls carry no result
+    correlation. Their observations are therefore closed only as unknown.
+    """
+
+    def __init__(self, path):
+        proof = antigravity.identity(path, HOME)
+        if not proof:
+            raise ValueError('unsupported Antigravity transcript')
+        self.aid = 'a:' + proof[0]
+        self.step_index, self.metadata_at, self.native_idle = -1, 0, None
+        describe(self.aid, True, runtime='Antigravity', name='Antigravity ' + proof[0][:4])
+        super().__init__(path)
+        self.refresh_metadata(True)
+
+    def close_open(self, old, ts):
+        for cid in list(self.calls):
+            emit(self.aid, 'result', old, ts, id=cid, text='', unknown=True)
+            self.calls.pop(cid, None)
+
+    def refresh_metadata(self, old=False):
+        if time.monotonic() - self.metadata_at < 3:
+            return
+        self.metadata_at = time.monotonic()
+        meta = antigravity.metadata(self.path, HOME)
+        idle = meta.pop('idle', None)
+        if meta:
+            describe(self.aid, old, **meta)
+        if idle is True and self.native_idle is not True:
+            self.close_open(old, time.time())
+            emit(self.aid, 'turn_end', old, how='Antigravity reports no active work; individual tool outcomes are not recorded')
+        elif idle is False and self.native_idle is not False:
+            emit(self.aid, 'beat', old, how='Antigravity reports active work')
+        self.native_idle = idle
+
+    def poll(self):
+        super().poll()
+        if not self.replaced:
+            self.refresh_metadata(self.first)
+
+    def handle(self, d, old):
+        if not isinstance(d, dict):
+            return
+        index = d.get('step_index')
+        if type(index) is not int or not 0 <= index <= 9007199254740991 or index <= self.step_index:
+            return
+        stamp = d.get('created_at')
+        try:
+            parsed = datetime.fromisoformat(stamp.replace('Z', '+00:00')) if isinstance(stamp, str) else None
+            ts = parsed.timestamp() if parsed is not None and parsed.tzinfo is not None else None
+        except (ValueError, OSError, OverflowError):
+            ts = None
+        if ts is None or not math.isfinite(ts) or ts <= 0:
+            return
+        source, kind, content = d.get('source'), d.get('type'), d.get('content')
+        if source not in ('USER_EXPLICIT', 'MODEL', 'SYSTEM') or kind not in ('USER_INPUT', 'PLANNER_RESPONSE', 'GENERIC', 'SYSTEM_MESSAGE'):
+            return
+        self.step_index = index
+        self.close_open(old, ts)
+        aid = self.aid
+        if source == 'USER_EXPLICIT' and kind == 'USER_INPUT' and isinstance(content, str) and content.strip():
+            remember_prompt(aid, content, ts, old)
+            emit(aid, 'user', old, ts, text=content)
+            emit(aid, 'turn_start', old, ts)
+            self.native_idle = False
+        elif source == 'MODEL' and kind == 'PLANNER_RESPONSE':
+            emit(aid, 'beat', old, ts)
+            if isinstance(content, str) and content.strip():
+                emit(aid, 'say', old, ts, text=content)
+        elif kind == 'GENERIC' and isinstance(content, str) and content.strip():
+            emit(aid, 'tool', old, ts, name='Antigravity activity', text=content, done=True, unknown=True)
+        # Thinking and token counters are deliberately not read: their context
+        # semantics are not established. Unknown system records are omitted.
+        calls = d.get('tool_calls')
+        if source != 'MODEL' or not isinstance(calls, list):
+            return
+        for position, call in enumerate(calls[:100]):
+            if not isinstance(call, dict) or not isinstance(call.get('name'), str) or not isinstance(call.get('args'), dict):
+                continue
+            name, inp, cid = call['name'][:200], call['args'], 'a%d:%d' % (index, position)
+            self.calls[cid] = name
+            path = text_of(inp.get('Path'), 4096)
+            if name == 'read_file':
+                emit(aid, 'read', old, ts, id=cid, path=path)
+            elif name == 'run_command':
+                cmd = text_of(inp.get('CommandLine'), LIVE_CAP)
+                emit(aid, 'run', old, ts, id=cid, cmd=cmd, why=text_of(inp.get('toolSummary')),
+                     alert=risk(cmd), check=is_check(cmd))
+            else:
+                emit(aid, 'tool', old, ts, id=cid, name=name, text=text_of(inp.get('toolSummary')))
 
 
 class CursorTail(Tail):
@@ -4375,11 +4482,16 @@ def watch():
                 load_titles()
                 desktop_scan()
                 found = native_sources()
+                native_paths = {p for p, cls in found if cls is AntigravityTail}
+                for path, reader in list(tails.items()):
+                    if isinstance(reader, AntigravityTail) and path not in native_paths:
+                        tails.pop(path, None)
+                        drop_agent(reader.aid, tails)
                 bad = 0
                 prune_keep(now)
                 for p, cls in found:
                     try:
-                        if p not in tails and (active(p, now, cls is not CursorTail) or kept(p, now)):
+                        if p not in tails and (source_active(p, now, cls) or kept(p, now)):
                             tails[p] = cls(p)
                             HUNTED.clear()              # a new log is new ground: orphans may be searched for again
                     except Exception as e:
@@ -5103,6 +5215,8 @@ class H(BaseHTTPRequestHandler):
             a = AGENTS[aid]
         if not a or not AID_RX.match(aid):
             return self.send(404, b'unknown agent')
+        if aid[0] == 'a':
+            return self.send(404, b'Antigravity does not expose a verified link to this chat. Open it in Antigravity.')
         if aid[0] == 'k':
             return self.send(404, b'Cursor does not record a link that opens this chat.')
         if aid[0] == 'e':

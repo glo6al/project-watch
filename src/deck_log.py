@@ -23,7 +23,7 @@ DEFAULTS = dict(enabled=False, paused=False, retention_days=30,
 LIMITS = dict(queue=256, events=50000, records=100000, bytes=64 * 1024 * 1024,
               batch_bytes=32768, projections=32, prose_bytes=2048, fallback_rows=1000)
 HEX = re.compile(r'[0-9a-f]{64}\Z')
-CHAT = re.compile(r'[xck]:[A-Za-z0-9_.:-]{1,196}\Z')
+CHAT = re.compile(r'[xcka]:[A-Za-z0-9_.:-]{1,196}\Z')
 KINDS = frozenset(('message', 'user', 'say', 'operation', 'read', 'write', 'edit',
                    'patch', 'run', 'search', 'web', 'tool', 'result', 'turn_start',
                    'turn_end', 'compact', 'queued', 'dequeued', 'waiting', 'ask',
@@ -437,7 +437,7 @@ class DeckLog:
             raise ValueError('invalid_record')
         if not all(isinstance(record[k], str) and HEX.fullmatch(record[k]) for k in ('key', 'stream')):
             raise ValueError('invalid_provenance')
-        prefixes = {'codex': 'x:', 'claude': 'c:', 'cursor': 'k:'}
+        prefixes = {'codex': 'x:', 'claude': 'c:', 'cursor': 'k:', 'antigravity': 'a:'}
         provider, chat, project = record['provider'], record['chat_id'], record['project_id']
         if provider not in prefixes or not isinstance(chat, str) or not chat.startswith(prefixes[provider]) or not CHAT.fullmatch(chat) or not isinstance(project, str) or (project and not HEX.fullmatch(project)) or record['time_basis'] not in ('source', 'observed') or not _finite(record['source_ts']):
             raise ValueError('invalid_scope')

@@ -1580,7 +1580,7 @@ function render(){
     const tf=!pos[id]?'':at?pos[id].tfF:pk?heldTf(id):pos[id].tfF+(w&&N.sure?' translateZ(150px)':'')+(kid?` scale(${KS})`:'');
     if(a.el.classList.contains('stepup')&&!at) a.el.classList.remove('stepup');      /* a step-up that did not finish (focus moved on) must not keep the transform frozen */
     if(tf&&a.el._tf!==tf&&!a.el.classList.contains('stepup')){a.el._tf=tf;a.el.style.transform=tf}      /* while stepping up, stepUp() owns the transform */
-    paintFace(a,id,faceState(S,N,w)); txt(a.$.name,a.name); txt(a.$.go,a.observed?'Lives in ChatGPT':'Open in '+(a.runtime||'app')+' ↗');
+    paintFace(a,id,faceState(S,N,w)); txt(a.$.name,a.name); a.$.go.disabled=String(id).startsWith('a:'); a.$.go.title=a.$.go.disabled?'Open this chat directly in Antigravity; no verified app link is available.':'Open this session in its desktop app'; txt(a.$.go,a.observed?'Lives in ChatGPT':'Open in '+(a.runtime||'app')+(a.$.go.disabled?'':' ↗'));
     txt(a.$.doing,S.label); cl.toggle('slow',!!S.slow);
     {const F=fuelOf(a); hid(a.$.fuel,!F); if(F){txt(a.$.fuelTxt,F.short); const w=F.frac==null?'':Math.round(F.frac*100)+'%'; hid(a.$.fuelBar.parentNode,F.frac==null);
       if(a.$.fuelBar._w!==w){a.$.fuelBar._w=w; a.$.fuelBar.style.width=w} a.$.fuel.className='fuel'+(F.frac>=.92?' hot':F.frac>=.8?' warm':'')}}
@@ -1878,7 +1878,7 @@ function deskEndDrag(){if(DESK.drag!==null){try{$('#deskSizer').releasePointerCa
 /* Desk response card: UI state only, never a second message transport. */
 const RESPONSE={entries:new Map(),current:null,exposure:null};
 function responseKey(a,n){return JSON.stringify([a.id,n.source||n.perm&&'perm:'+n.perm.pid||n.kind+':'+n.text])}
-function responseOpenReason(a){return a.observed||String(a.id).startsWith('e:')?'Open this conversation in ChatGPT to answer; no app link is available.':String(a.id).startsWith('k:')?'Open this conversation in Cursor to answer; no app link is recorded.':''}
+function responseOpenReason(a){return a.observed||String(a.id).startsWith('e:')?'Open this conversation in ChatGPT to answer; no app link is available.':String(a.id).startsWith('a:')?'Open this conversation in Antigravity to answer; no verified app link is available.':String(a.id).startsWith('k:')?'Open this conversation in Cursor to answer; no app link is recorded.':''}
 function responseText(n){return n.perm?String(n.perm.tool||'Permission')+'\n\n'+String(n.perm.text||''):String(n.text||'')}
 function responseInvalidate(){RESPONSE.exposure=null;for(const b of $('#responseDecisions').children)b.disabled=true}
 function responseVisible(){
@@ -1935,7 +1935,7 @@ addEventListener('visibilitychange',()=>{responseInvalidate();if(focus)render()}
 function deskPaint(){
   if(!focus||!A[focus])return;const a=A[focus],now=Date.now()/1000,S=stateOf(a,now),request=S.need,alert=activeAlert(a.alert,now);
   txt($('#deskName'),a.name);txt($('#deskStatus'),S.label);txt($('#deskGoal'),STEADY?(a.goal?'(goal hidden in steady mode)':''):a.goal||a.task||'No first message read');$('#deskGoal').title=$('#deskGoal').textContent;
-  txt($('#deskOpenApp'),a.observed?'Lives in ChatGPT':'Open in '+(a.runtime||'app')+' ↗');txt($('#deskPin'),PINS[focus]?'Unpin':'Pin');$('#deskPin').setAttribute('aria-pressed',String(!!PINS[focus]));
+  $('#deskOpenApp').disabled=String(a.id||focus).startsWith('a:');$('#deskOpenApp').title=$('#deskOpenApp').disabled?'Open this chat directly in Antigravity; no verified app link is available.':'Open this session in its desktop app';txt($('#deskOpenApp'),a.observed?'Lives in ChatGPT':'Open in '+(a.runtime||'app')+($('#deskOpenApp').disabled?'':' ↗'));txt($('#deskPin'),PINS[focus]?'Unpin':'Pin');$('#deskPin').setAttribute('aria-pressed',String(!!PINS[focus]));
   responsePaint(a,request);$('#deskRespond').hidden=!request;
   paintAlert($('#deskAlert'),alert);
   const list=$('#deskAgentList'),forest=deskAgentForest(order,A),keep=new Set(forest.map(n=>n.id)),active=document.activeElement,cursors=new Map();
@@ -2572,7 +2572,7 @@ async function cuClaudeRevoke(){return cuClaudeAction('revoke')}
 function ofContextValid(c){
   if(!c||typeof c!=='object'||Array.isArray(c))return null;
   if(c.scope==='room'&&Object.keys(c).every(k=>k==='scope'))return {scope:'room'};
-  if(c.scope!=='station'||Object.keys(c).some(k=>!['scope','agent','name'].includes(k))||typeof c.agent!=='string'||! /^[cxke]:[0-9a-f-]{8,64}$/.test(c.agent)||c.agent.endsWith('\n'))return null;
+  if(c.scope!=='station'||Object.keys(c).some(k=>!['scope','agent','name'].includes(k))||typeof c.agent!=='string'||! /^[cxkea]:[0-9a-f-]{8,64}$/.test(c.agent)||c.agent.endsWith('\n'))return null;
   if('name' in c&&(typeof c.name!=='string'||![...c.name].length||[...c.name].length>120))return null;
   return {scope:'station',agent:c.agent,...('name' in c?{name:c.name}:{})};
 }

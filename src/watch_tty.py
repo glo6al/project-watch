@@ -20,7 +20,7 @@ PROFILE_KEYS = {'Name', 'Guid', 'Badge Text', 'Background Color', 'Foreground Co
                 'Selection Color', 'Selected Text Color', 'Use Tab Color', 'Tab Color', 'Badge Color', 'Close Sessions On End'}
 UNSHOWN = {'Cc', 'Cf', 'Cs'}    # controls (escape sequences), format characters (bidi, zero-width), lone surrogates
 MAX_VIEWS = 6               # ponytail: the server allows 12 streams in all; this leaves the board, browser windows and --once theirs
-AID_RX = re.compile(r'[cxke]:[0-9a-f-]{8,64}\Z')   # the server's own agent ids (hello names the letters); nothing else goes into a tab's command
+AID_RX = re.compile(r'[cxkea]:[0-9a-f-]{8,64}\Z')  # the server's own agent ids (hello names the letters); nothing else goes into a tab's command
 ACTS = ('run', 'read', 'write', 'edit', 'tool', 'say', 'result', 'search', 'web', 'patch', 'spawn', 'ask', 'user', 'perm')
 NO_PROXY = urllib.request.build_opener(urllib.request.ProxyHandler({}))      # the key never goes to a proxy
 TOUCHED = []                # what this process changed in its tab, so exiting undoes exactly that

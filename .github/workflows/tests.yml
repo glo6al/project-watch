@@ -34,6 +34,7 @@ jobs:
       - run: python tests/test_officer_fulfillment.py
       - run: python tests/test_deck_log.py
       - run: python tests/test_deck_log_integration.py
+      - run: python tests/test_antigravity.py
       - run: python tests/test_officer_memory.py
       - run: python tests/test_officer_models.py
       - run: python tests/test_officer_instructions.py

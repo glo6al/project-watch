@@ -214,7 +214,7 @@ def live_view(boot, agents, log, pending, history=None, floor=0, now=None):
         pname = _text(os.path.basename(cwd.rstrip('/\\')))
         if pid:
             projects[pid] = {'project_id': pid, 'project_name': pname}
-        provider = {'Codex': 'codex', 'Claude': 'claude', 'Cursor': 'cursor', 'Codex cloud': 'codex_cloud'}.get(a.get('runtime'), 'unknown')
+        provider = {'Codex': 'codex', 'Claude': 'claude', 'Cursor': 'cursor', 'Codex cloud': 'codex_cloud', 'Antigravity': 'antigravity'}.get(a.get('runtime'), 'unknown')
         label = _text(a.get('name')) or aid
         subjects.append({'chat_id': aid, 'chat_name': label, 'provider': provider, 'project_id': pid, 'project_name': pname, 'live': True})
         values = {
@@ -234,7 +234,7 @@ def live_view(boot, agents, log, pending, history=None, floor=0, now=None):
         if type(seq) is not int or not aid:
             continue
         row = {'seq': seq, 'id': seq, 'chat_id': aid, 'chat_name': _text(agents.get(aid, {}).get('name')) or aid,
-               'provider': {'x:': 'codex', 'c:': 'claude', 'k:': 'cursor', 'e:': 'codex_cloud'}.get(aid[:2], 'unknown'),
+               'provider': {'x:': 'codex', 'c:': 'claude', 'k:': 'cursor', 'e:': 'codex_cloud', 'a:': 'antigravity'}.get(aid[:2], 'unknown'),
                'project_id': project_ids.get(aid, ''), 'project_name': projects.get(project_ids.get(aid), {}).get('project_name', ''),
                'source_ts': None, 'observed_ts': _stamp(event.get('ts')),
                'time_basis': 'observed', 'certainty': 'probably' if event.get('guess') else 'inferred' if event.get('soft') else 'recorded'}

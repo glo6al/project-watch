@@ -329,14 +329,14 @@ def normalize_scope(scope):
             if any(v not in ('live', 'retained') for v in values):
                 raise EvidenceRejected('invalid_evidence_scope')
         elif key == 'chat_ids':
-            if any(not re.fullmatch(r'[xcke]:[A-Za-z0-9_.:-]{1,196}', v) for v in values):
+            if any(not re.fullmatch(r'[xckea]:[A-Za-z0-9_.:-]{1,196}', v) for v in values):
                 raise EvidenceRejected('invalid_evidence_scope')
         elif any(not re.fullmatch(r'[0-9a-f]{64}', v) for v in values):
             raise EvidenceRejected('invalid_evidence_scope')
         out[key] = sorted(set(values))
     if 'filters' in scope:
         fields = {
-            'provider': {'claude', 'codex', 'cursor'},
+            'provider': {'claude', 'codex', 'cursor', 'antigravity'},
             'kind': {'message', 'user', 'say', 'operation', 'read', 'write', 'edit', 'patch', 'run',
                      'search', 'web', 'tool', 'result', 'turn_start', 'turn_end', 'compact', 'queued',
                      'dequeued', 'waiting', 'ask', 'task', 'task_upd', 'spawn', 'assign', 'see'},

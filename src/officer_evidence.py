@@ -18,10 +18,10 @@ from deck_log import CHAT, HEX, KINDS, OPERATIONS, SECRET, _prose, _relative, _t
 
 SOURCES = ('live', 'retained')
 # Process-list observations are live-only; Deck Log capture identities stay unchanged.
-LIVE_CHAT = re.compile(r'[xcke]:[A-Za-z0-9_.:-]{1,196}\Z')
+LIVE_CHAT = re.compile(r'[xckea]:[A-Za-z0-9_.:-]{1,196}\Z')
 FACT_FIELDS = ('model', 'context', 'branch', 'parent', 'last_activity', 'owner_request')
 FILTERS = {
-    'provider': {'codex', 'claude', 'cursor', 'codex_cloud'}, 'kind': KINDS,
+    'provider': {'codex', 'claude', 'cursor', 'codex_cloud', 'antigravity'}, 'kind': KINDS,
     'role': {'', 'user', 'assistant'}, 'operation': OPERATIONS,
     'phase': {'', 'started', 'result', 'observation'},
     'outcome': {'success', 'failure', 'pending', 'unknown'},
@@ -247,7 +247,7 @@ class EvidenceSession:
                 continue
             chat = item.get('chat_id', item.get('id'))
             result.append(dict(chat_id=chat, chat_name=_text(item.get('chat_name', item.get('name', ''))),
-                               provider=item.get('provider') if item.get('provider') in FILTERS['provider'] else {'x': 'codex', 'c': 'claude', 'k': 'cursor', 'e': 'codex_cloud'}.get(chat[0], ''),
+                               provider=item.get('provider') if item.get('provider') in FILTERS['provider'] else {'x': 'codex', 'c': 'claude', 'k': 'cursor', 'e': 'codex_cloud', 'a': 'antigravity'}.get(chat[0], ''),
                                project_id=item.get('project_id') if HEX.fullmatch(str(item.get('project_id', ''))) else '',
                                project_name=_text(item.get('project_name', '')), live=True, retained=False))
         return result
