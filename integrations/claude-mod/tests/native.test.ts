@@ -110,7 +110,7 @@ test('official runtime accepts one shared setup and detached automatic registrat
   expect(registrations.length).toBe(1);
   expect(polls.length>0).toBe(true);
   expect(polls[0].client_id).toBe(registrations[0].client_id);
-  const key='watch-owner-runtime-v2:'+NATIVE+':'+registrations[0].client_id;
+  const key='watch-owner-runtime-v3:'+NATIVE+':'+registrations[0].client_id;
   expect(values.has(key)).toBe(true);
   expect(values.get(key).grant).toBe(undefined);
   expect(values.get('watch-owner-global-v1').grant).toBe(config.grant);
@@ -301,5 +301,48 @@ test('negotiated notice keeps attribution and requires no answer marker or turn 
  expect(registrations.length).toBe(2);expect(registrations[0].reply_notice_protocol).toBe(undefined);expect(registrations[1].connection_seq>registrations[0].connection_seq).toBe(true);
  expect(submissions.length).toBe(1);expect(submissions[0].origin.kind).toBe('plugin');expect(submissions[0].origin.asUser===true).toBe(false);
  expect(events.length).toBe(1);expect(events[0].kind).toBe('submitted');
- expect([...values.entries()].some(([key,value])=>key.startsWith('watch-owner-runtime-v2:')&&value.requests?.[REQUEST])).toBe(false);
+ expect([...values.entries()].some(([key,value])=>key.startsWith('watch-owner-runtime-v3:')&&value.requests?.[REQUEST])).toBe(false);
+});
+
+
+test('official host lifecycle v2 reconnect retains bound turn and observes additional main input',async($,on)=>{
+  const clock=mock.clock(on,{now:100000});
+  const config={version:1,grant_id:ENROLLMENT,grant:'a'.repeat(64),port:8793};
+  const values=new Map([['watch-owner-global-v1',config]]),events=[],registrations=[],submissions=[];
+  let claimed=false,stale=false,sequence=-1;
+  const peerEnvelope='WATCH_PEER_REQUEST '+REQUEST+'\nMessage: "Fictional request"';
+  on('session.id',()=>({value:NATIVE}));on('session.cwd',()=>({value:'/fictional/project'}));on('session.surfaces',()=>({value:['desktop']}));
+  on('store.get',($,e)=>({value:values.get(e.key)}));on('store.keys',()=>({value:[...values.keys()]}));
+  on('store.set',($,e)=>{values.set(e.key,JSON.parse(JSON.stringify(e.value)));return{value:undefined};});
+  on('command.register',()=>({value:undefined}));on('session.start',($,e)=>({cwd:e.cwd}));
+  on('http.fetch',($,e)=>{
+    const body=JSON.parse(e.init.body);let data;
+    const session={version:1,native_id:NATIVE,generation:GENERATION,heartbeat_interval_ms:2000,lease_seconds:12,peer_protocol:1,supported_lifecycle_protocol:2,lifecycle_protocol:sequence>=1?2:0};
+    if(e.url.endsWith('/register')){registrations.push(body);sequence=body.connection_seq;data={...session,lifecycle_protocol:body.lifecycle_protocol===2?2:0,grant_id:ENROLLMENT,enrollment_id:ENROLLMENT,token:'b'.repeat(64),client_id:body.client_id,connection_seq:sequence};}
+    else if(e.url.endsWith('/poll')){
+      if(stale){stale=false;return{value:{ok:false,status:409,headers:{},text:JSON.stringify({error_code:'stale_connection'})}};}
+      data={...session,requests:[],claim:!claimed&&body.accept?{request_id:REQUEST,attempt_id:ATTEMPT,native_id:NATIVE,generation:GENERATION,envelope:peerEnvelope,origin:'peer',expires_at:1000}:null};
+      if(data.claim)claimed=true;
+    }else if(e.url.endsWith('/event')){events.push(body);data={request_id:body.request_id,state:body.kind==='completed'?'unknown':'awaiting_reply',turn_id:body.turn_id||''};}
+    else throw Error('unexpected fictional request');
+    return{value:{ok:true,status:200,headers:{},text:JSON.stringify(data)}};
+  });
+  on('prompt.submit',async(core,e)=>{
+    submissions.push(e.text);
+    if(e.text===peerEnvelope)await $.turn.start({text:e.text,turnId:'retained-native-turn'});
+    return{text:e.text};
+  });
+  on('turn.start',($,e)=>({turnId:e.turnId}));on('turn.complete',($,e)=>({text:e.answer}));
+  on('session.receive',($,e)=>({text:e.text}));
+  await $.session.start({cwd:'/fictional/project',surface:'desktop',isInteractive:true});
+  await clock.advance(2000);await clock.advance(2000);await clock.advance(2000);
+  expect(submissions.length).toBe(1);expect(events.some(e=>e.kind==='started')).toBe(true);
+  stale=true;await clock.advance(2000);await clock.advance(2000);await clock.advance(2000);
+  expect(registrations.length>=4).toBe(true);expect(events.some(e=>e.kind==='unknown')).toBe(false);
+  await $.session.receive({text:'Private owner input during the turn',origin:{kind:'sdk'}});
+  await $.turn.complete({turnId:'retained-native-turn',answer:ANSWER,isAborted:false,reason:'answer',durationMs:1});
+  await clock.advance(2000);
+  const completed=events.filter(e=>e.kind==='completed');
+  expect(completed.length).toBe(1);expect(completed[0].outcome).toBe('withheld');expect(completed[0].answer).toBe('');
+  expect(submissions.length).toBe(1);
 });

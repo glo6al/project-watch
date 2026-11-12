@@ -26,6 +26,9 @@ const fail=()=>new Error('Peer operation could not be confirmed. No request was 
 class PeerReplyError extends Error{
   constructor(status,reason){
     super(status<500?'Peer request rejected ('+status+'): '+reason:'Peer server error ('+status+'): '+reason+' Delivery may be uncertain; check list_requests or get_reply before sending again.');
+    // Only a signed, explicit pre-admission rejection can establish this.
+    // Generic errors and response loss still require request-ID recovery.
+    this.notAccepted=status===429&&reason.includes('The new request was not accepted');
   }
 }
 export async function readCredential(file){
@@ -168,7 +171,9 @@ export async function main(){
       return {content:[{type:'text',text:JSON.stringify({origin:'peer',untrusted_peer_data:result})}]};
     }catch(error){
       const content=[{type:'text',text:error instanceof PeerReplyError?error.message:'Peer operation could not be confirmed. No request was retried.'}];
-      if(requestId)content.push({type:'text',text:'Request ID: '+requestId+'. Acceptance is not confirmed. Use get_reply or list_requests to check; do not resend.'});
+      if(requestId)content.push({type:'text',text:'Request ID: '+requestId+(error instanceof PeerReplyError&&error.notAccepted
+        ?'. This attempt was not accepted. No new message was submitted; do not resend automatically.'
+        :'. Acceptance is not confirmed. Use get_reply or list_requests to check; do not resend.')});
       return {isError:true,content};
     }
   });

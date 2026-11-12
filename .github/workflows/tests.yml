@@ -48,6 +48,9 @@ jobs:
       - run: python tests/test_officer_evidence.py
       - run: python tests/test_officer_capabilities.py
       - run: python tests/test_officer_answer_assessment.py
+      - run: python tests/test_bridge_preflight.py
+      - run: python tests/test_peer_lifecycle.py
+      - run: python tests/test_codex_transcript.py
       - run: python tests/test_peer_bridge.py
       - run: python tests/test_shared_bridge.py
       - run: python tests/test_chat_directory.py

@@ -2,7 +2,7 @@ import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {createHash} from 'node:crypto';
 import {register} from '../hooks/register.js';
-import {matchingPrompt, matchingAnswer, pairing, validClaim, validNoticeClaim, replyNoticeText} from '../hooks/protocol.js';
+import {matchingPrompt, matchingAnswer, pairing, validClaim, validNoticeClaim, replyNoticeText, lifecycleReceipt, receiptRecord} from '../hooks/protocol.js';
 
 const NATIVE='11111111-1111-4111-8111-111111111111', GENERATION='22222222-2222-4222-8222-222222222222';
 const REQUEST='33333333-3333-4333-8333-333333333333', ATTEMPT='44444444-4444-4444-8444-444444444444';
@@ -73,11 +73,11 @@ async function harness({storage=new Map(), claimed=true, submit, fetch, nativeId
   const waitForEvent=(kind,options)=>waitCall('/event',body=>body.kind===kind,options).then(c=>c.body);
   const ownData=()=>{
     const client=calls.filter(c=>c.url.endsWith('/register')&&c.body.native_id===native).at(-1)?.body.client_id;
-    return (client&&storage.get('watch-owner-runtime-v2:'+native+':'+client))||storage.get('watch-owner-v1:'+native);
+    return (client&&storage.get('watch-owner-runtime-v3:'+native+':'+client))||storage.get('watch-owner-v1:'+native);
   };
   const waitAck=async(kind,options={})=>{
-    const body=await waitForEvent(kind,options),event={request_id:body.request_id,attempt_id:body.attempt_id,kind};
-    if(body.turn_id!==undefined)event.turn_id=body.turn_id;if(body.answer!==undefined)event.answer=body.answer;
+    const body=await waitForEvent(kind,options),event={...body};
+    for(const key of ['generation','native_id','client_id'])delete event[key];
     const hash=createHash('sha256').update(JSON.stringify(event)).digest('hex');
     return bus.wait(()=>{
       const data=ownData(),request=data?.requests[body.request_id];
@@ -388,7 +388,7 @@ const registered=(body,extra={})=>({version:1,native_id:body.native_id,generatio
   heartbeat_interval_ms:2000,lease_seconds:12,grant_id:CONFIG.grant_id,enrollment_id:ENROLLMENT,
   token:'b'.repeat(64),client_id:body.client_id,connection_seq:body.connection_seq,...extra});
 const globalFetch=(url,body)=>url.endsWith('/register')?responseJSON(registered(body)):null;
-const runtimeRows=storage=>[...storage.entries()].filter(([key])=>key.startsWith('watch-owner-runtime-v2:'));
+const runtimeRows=storage=>[...storage.entries()].filter(([key])=>key.startsWith('watch-owner-runtime-v3:'));
 
 test('one direct-owner setup propagates to two UUIDs sharing one project without per-chat commands',async()=>{
   const storage=new Map();
@@ -529,7 +529,7 @@ test('conflicting attempt digest in recovered shard stops claims without rewriti
   const h=await harness({storage,fetch:globalFetch});await h.tick();await h.tick();await h.waitSubmission();await h.waitAck('submitted');
   const [key,data]=runtimeRows(storage)[0];
   const foreign=copy(data);foreign.requests[REQUEST].envelope_digest='0'.repeat(64);
-  const foreignKey='watch-owner-runtime-v2:'+NATIVE+':'+ATTEMPT;storage.set(foreignKey,foreign);
+  const foreignKey='watch-owner-runtime-v3:'+NATIVE+':'+ATTEMPT;storage.set(foreignKey,foreign);
   h.setNow(110000);await h.drive(async()=>!JSON.parse((await h.command('watch-status')).text).connected,'conflicting shard recovery');
   assert.equal(JSON.parse((await h.command('watch-status')).text).connected,false);
   assert.deepEqual(storage.get(foreignKey),foreign);assert.equal(h.submissions.length,1);
@@ -616,7 +616,7 @@ test('aggregate recovery cap fails closed and preserves other runtime data',asyn
   const storage=new Map([[GLOBAL_KEY,CONFIG]]);
   const h=await harness({storage,claimed:false,fetch:globalFetch});await h.tick();
   const data=copy(runtimeRows(storage)[0][1]);data.padding='x'.repeat(4*1024*1024);
-  const key='watch-owner-runtime-v2:'+NATIVE+':'+ATTEMPT;storage.set(key,data);
+  const key='watch-owner-runtime-v3:'+NATIVE+':'+ATTEMPT;storage.set(key,data);
   h.setNow(110000);await h.tick();
   const status=JSON.parse((await h.command('watch-status')).text);
   assert.equal(status.connected,false);assert.match(status.error,/data limit/);
@@ -945,7 +945,7 @@ test('submitted ACK digest delay requires a genuinely eligible recovery tick bef
     const h=await harness({storage:new Map([[GLOBAL_KEY,CONFIG]]),fetch:globalFetch});await h.tick();await h.tick();await h.waitSubmission();
     await bounded(gate.entered,'real submitted ACK digest');
     const [key,data]=runtimeRows(h.storage)[0],foreign=copy(data);foreign.requests[REQUEST].envelope_digest='0'.repeat(64);
-    const foreignKey='watch-owner-runtime-v2:'+NATIVE+':'+ATTEMPT;h.storage.set(foreignKey,foreign);h.setNow(110000);
+    const foreignKey='watch-owner-runtime-v3:'+NATIVE+':'+ATTEMPT;h.storage.set(foreignKey,foreign);h.setNow(110000);
     await h.tick();assert.equal((await status(h)).connected,true,'held ACK keeps the recovery callback gated');
     release();await h.waitAck('submitted');await h.drive(async()=>!(await status(h)).connected,'conflict after ACK');
     assert.deepEqual(h.storage.get(foreignKey),foreign);assert.equal(h.storage.get(key).requests[REQUEST].envelope_digest,data.requests[REQUEST].envelope_digest);assert.equal(h.submissions.length,1);
@@ -967,7 +967,7 @@ test('answered HTTP arrival is earlier than durable ACK removal and hash persist
 test('own awaited identity cleanup cannot absorb a concurrent lifecycle invalidation',async()=>{
   const gate=latch();let held=false;
   const h=await harness({startup:sdk,storage:new Map([[GLOBAL_KEY,CONFIG]]),fetch:globalFetch,
-    storeSet:(key,value)=>held&&key.startsWith('watch-owner-runtime-v2:')&&value.requests[REQUEST]?.events.some(e=>e.kind==='unknown')?gate.hold():undefined});
+    storeSet:(key,value)=>held&&key.startsWith('watch-owner-runtime-v3:')&&value.requests[REQUEST]?.events.some(e=>e.kind==='unknown')?gate.hold():undefined});
   await h.tick();await h.tick();await h.waitSubmission();await h.waitAck('submitted');
   const cursor=h.calls.length;await h.drive(()=>h.calls.slice(cursor).some(c=>c.url.endsWith('/poll')),'pre-cleanup heartbeat');
   held=true;h.setCwd('/fictional/other');const pending=h.tick();
@@ -1034,7 +1034,7 @@ test('old server ignores isolated retained notice ACK while ordinary delivery st
  }});await h.tick();await h.tick();await h.waitSubmission();
  assert.deepEqual(h.submissions,[{text:ENVELOPE,asUser:false}]);assert(!h.events().some(e=>e.request_id===NOTICE));
  assert.deepEqual(storage.get(key),shard);
- assert(!key.startsWith('watch-owner-runtime-v2:'+NATIVE+':'),'old0.3 recovery filter cannot see notices');
+ assert(!key.startsWith('watch-owner-runtime-v3:'+NATIVE+':'),'old0.3 recovery filter cannot see notices');
  const h2=await harness({storage,claimed:false,fetch:supportedFetch});await h2.tick();await h2.waitForEvent('submitted');
  await h2.drive(()=>noticeRows(storage).some(([k,v])=>k!==key&&v.acknowledged&&Object.keys(v.acknowledged).length>0),'recovered notice ACK');
  assert.equal(h2.submissions.length,0);h2.setNow(112000);await h2.tick();assert.equal(h2.events().filter(e=>e.request_id===NOTICE).length,1);
@@ -1106,4 +1106,101 @@ test('expired server notice ACK tombstone clears retained acknowledgement before
  await h.tick();await h.waitForEvent('submitted');await h.tick();await h.waitSubmission();
  assert.deepEqual(h.submissions,[{text:ENVELOPE,asUser:false}]);assert.equal(h.events().filter(e=>e.request_id===NOTICE).length,1);
  assert(noticeRows(h.storage).some(([k,v])=>k!==key&&!v.requests[NOTICE].events.length&&Object.keys(v.acknowledged).length===1));
+});
+
+
+async function lifecycleHarness(options={}) {
+  return peerHarness({...options,fetch:(url,body,init)=>{
+    const custom=options.fetch?.(url,body,init);if(custom)return custom;
+    if(url.endsWith('/register'))return responseJSON(registered(body,{peer_protocol:1,supported_lifecycle_protocol:2,lifecycle_protocol:body.lifecycle_protocol===2?2:0}));
+  }});
+}
+
+test('v2 completion before submit settlement permits the next request',async()=>{
+  for(const mixed of [false,true]){
+    const gate=latch();
+    const h=await lifecycleHarness({submit:()=>gate.hold()});
+    try{
+      await h.tick();await h.waitSubmission();
+      await h.call('turn.start',{text:PEER_ENVELOPE,turnId:'early-completion'});
+      if(mixed)await h.call('session.receive',{text:'Fictional additional input',origin:{kind:'composer'}});
+      await h.call('turn.complete',{turnId:'early-completion',answer:ANSWER,isAborted:false,reason:'answer'});
+      await h.waitAck('completed');
+      assert.equal(h.events().find(e=>e.kind==='completed').outcome,mixed?'withheld':'answered');
+      gate.release({text:PEER_ENVELOPE});await h.waitSettlement();
+      await h.drive(()=>h.calls.filter(c=>c.url.endsWith('/poll')).at(-1)?.body.accept===true,'terminal flight released after submit settles');
+      assert.equal(h.submissions.length,1);
+      assert.equal(h.events().filter(e=>e.kind==='completed').length,1);
+    }finally{gate.release({text:PEER_ENVELOPE});}
+  }
+});
+
+test('same-runtime reconnect before bound completion preserves the original request on v1 and v2',async()=>{
+  for(const v2 of [false,true]){
+    let stale=false;
+    const h=await (v2?lifecycleHarness:peerHarness)({fetch:(url)=>{
+      if(url.endsWith('/poll')&&stale){stale=false;return responseJSON({error_code:'stale_connection'},409);}
+    }});
+    await h.tick();await h.waitSubmission();await h.call('turn.start',{text:PEER_ENVELOPE,turnId:'retained-turn'});await h.waitAck('started');
+    const cursor=h.calls.length, registrations=h.calls.filter(c=>c.url.endsWith('/register')).length;
+    stale=true;await h.drive(()=>h.calls.slice(cursor).some(c=>c.url.endsWith('/poll')&&c.response?.status===409),'stale during bound turn');
+    h.setNow(102000);await h.drive(()=>h.calls.filter(c=>c.url.endsWith('/register')).length>registrations,'reconnect during turn');
+    await h.drive(()=>h.calls.slice(cursor).some(c=>c.url.endsWith('/poll')&&c.body.accept===false),'retained execution owns admission');
+    await h.call('turn.complete',{turnId:'retained-turn',answer:ANSWER,isAborted:false,reason:'answer'});
+    await h.waitAck(v2?'completed':'answered');
+    assert.equal(h.submissions.length,1);assert(!h.events().some(e=>e.kind==='unknown'));
+    const events=h.events().filter(e=>e.kind===(v2?'completed':'answered'));
+    assert.equal(events.length,1);assert.equal(events[0].answer,ANSWER);
+    const row=runtimeRows(h.storage)[0][1].requests[REQUEST];assert.equal(row.execution_completed,true);assert.equal(row.completed,true);
+    if(v2){assert.equal(events[0].outcome,'answered');assert.match(events[0].event_id,/^[0-9a-f-]{36}$/);assert.equal(events[0].occurred_at,102000);}
+  }
+});
+
+test('lifecycle capability is negotiated only after advertisement and old server sees only v1 fields',async()=>{
+  const modern=await lifecycleHarness();await modern.tick();await modern.waitSubmission();
+  const registrations=modern.calls.filter(c=>c.url.endsWith('/register')).map(c=>c.body);
+  assert.equal(registrations[0].lifecycle_protocol,undefined);assert.equal(registrations[1].lifecycle_protocol,2);
+  const old=await peerHarness();await old.tick();await old.waitSubmission();await old.call('turn.start',{text:PEER_ENVELOPE,turnId:'old'});
+  await old.call('turn.complete',{turnId:'old',answer:ANSWER,isAborted:false,reason:'answer'});await old.waitAck('answered');
+  assert(old.calls.filter(c=>c.url.endsWith('/register')).every(c=>c.body.lifecycle_protocol===undefined));
+  assert(old.events().every(e=>!('event_id' in e)&&!('occurred_at' in e)&&e.kind!=='completed'));
+});
+
+test('v2 completion retry uses one persisted event ID and survives reload without resubmitting',async()=>{
+  let fail=true;const storage=new Map([[GLOBAL_KEY,CONFIG]]);
+  const h=await lifecycleHarness({storage,fetch:(url,body)=>url.endsWith('/event')&&body.kind==='completed'&&fail?responseJSON({},503):null});
+  await h.tick();await h.waitSubmission();await h.call('turn.start',{text:PEER_ENVELOPE,turnId:'ack-lost'});
+  await h.call('turn.complete',{turnId:'ack-lost',answer:ANSWER,isAborted:false,reason:'answer'});
+  await h.waitCall('/event',(b,c)=>b.kind==='completed'&&c.response?.status===503,{settled:true});
+  const original=h.events().find(e=>e.kind==='completed');
+  const receipt=runtimeRows(storage)[0][1].requests[REQUEST];assert.equal(lifecycleReceipt(receipt,REQUEST),true);assert.equal(receiptRecord(receipt,REQUEST),false);
+  fail=false;const reload=await lifecycleHarness({storage,claimed:false});await reload.tick();await reload.waitAck('completed');
+  const recovered=reload.events().find(e=>e.kind==='completed');
+  for(const key of ['event_id','occurred_at','turn_id','answer','outcome'])assert.equal(recovered[key],original[key]);
+  assert.equal(reload.submissions.length,0);
+  assert(runtimeRows(storage).every(([key])=>!key.startsWith('watch-owner-runtime-v2:')));
+});
+
+test('v2 terminal execution releases local admission without publishing malformed aborted or mixed input answers',async()=>{
+  for(const scenario of ['unusable','aborted','prompt.submit','session.receive']){
+    const h=await lifecycleHarness();await h.tick();await h.waitSubmission();await h.call('turn.start',{text:PEER_ENVELOPE,turnId:'terminal'});
+    if(scenario.includes('.'))await h.call(scenario,{text:'Private owner instruction',origin:{kind:'composer'}});
+    await h.call('turn.complete',{turnId:'terminal',answer:scenario==='unusable'?'No marker':ANSWER,isAborted:scenario==='aborted',reason:'answer'});await h.waitAck('completed');
+    const completed=h.events().find(e=>e.kind==='completed');
+    assert.equal(completed.outcome,scenario.includes('.')?'withheld':scenario);assert.equal(completed.answer,'');
+    const receipt=runtimeRows(h.storage)[0][1].requests[REQUEST];assert.equal(receipt.execution_completed,true);assert.equal(receipt.completed,false);
+    await h.call('turn.complete',{turnId:'terminal',answer:ANSWER,isAborted:false,reason:'answer'});
+    assert.equal(h.events().filter(e=>e.kind==='completed').length,1);
+    await h.tick();assert.equal(h.calls.filter(c=>c.url.endsWith('/poll')).at(-1).body.accept,true);
+    assert(!JSON.stringify(receipt.journal).includes('Private owner instruction'));assert(receipt.journal.length<=16);
+  }
+});
+
+test('new runtime reads legacy receipts without modifying their namespace or resubmitting input',async()=>{
+  const h=await peerHarness();await h.tick();await h.waitSubmission();await h.call('turn.start',{text:PEER_ENVELOPE,turnId:'legacy'});await h.waitAck('started');
+  const [key,old]=runtimeRows(h.storage)[0];const legacyKey=key.replace('runtime-v3:','runtime-v2:');
+  h.storage.delete(key);h.storage.set(legacyKey,copy(old));const before=JSON.stringify(h.storage.get(legacyKey));
+  const reload=await lifecycleHarness({storage:h.storage,claimed:false});await reload.tick();
+  assert.equal(JSON.stringify(h.storage.get(legacyKey)),before);assert.equal(reload.submissions.length,0);
+  assert(runtimeRows(h.storage).some(([,r])=>r.requests[REQUEST]?.phase==='unknown'));
 });

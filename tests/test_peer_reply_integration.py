@@ -28,7 +28,7 @@ CODEX_SOURCE = '44444444-4444-4444-8444-444444444444'
 @unittest.skipIf(os.name == 'nt' or not shutil.which('node') or not SDK.is_dir(),
                  'Requires POSIX, Node and optional MCP dependencies')
 class PeerReplyIntegration(unittest.TestCase):
-    def test_two_source_providers_return_after_the_first_turn(self):
+    def test_both_directions_and_followups_return_after_the_first_turn(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary).resolve()
             root.chmod(0o700)
@@ -55,17 +55,33 @@ class PeerReplyIntegration(unittest.TestCase):
                     'cwd': str(project), 'message': {'content': 'x' * 600000}}) + '\n')
             self.assertGreater(source_path.stat().st_size, 524288)
             notices = root / 'codex-notices.jsonl'
+            source_ready = root / 'source-ready'
+            questions = root / 'codex-questions.jsonl'
             cli = root / 'mock-native-queue'
             cli.write_text('#!' + sys.executable + '\n' +
-                           'import json,sys\n'
+                           'import json,sys,time,uuid,pathlib\n'
                            'args=sys.argv[1:]\n'
                            'assert args[:1]==["queue"]\n'
                            'thread=args[args.index("--thread")+1]\n'
                            'message=args[args.index("--message")+1]\n'
                            'assert thread==' + repr(CODEX_SOURCE) + '\n'
-                           'assert message.startswith("WATCH_PEER_REPLY ")\n'
-                           'with open(' + repr(str(notices)) + ',"a") as f:\n'
-                           ' f.write(json.dumps({"thread":thread,"message":message})+"\\n")\n')
+                           'if message.startswith("WATCH_PEER_REPLY "):\n'
+                           ' with open(' + repr(str(notices)) + ',"a") as f:\n'
+                           '  f.write(json.dumps({"thread":thread,"message":message})+"\\n")\n'
+                           'else:\n'
+                           ' assert message.startswith("WATCH_PEER_REQUEST ")\n'
+                           ' deadline=time.monotonic()+5\n'
+                           ' while not pathlib.Path(' + repr(str(source_ready)) + ').exists():\n'
+                           '  assert time.monotonic()<deadline\n'
+                           '  time.sleep(.01)\n'
+                           ' turn=str(uuid.uuid4());rid=message.splitlines()[0].split()[1]\n'
+                           ' rows=[("event_msg",{"type":"task_started","turn_id":turn}),\n'
+                           '  ("response_item",{"type":"message","role":"user","content":[{"text":message}]}),\n'
+                           '  ("event_msg",{"type":"task_complete","turn_id":turn,"last_agent_message":"WATCH_REPLY "+rid+"\\nFictional claude answer."})]\n'
+                           ' with open(' + repr(str(transcript)) + ',"a") as f:\n'
+                           '  for typ,payload in rows:f.write(json.dumps({"type":typ,"payload":payload})+"\\n")\n'
+                           ' with open(' + repr(str(questions)) + ',"a") as f:\n'
+                           '  f.write(json.dumps({"request_id":rid,"thread":thread})+"\\n")\n')
             cli.chmod(0o700)
             store = officer_messaging.MessagingStore(str(root / 'state'), str(sessions), cli=str(cli))
             store.available = store.codex_available = True
@@ -161,13 +177,14 @@ class PeerReplyIntegration(unittest.TestCase):
                                 'project': str(project), 'native': NATIVE, 'codex_source': CODEX_SOURCE,
                                 'credential': shared_file, 'hook_credential': hook_file,
                                 'hook_script': str(ROOT / 'scripts/watch_reply_hook.py'),
-                                'python': sys.executable, 'codex_notice_file': str(notices)}),
+                                'python': sys.executable, 'codex_notice_file': str(notices),
+                                'source_ready_file': str(source_ready), 'codex_question_file': str(questions)}),
                             text=True, capture_output=True, timeout=60)
                     self.assertEqual(process.returncode, 0, process.stdout + '\n' + process.stderr)
                     self.assertEqual(cold_source, [True])
                     result = json.loads(process.stdout)
-                    self.assertEqual(len(result['cases']), 2)
-                    for case, provider in zip(result['cases'], ['codex', 'claude']):
+                    self.assertEqual(len(result['cases']), 4)
+                    for case, provider in zip(result['cases'], ['codex', 'claude', 'codex', 'claude']):
                         self.assertEqual(case['source_provider'], provider)
                         self.assertEqual(case['reply'], 'Fictional ' + provider + ' answer.')
                         self.assertEqual(case['question_submissions'], 1)
@@ -181,7 +198,7 @@ class PeerReplyIntegration(unittest.TestCase):
                         deliveries = store.db.execute('SELECT request_id,notice_id,state,data FROM peer_reply_deliveries').fetchall()
                         self.assertEqual({row[0] for row in deliveries},
                                          {case['public_request_id'] for case in result['cases']})
-                        self.assertEqual(len({row[1] for row in deliveries}), 2)
+                        self.assertEqual(len({row[1] for row in deliveries}), 4)
                         sources = set()
                         attempts = set()
                         for public_id, notice_id, state, raw in deliveries:
@@ -192,9 +209,9 @@ class PeerReplyIntegration(unittest.TestCase):
                             self.assertTrue(delivery['attempted_at'])
                             attempts.add(delivery['attempt_id'])
                             sources.add(delivery['source']['agent_id'])
-                        self.assertEqual(len(attempts), 2)
+                        self.assertEqual(len(attempts), 4)
                         self.assertEqual(sources, {'x:' + CODEX_SOURCE, 'c:' + NATIVE[1]})
-                        self.assertEqual(store.db.execute('SELECT COUNT(*) FROM shared_bridge_requests').fetchone()[0], 2)
+                        self.assertEqual(store.db.execute('SELECT COUNT(*) FROM shared_bridge_requests').fetchone()[0], 4)
                     self.assertEqual(store.snapshot()['requests'], [])
                 finally:
                     stop.set()

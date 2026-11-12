@@ -8,6 +8,7 @@ import hmac
 import json
 import os
 import peer_bridge
+import peer_lifecycle
 import secrets
 import time
 import uuid
@@ -72,7 +73,8 @@ class ClaudeMod:
         columns = {r[1] for r in self.db.execute('PRAGMA table_info(claude_mod_enrollments)')}
         for name, kind in (('grant_id', 'TEXT'), ('client_id', 'TEXT'), ('connection_seq', 'INTEGER'),
                            ('peer_protocol', 'INTEGER NOT NULL DEFAULT 0'),
-                           ('reply_notice_protocol', 'INTEGER NOT NULL DEFAULT 0')):
+                           ('reply_notice_protocol', 'INTEGER NOT NULL DEFAULT 0'),
+                           ('lifecycle_protocol', 'INTEGER NOT NULL DEFAULT 0')):
             if name not in columns:
                 self.db.execute(f'ALTER TABLE claude_mod_enrollments ADD COLUMN {name} {kind}')
         self.db.execute('CREATE INDEX IF NOT EXISTS claude_mod_agents ON claude_mod_enrollments(agent,active)')
@@ -88,7 +90,7 @@ class ClaudeMod:
         # Connections cannot survive a WATCH process restart. Original receipts do.
         self.db.execute('UPDATE claude_mod_enrollments SET generation=NULL,last_seen=0')
         for row in self.rows():
-            if row.get('launched') and row['state'] not in ('answered', 'failed'):
+            if row.get('launched') and not row.get('settled') and row['state'] not in ('answered', 'failed'):
                 row.update(state='unknown', error='WATCH restarted after a Claude mod claim. It will not resubmit.')
                 self.put(row)
         self.db.commit()
@@ -108,6 +110,7 @@ class ClaudeMod:
         return bool(ledger and ledger[0] == row.get('agent') and ident(row.get('mod_enrollment')))
 
     def put(self, row):
+        peer_lifecycle.reconcile(self.db, row)
         self.db.execute('INSERT OR REPLACE INTO requests VALUES (?,?)', (row['request_id'], json.dumps(row)))
 
     def uncertain(self, enrollment, reason):
@@ -124,7 +127,7 @@ class ClaudeMod:
             self.uncertain(eid, 'The Claude mod disconnected. Delivery is unknown; nothing was resubmitted.')
             self.db.execute('UPDATE claude_mod_enrollments SET generation=NULL WHERE id=?', (eid,))
         for row in self.rows():
-            if row['state'] in ('answered', 'failed'):
+            if row.get('settled') or row['state'] in ('answered', 'failed'):
                 continue
             if not row.get('launched') and now >= row['created'] + TTL:
                 row.update(state='failed', error='This message expired before a Claude mod claimed it. Nothing was submitted.')
@@ -148,13 +151,14 @@ class ClaudeMod:
 
     def session(self, entry):
         result = dict(version=1, native_id=entry['agent'][2:], generation=entry['generation'], heartbeat_interval_ms=2000, lease_seconds=LEASE, peer_protocol=entry['peer_protocol'],
-                      reply_notice_protocol=entry['reply_notice_protocol'], supported_reply_notice_protocol=1)
+                      reply_notice_protocol=entry['reply_notice_protocol'], supported_reply_notice_protocol=1,
+                      lifecycle_protocol=entry['lifecycle_protocol'], supported_lifecycle_protocol=2)
         if entry['grant_id']:
             result.update(grant_id=entry['grant_id'], client_id=entry['client_id'], connection_seq=entry['connection_seq'])
         return result
 
     def get(self, eid):
-        fields = ('id', 'agent', 'project', 'generation', 'last_seen', 'active', 'grant_id', 'client_id', 'connection_seq', 'peer_protocol', 'reply_notice_protocol')
+        fields = ('id', 'agent', 'project', 'generation', 'last_seen', 'active', 'grant_id', 'client_id', 'connection_seq', 'peer_protocol', 'reply_notice_protocol', 'lifecycle_protocol')
         row = self.db.execute('SELECT '+','.join(fields)+' FROM claude_mod_enrollments WHERE id=?', (eid,)).fetchone()
         return dict(zip(fields, row)) if row else None
 
@@ -217,9 +221,11 @@ class ClaudeMod:
 
     def registration_access(self, data, token):
         fields = ('native_id', 'project', 'client_id', 'connection_seq')
-        schema(data, fields + tuple(k for k in ('peer_protocol', 'reply_notice_protocol') if isinstance(data, dict) and k in data))
+        schema(data, fields + tuple(k for k in ('peer_protocol', 'reply_notice_protocol', 'lifecycle_protocol') if isinstance(data, dict) and k in data))
         if type(data.get('reply_notice_protocol', 0)) is not int or data.get('reply_notice_protocol', 0) not in (0, 1):
             raise ModError(400, 'Unsupported reply-notice protocol.')
+        if type(data.get('lifecycle_protocol', 0)) is not int or data.get('lifecycle_protocol', 0) not in (0, 2):
+            raise ModError(400, 'Unsupported Claude lifecycle protocol.')
         protocol = data.get('peer_protocol', 0)
         if type(protocol) is not int or protocol not in (0, 1):
             raise ModError(400, 'Unsupported Claude peer protocol.')
@@ -267,22 +273,24 @@ class ClaudeMod:
                 raise ModError(409, 'This registration episode is stale.', 'stale_connection')
             if not same_client and entry['generation']:
                 raise ModError(409, 'Another Claude host currently owns this chat connection.', 'host_conflict')
-            if same_client and seq == entry['connection_seq'] and (protocol != entry['peer_protocol'] or data.get('reply_notice_protocol', 0) != entry['reply_notice_protocol']):
+            if same_client and seq == entry['connection_seq'] and (protocol != entry['peer_protocol'] or data.get('reply_notice_protocol', 0) != entry['reply_notice_protocol'] or data.get('lifecycle_protocol', 0) != entry['lifecycle_protocol']):
                 raise ModError(409, 'This registration episode has a different peer protocol.', 'stale_connection')
             if not (same_client and seq == entry['connection_seq'] and entry['generation']):
                 self.uncertain(entry['id'], 'Claude reconnected after an earlier claim. Delivery remains unknown; it will not resubmit.')
-                self.db.execute('UPDATE claude_mod_enrollments SET generation=?,client_id=?,connection_seq=?,last_seen=?,peer_protocol=?,reply_notice_protocol=? WHERE id=?',
-                                (str(uuid.uuid4()), data['client_id'], seq, time.time(), protocol, data.get('reply_notice_protocol', 0), entry['id']))
+                self.db.execute('UPDATE claude_mod_enrollments SET generation=?,client_id=?,connection_seq=?,last_seen=?,peer_protocol=?,reply_notice_protocol=?,lifecycle_protocol=? WHERE id=?',
+                                (str(uuid.uuid4()), data['client_id'], seq, time.time(), protocol, data.get('reply_notice_protocol', 0), data.get('lifecycle_protocol', 0), entry['id']))
         else:
             if self.db.execute('SELECT COUNT(*) FROM claude_mod_enrollments WHERE active=1').fetchone()[0] >= MAX_ENROLLMENTS:
                 raise ModError(429, 'Too many active Claude connections.', 'connection_limit')
             eid = str(uuid.uuid4())
             self.db.execute('''INSERT INTO claude_mod_enrollments
-                (id,token_hash,agent,project,generation,last_seen,active,grant_id,client_id,connection_seq,peer_protocol,reply_notice_protocol)
-                VALUES (?,?,?,?,?,?,1,?,?,?,?,?)''', (eid, digest(service_token), aid, data['project'], str(uuid.uuid4()),
-                                               time.time(), gid, data['client_id'], seq, protocol, data.get('reply_notice_protocol', 0)))
+                (id,token_hash,agent,project,generation,last_seen,active,grant_id,client_id,connection_seq,peer_protocol,reply_notice_protocol,lifecycle_protocol)
+                VALUES (?,?,?,?,?,?,1,?,?,?,?,?,?)''', (eid, digest(service_token), aid, data['project'], str(uuid.uuid4()),
+                                               time.time(), gid, data['client_id'], seq, protocol, data.get('reply_notice_protocol', 0), data.get('lifecycle_protocol', 0)))
             entry = self.get(eid)
         entry = self.get(entry['id'])
+        peer_lifecycle.record_event(self.db, 'enrollment:' + entry['id'], 'registered', 'connection_episode', '', entry['generation'],
+                                    event_id='register:' + entry['id'] + ':' + entry['generation'])
         return dict(self.session(entry), enrollment_id=entry['id'], token=service_token)
 
     def authenticate(self, token):
@@ -419,7 +427,8 @@ class ClaudeMod:
         self.validate_poll(entry, data)
         self.db.execute('UPDATE claude_mod_enrollments SET last_seen=? WHERE id=?', (time.time(), entry['id']))
         rows = self.rows()
-        busy = any(r.get('mod_enrollment') == entry['id'] and r.get('launched') and r['state'] in ('queued', 'awaiting_reply') for r in rows)
+        busy = any(r.get('mod_enrollment') == entry['id'] and r.get('launched') and not r.get('settled') and r['state'] in ('queued', 'awaiting_reply') for r in rows)
+        busy = busy or any(state != 'reserved' for _, state, _ in peer_lifecycle.blockers(self.db, entry['agent']))
         busy = busy or self.store.reply_delivery.busy(entry['id'])
         claim = None
         item = agents.get(entry['agent']) if isinstance(agents, dict) else None
@@ -446,15 +455,16 @@ class ClaudeMod:
                         self.put(row)
                         continue
                 attempt = str(uuid.uuid4())
-                row.update(launched=True, state='queued', mod_attempt_id=attempt, mod_generation=entry['generation'], error='')
+                row.update(launched=True, state='queued', mod_attempt_id=attempt, mod_generation=entry['generation'],
+                           lifecycle_protocol=entry['lifecycle_protocol'], error='')
                 self.put(row)
-                claim = dict(request_id=row['request_id'], attempt_id=attempt, native_id=entry['agent'][2:], generation=entry['generation'], envelope=row['envelope'], expires_at=row['created']+TTL)
+                claim = dict(request_id=row['request_id'], attempt_id=attempt, native_id=entry['agent'][2:], generation=entry['generation'], envelope=row['envelope'], expires_at=row['created']+TTL, lifecycle_protocol=entry['lifecycle_protocol'])
                 if row.get('origin') == 'peer':
                     claim['origin'] = 'peer'
                 break
         if claim is None and data['accept'] and can_claim and not busy:
             claim = self.store.reply_delivery.claim_in_transaction(entry, notice_proofs or {})
-        return dict(version=1, native_id=entry['agent'][2:], generation=entry['generation'], peer_protocol=entry['peer_protocol'], reply_notice_protocol=entry['reply_notice_protocol'], claim=claim, requests=self.statuses(entry))
+        return dict(version=1, native_id=entry['agent'][2:], generation=entry['generation'], peer_protocol=entry['peer_protocol'], reply_notice_protocol=entry['reply_notice_protocol'], lifecycle_protocol=entry['lifecycle_protocol'], supported_lifecycle_protocol=2, claim=claim, requests=self.statuses(entry))
 
     def event(self, entry, data):
         if hasattr(self.store, 'reply_delivery'):
@@ -466,12 +476,23 @@ class ClaudeMod:
             if result is not None:
                 return result
         kind = data.get('kind')
-        extras = {'submitted': (), 'started': ('turn_id',), 'answered': ('turn_id', 'answer'), 'dropped': (), 'unknown': ()}
+        extras = {'submitted': (), 'started': ('turn_id',), 'answered': ('turn_id', 'answer'), 'dropped': (), 'unknown': (),
+                  'completed': ('turn_id', 'outcome', 'answer', 'event_id', 'occurred_at')}
         if kind not in extras:
             raise ModError(400, 'Invalid Claude request event.')
         schema(data, self.fields(entry, ('generation', 'native_id', 'request_id', 'attempt_id', 'kind') + extras[kind]))
         self.native(entry, data)
+        lifecycle = peer_lifecycle.get(self.db, data['request_id'])
         row = next((r for r in self.rows() if r['request_id'] == data['request_id']), None)
+        payload_expired = row is None
+        if payload_expired and lifecycle:
+            evidence = lifecycle['evidence']
+            if evidence.get('project_digest') != digest(entry['project']):
+                raise ModError(409, 'Original Claude project evidence is unavailable.')
+            row = dict(request_id=data['request_id'], agent=lifecycle['agent'], created=lifecycle['created'],
+                       runtime='claude', transport=TRANSPORT, origin='peer', bridge_version=2,
+                       mod_project=entry['project'], target_project=entry['project'], launched=bool(evidence.get('launched')),
+                       state='unknown', reply='', error='', **{k:v for k,v in evidence.items() if k.startswith(('mod_', 'completion_', 'answer_')) or k == 'lifecycle_protocol'})
         if (not row or row.get('mod_enrollment') != entry['id'] or row.get('mod_project') != entry['project']
                 or row.get('mod_attempt_id') != data['attempt_id'] or not ident(data['attempt_id'])
                 or row['agent'] != entry['agent'] or not row.get('launched')):
@@ -481,14 +502,22 @@ class ClaudeMod:
                                        (row['request_id'],)).fetchone()
             if not launched or launched[0] is None or not ident(row.get('mod_generation')):
                 raise ModError(409, 'Claude peer claim has no original launch receipt.')
+        if kind == 'completed':
+            if entry['lifecycle_protocol'] != 2 or row.get('lifecycle_protocol') != 2:
+                raise ModError(409, 'Claude lifecycle completion requires its original negotiated protocol.')
+            if (data['outcome'] not in ('answered', 'unusable', 'aborted', 'withheld') or not ident(data['event_id'])
+                    or type(data['occurred_at']) is not int or not 0 <= data['occurred_at'] <= 9007199254740991
+                    or not isinstance(data['answer'], str) or data['outcome'] != 'answered' and data['answer'] != ''):
+                raise ModError(400, 'Invalid Claude completion outcome.')
         turn = data.get('turn_id')
-        if kind in ('started', 'answered'):
+        if kind in ('started', 'answered', 'completed'):
             if not isinstance(turn, str) or not 1 <= len(turn) <= 128 or any(ord(c)<32 for c in turn):
                 raise ModError(400, 'Invalid Claude turn identifier.')
             if row.get('mod_turn') and row['mod_turn'] != turn:
                 raise ModError(409, 'Claude request is already bound to another turn.')
+        answered = kind == 'answered' or kind == 'completed' and data['outcome'] == 'answered'
         reply = None
-        if kind == 'answered':
+        if answered:
             answer, marker = data['answer'], 'WATCH_REPLY ' + row['request_id']
             if not isinstance(answer, str) or len(answer) > 16000 or '\x00' in answer:
                 raise ModError(400, 'Invalid Claude reply.')
@@ -497,21 +526,63 @@ class ClaudeMod:
             reply = '\n'.join(line for line in answer.splitlines() if line != marker).strip()
             if row['state'] == 'answered' and row.get('reply') != reply:
                 raise ModError(409, 'A different Claude reply was already recorded.')
-        # A completion can beat both submit settlement and its started event.
-        if kind == 'answered':
-            row.update(state='answered', reply=reply, error='', mod_turn=turn)
-        elif row['state'] != 'answered':
+        if answered and lifecycle and lifecycle['evidence'].get('answer_digest') not in (None, digest(reply)):
+            raise ModError(409, 'A different Claude reply was already recorded.')
+        before = lifecycle['execution'] if lifecycle else row.get('execution_outcome', row['state'])
+        terminal = row.get('settled') or lifecycle and lifecycle['execution'] in peer_lifecycle.TERMINAL
+        withheld = row.get('capture_disposition') == 'withheld' or lifecycle and lifecycle['capture'] == 'withheld'
+        fingerprint = ''
+        if (answered or kind == 'completed') and (row.get('execution_outcome') == 'dropped'
+                or lifecycle and lifecycle['execution'] == 'dropped'):
+            raise ModError(409, 'Claude completion contradicts a verified dropped submission.')
+        if kind == 'completed':
+            # Connection generation is not event identity: retained events replay
+            # on the current authenticated connection without resubmitting input.
+            fingerprint = digest(json.dumps({k:data[k] for k in ('request_id','attempt_id','turn_id','outcome','answer','event_id','occurred_at')}, sort_keys=True))
+            prior = self.db.execute('SELECT request_id,fingerprint FROM peer_execution_events WHERE event_id=?', (data['event_id'],)).fetchone()
+            if prior and (prior[0] != row['request_id'] or prior[1] != fingerprint):
+                raise ModError(409, 'Claude completion event conflicts with its original receipt.')
+            evidence = lifecycle['evidence'] if lifecycle else row
+            for prefix in ('completion', 'answer'):
+                if evidence.get(prefix+'_event_id') == data['event_id'] and evidence.get(prefix+'_fingerprint') != fingerprint:
+                    raise ModError(409, 'Claude completion event conflicts with its retained acknowledgment.')
+            if not evidence.get('completion_event_id'):
+                row.update(completion_event_id=data['event_id'], completion_fingerprint=fingerprint)
+            elif evidence['completion_event_id'] != data['event_id'] and not answered:
+                raise ModError(409, 'This attempt already has its terminal completion receipt.')
+            if answered:
+                if evidence.get('answer_event_id') not in (None, data['event_id']):
+                    raise ModError(409, 'This attempt already has its answer completion receipt.')
+                row.update(answer_event_id=data['event_id'], answer_fingerprint=fingerprint)
+        if answered and not withheld and not payload_expired:
+            row.update(state='answered', reply=reply, error='', mod_turn=turn,
+                       execution_outcome='completed', settled=True, capture_disposition='captured')
+        elif kind == 'completed' or answered:
+            row.update(execution_outcome='completed', settled=True, mod_turn=turn)
+            if row['state'] != 'answered':
+                disposition = 'withheld' if withheld or data.get('outcome') == 'withheld' else 'unusable'
+                row.update(state='unknown', reply='', capture_disposition=disposition,
+                           error=('The turn completed; its reply was withheld because conversation isolation could not be verified.'
+                                  if disposition == 'withheld' else
+                                  'The turn completed, but no usable reply was retained. The execution slot is released.'))
+        elif not terminal and row['state'] != 'answered':
             if kind == 'started' and row['state'] != 'failed':
                 row.update(state='awaiting_reply', mod_turn=turn, error='')
-            elif kind == 'submitted' and row['state'] == 'queued':
-                pass
             elif kind == 'dropped' and row['state'] not in ('awaiting_reply', 'expired'):
-                row.update(state='failed', error='Native Claude input was dropped before it started. It was not resubmitted.')
+                row.update(state='failed', execution_outcome='dropped', settled=True,
+                           error='Native Claude input was dropped before it started. It was not resubmitted.')
             elif kind == 'unknown' and row['state'] != 'failed':
                 row.update(state='unknown', error='Claude submission could not be confirmed. Nothing was resubmitted.')
-        if kind == 'answered':
+        if row['state'] == 'answered':
             self.store.peers.owner_warning(row)
-        self.put(row)
+        if payload_expired:
+            peer_lifecycle.reconcile(self.db, row)
+        else:
+            self.put(row)
+        after = peer_lifecycle.get(self.db, row['request_id'])
+        peer_lifecycle.record_event(self.db, row['request_id'], kind, data.get('outcome', kind), before,
+                                    after['execution'] if after else row.get('execution_outcome', row['state']),
+                                    event_id=data.get('event_id'), occurred=data.get('occurred_at'), fingerprint=fingerprint)
         return dict(request_id=row['request_id'], state=row['state'], turn_id=row.get('mod_turn', ''))
 
     def call(self, method, data, token='', agents=None, port=None):

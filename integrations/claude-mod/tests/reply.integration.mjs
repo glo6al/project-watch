@@ -25,6 +25,14 @@ async function receiveNotice(text,provider) {
  assert.equal(current.source_provider,provider);
  assert.equal(text,replyNoticeText(current.public_request_id),'notice must use the public lookup ID');
  assert(current.source_finished,'native return must follow completion of the asking turn');
+ if(provider==='claude') {
+  const questions=(await fs.readFile(config.codex_question_file,'utf8')).trim().split('\n').map(JSON.parse);
+  assert.equal(questions.length,current.reverse_index+1);
+  assert(questions.every(q=>q.thread===config.codex_source));
+  current.question_submissions=questions.filter(q=>q.request_id===questions.at(-1).request_id).length;
+  assert.equal(current.question_submissions,1);
+  current.events.push('target_answer');
+ }
  current.events.push('native_notice');
  current.notice_submissions++;
  assert.equal(current.notice_submissions,1,'only one native return admission');
@@ -110,11 +118,16 @@ try {
   return directory.directory.complete&&directory.agents.length===3&&directory.agents.every(a=>a.capability==='reachable');
  });
  const target=directory.agents.find(a=>a.agent_id==='c:'+config.native[0]);assert(target);
+ const codexDirectory=(await rpc('list_agents',{provider:'codex'})).value;
+ const codexTarget=codexDirectory.agents.find(a=>a.agent_id==='x:'+config.codex_source);assert(codexTarget);
  const cases=[];
- for(const provider of ['codex','claude']) {
-  current={source_provider:provider,public_request_id:null,source_finished:false,events:[],
+ for(const [caseIndex,provider] of ['codex','claude','codex','claude'].entries()) {
+  await fs.rm(config.source_ready_file,{force:true});
+  await fs.rm(config.codex_notice_file,{force:true});
+  const recipient=provider==='codex'?target:codexTarget;
+  current={source_provider:provider,reverse_index:Math.floor(caseIndex/2),public_request_id:null,source_finished:false,events:[],
    question_submissions:0,notice_submissions:0,get_reply_calls:0,reply:null};
-  const args={agent_id:target.agent_id,identity_revision:target.identity_revision,
+  const args={agent_id:recipient.agent_id,identity_revision:recipient.identity_revision,
    text:'Fictional '+provider+' return test. Reply only; do not start work.'};
   const sent=await rpc('send_message',args);
   assert.equal(sent.value.duplicate,false);
@@ -127,6 +140,7 @@ try {
   assert.equal(observed.status,0);assert.equal(observed.stdout,'');assert.equal(observed.stderr,'');
   current.source_finished=true;
   current.events.push('source_turn_complete');
+  await fs.writeFile(config.source_ready_file,'ready');
   let readCodexNotice=false;
   await until(async()=>{
    if(provider==='codex'&&!readCodexNotice) {
@@ -145,12 +159,14 @@ try {
   assert.deepEqual(current.events,['send_complete','source_turn_complete','target_answer','native_notice','get_reply']);
   assert.equal(current.get_reply_calls,1);
   assert.equal(runtimes[2].submissions.length,0);
+  const duplicate=(await rpc('send_message',{...args,request_id:current.public_request_id})).value;
+  assert.equal(duplicate.duplicate,true);assert.equal(duplicate.request_id,current.public_request_id);
   cases.push({source_provider:provider,public_request_id:current.public_request_id,reply:current.reply,
    question_submissions:current.question_submissions,notice_submissions:current.notice_submissions,
    get_reply_calls:current.get_reply_calls,source_turn_finished_before_answer:true,sibling_notice_submissions:runtimes[2].submissions.length});
  }
  assert.equal(runtimes[0].submissions.length,2);
- assert.equal(runtimes[1].submissions.length,1);
+ assert.equal(runtimes[1].submissions.length,2);
  assert.equal(runtimes[2].submissions.length,0);
  console.log(JSON.stringify({cases}));
 }finally{await client.close()}

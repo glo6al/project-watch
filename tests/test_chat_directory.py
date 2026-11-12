@@ -2,6 +2,7 @@
 """Fixture-only native metadata discovery; no user directories or transports."""
 import json
 import os
+import sqlite3
 import sys
 import tempfile
 import time
@@ -221,6 +222,87 @@ class DirectoryTests(unittest.TestCase):
         self.assertEqual(selected['capability'], 'unavailable')
         with self.assertRaisesRegex(d.DirectoryError, 'Multiple local metadata'):
             directory.resolve(aid, selected['identity_revision'])
+
+    def native_pointer(self, aid, path, archived=0):
+        db = sqlite3.connect(os.path.join(self.codex, 'state_5.sqlite'))
+        db.execute('CREATE TABLE IF NOT EXISTS threads (id TEXT PRIMARY KEY, rollout_path TEXT, cwd TEXT, archived INTEGER, source TEXT)')
+        db.execute('INSERT OR REPLACE INTO threads VALUES (?,?,?,?,?)', (aid[2:], path, self.root, archived, 'vscode'))
+        db.commit(); db.close()
+
+    def test_native_active_rollout_overrides_historical_duplicate(self):
+        aid, old = self.codex_chat()
+        active = os.path.join(self.sessions, 'rollout-' + aid[2:] + '_' + uid() + '.jsonl')
+        self.append(active, {'type':'session_meta','payload':{'id':aid[2:], 'cwd':self.root,'source':'vscode'}})
+        self.native_pointer(aid, active)
+        self.live[aid] = {'capability':'reachable','reason':'Verified fixture.'}
+        directory = self.directory()
+        result = self.complete(directory)
+        self.assertEqual([e['agent_id'] for e in result['agents']], [aid])
+        entry = result['agents'][0]
+        self.assertEqual(entry['capability'], 'reachable')
+        self.assertEqual(directory.resolve(aid,entry['identity_revision'])['identity']['path'],active)
+        self.native_pointer(aid,old)
+        with self.assertRaisesRegex(d.DirectoryError,'identity changed'):
+            directory.resolve(aid,entry['identity_revision'])
+        refreshed = self.complete(directory)['agents'][0]
+        self.assertNotEqual(entry['identity_revision'],refreshed['identity_revision'])
+
+    def test_native_archived_record_cannot_use_legacy_fallback(self):
+        aid, path = self.codex_chat()
+        self.native_pointer(aid,path,archived=1)
+        self.assertEqual(self.complete(self.directory())['agents'],[])
+
+    def test_native_index_corrupt_is_not_complete_or_reachable(self):
+        aid, path = self.codex_chat()
+        self.live[aid] = {'capability':'reachable','reason':'Verified fixture.'}
+        with open(os.path.join(self.codex,'state_5.sqlite'),'wb') as f: f.write(b'broken')
+        directory = self.directory()
+        for _ in range(4): directory.refresh(force=True)
+        result = directory.list_agents()
+        self.assertFalse(result['directory']['complete'])
+        self.assertTrue(all(e['capability']=='unavailable' for e in result['agents']))
+
+    def test_native_pointer_change_during_publication_fails_closed(self):
+        aid, path = self.codex_chat()
+        self.native_pointer(aid,path)
+        directory = self.directory(); self.complete(directory)
+        actual = d.codex_transcript.index
+        calls = 0
+        def changing(*args,**kwargs):
+            nonlocal calls
+            result = actual(*args,**kwargs); calls += 1
+            if calls == 2: result[aid[2:]]['rollout_path'] += '.changed'
+            return result
+        with patch.object(d.codex_transcript,'index',side_effect=changing):
+            directory._publish(self.live)
+        self.assertFalse(directory.status()['complete'])
+        self.assertEqual(directory._entries[aid]['capability'],'unavailable')
+
+    def test_unrelated_missing_native_rollout_does_not_poison_verified_recipient(self):
+        stale, old = self.codex_chat(name='Fictional old')
+        fresh, current = self.codex_chat(name='Fictional current')
+        self.native_pointer(stale, old + '.missing')
+        self.native_pointer(fresh, current)
+        self.live[fresh] = {'capability':'reachable','reason':'Verified fixture.'}
+        self.live[stale] = {'capability':'reachable','reason':'Stale fixture claim.'}
+        directory = self.directory()
+        result = self.complete(directory)
+        by_id = {entry['agent_id']:entry for entry in result['agents']}
+        self.assertTrue(result['directory']['complete'])
+        self.assertEqual(by_id[stale]['capability'], 'unavailable')
+        self.assertEqual(by_id[fresh]['capability'], 'reachable')
+        self.assertEqual(directory.resolve(fresh, by_id[fresh]['identity_revision'])['identity']['path'], current)
+        with self.assertRaises(d.DirectoryError): directory.resolve(stale, by_id[stale]['identity_revision'])
+
+    def test_claude_only_policy_does_not_read_excluded_corrupt_codex_index(self):
+        aid, _ = self.claude_chat()
+        with open(os.path.join(self.codex, 'state_5.sqlite'), 'wb') as f:
+            f.write(b'broken excluded native index')
+        directory = self.directory(policy={'providers': ['claude'], 'history_days': 'all'})
+        with patch.object(d.codex_transcript, 'index', side_effect=AssertionError('Excluded provider must not be read')):
+            result = self.complete(directory)
+        self.assertTrue(result['directory']['complete'])
+        self.assertEqual([entry['agent_id'] for entry in result['agents']], [aid])
 
     def test_long_records_are_bounded_and_honestly_incomplete(self):
         aid, path = self.claude_chat()

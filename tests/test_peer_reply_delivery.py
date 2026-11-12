@@ -102,7 +102,12 @@ class ReplyTests(unittest.TestCase):
     def answer(self):
         tid = self.store.db.execute('SELECT transport_id FROM shared_bridge_requests WHERE client_id=?',(self.rid,)).fetchone()[0]
         row = next(r for r in self.store._rows() if r['request_id']==tid)
-        row.update(state='answered',reply='Fictional answer that must not enter the notice.'); self.store._save(row)
+        # This suite isolates return notices, but its completed target fixture
+        # still needs a real launch receipt and bound native-turn provenance.
+        self.store.shared.authorize(row)
+        row.update(state='answered', launched=True, settled=True, execution_outcome='completed',
+                   bound_turn='fictional-target-turn-'+uid(), reply='Fictional answer that must not enter the notice.')
+        self.store._save(row)
 
     def dispatch(self):
         process = Mock(); process.wait.return_value = 0

@@ -18,6 +18,8 @@ import uuid
 import claude_channel
 import claude_mod
 import peer_bridge
+import peer_lifecycle
+import codex_transcript
 
 CLI = '/Applications/ChatGPT.app/Contents/Resources/codex-cli/bin/codex'
 ACTIVE = ('sending', 'queued', 'awaiting_reply', 'unknown', 'expired')
@@ -234,8 +236,12 @@ class MessagingStore:
     def _save(self, row):
         try:
             self.db.execute('INSERT OR REPLACE INTO requests VALUES (?,?)', (row['request_id'], json.dumps(row)))
+            peer_lifecycle.reconcile(self.db, row)
             self.db.commit()
         except sqlite3.OperationalError:
+            self.db.rollback()
+            raise
+        except BaseException:
             self.db.rollback()
             raise
 
@@ -282,47 +288,22 @@ class MessagingStore:
                 self.owner_fd = None
 
     def _metadata(self, path, ident):
-        if os.path.realpath(path) != path or not path.startswith(self.sessions_dir + os.sep):
-            raise MessagingError(400, 'The session log is not a plain local transcript.')
-        flags = os.O_RDONLY | getattr(os, 'O_NONBLOCK', 0) | getattr(os, 'O_NOFOLLOW', 0)
-        fd = os.open(path, flags)
-        with os.fdopen(fd, 'rb') as f:
-            st = os.fstat(f.fileno())
-            if not stat.S_ISREG(st.st_mode):
-                raise MessagingError(400, 'The session log is not a regular transcript.')
-            raw = f.readline(MAX_LINE + 1)
-        if not raw.endswith(b'\n') or len(raw) > MAX_LINE or not stat.S_ISREG(st.st_mode):
-            raise MessagingError(400, 'The session identity is not readable yet.')
         try:
-            data = json.loads(raw)
-            meta = data['payload']
-        except (ValueError, KeyError, TypeError):
-            raise MessagingError(400, 'The session identity is not readable.')
-        if data.get('type') != 'session_meta' or not isinstance(meta, dict) or meta.get('id') != ident:
-            raise MessagingError(400, 'The transcript identity does not match the selected chat.')
-        if meta.get('thread_source') == 'guardian_review' or meta.get('originator') == 'codex_exec' or meta.get('source') == 'exec':
-            raise MessagingError(400, 'Review and exec sessions cannot receive questions.')
-        return st
+            selected, source, st, _ = codex_transcript.open_pinned(self.sessions_dir, path, ident)
+            source.close()
+            if selected != path:
+                raise codex_transcript.Unavailable('The active native transcript changed.')
+            return st
+        except (OSError, codex_transcript.Unavailable) as error:
+            raise MessagingError(400, str(error)) from None
 
     def _target_log(self, ident):
-        matches, pending, visited = [], [self.sessions_dir], 0
-        while pending:
-            directory = pending.pop()
-            with os.scandir(directory) as entries:
-                for entry in entries:
-                    visited += 1
-                    if visited > 20000:
-                        raise MessagingError(503, 'Too many session entries to safely resolve this chat.')
-                    if entry.is_dir(follow_symlinks=False):
-                        pending.append(entry.path)
-                    elif entry.name.endswith(ident + '.jsonl'):
-                        matches.append(entry.path)
-                        if len(matches) > 1:
-                            raise MessagingError(409, 'The chat must have exactly one local transcript before sending.')
-        if len(matches) != 1:
-            raise MessagingError(409, 'The chat must have exactly one local transcript before sending.')
-        path = matches[0]
-        return path, self._metadata(path, ident)
+        try:
+            path, source, st, _ = codex_transcript.resolve(self.sessions_dir, ident)
+            source.close()
+            return path, st
+        except (OSError, codex_transcript.Unavailable) as error:
+            raise MessagingError(409, str(error)) from None
 
     def snapshot(self):
         claude_ready = (self.mods.any_ready() or claude_channel.any_configured(self.channel_root)) and not self.worker_failed
@@ -770,6 +751,8 @@ class MessagingStore:
                 break
 
     def _prune(self, rows, now):
+        for row in rows:
+            peer_lifecycle.reconcile(self.db, row)
         for r in rows:
             if now - r['created'] > RETENTION:
                 self.db.execute('DELETE FROM request_fulfillments WHERE request_id=?', (r['request_id'],))
@@ -792,11 +775,13 @@ class MessagingStore:
             if (st.st_ino, st.st_dev) != (row['inode'], row['device']) or st.st_size < row['cursor']:
                 raise MessagingError(400, 'The transcript changed before sending.')
         except (OSError, MessagingError):
+            row['execution_outcome'] = 'dropped'
             return 'failed', 'The target transcript changed before sending; nothing was sent.'
         try:
             proc = subprocess.Popen([self.cli, 'queue', '--thread', row['agent'][2:], '--message', message],
                                     stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         except OSError:
+            row['execution_outcome'] = 'dropped'
             return 'failed', 'Codex could not be launched; nothing was sent.'
         try:
             code = proc.wait(timeout=10)
@@ -852,10 +837,14 @@ class MessagingStore:
     def _consume(self, row, data):
         p = data.get('payload')
         if not isinstance(p, dict):
+            if row.get('origin') == 'peer' and data.get('type') in ('event_msg', 'response_item', 'turn_context'):
+                self._codex_gap(row)
             return
         typ = data.get('type')
         if typ == 'event_msg' and p.get('type') == 'task_started':
             row['current_turn'] = p.get('turn_id') if isinstance(p.get('turn_id'), str) else ''
+            if row.get('codex_gap_needs_envelope'):
+                row['codex_post_gap_start'] = row['current_turn']
             if row.get('origin') == 'peer' and row['current_turn']:
                 starts = row.setdefault('peer_turn_starts', [])
                 if row['current_turn'] not in starts:
@@ -867,22 +856,32 @@ class MessagingStore:
         elif typ == 'response_item' and p.get('type') == 'message':
             content = p.get('content', [])
             text = ''.join(c.get('text', '') for c in content if isinstance(c, dict) and isinstance(c.get('text'), str)) if isinstance(content, list) else ''
+            outgoing = outgoing_message(row)
+            # The native Codex host may append exactly one record-ending LF.
+            # Do not trim whitespace or change the stored message/dedupe digest.
+            matches_envelope = text == outgoing or (row.get('origin') == 'peer' and text == outgoing + '\n')
             # A delayed response_item can belong to an older turn even while a
             # newer task is current. Explicit message metadata is authoritative.
             nested = p.get('internal_chat_message_metadata_passthrough')
             if nested is not None and not isinstance(nested, dict):
+                if row.get('origin') == 'peer':
+                    self._codex_gap(row)
                 return
             explicit = []
             for source in (p, nested or {}):
                 if 'turn_id' in source:
                     value = source['turn_id']
                     if not isinstance(value, str) or not value or len(value) > 128:
+                        if row.get('origin') == 'peer':
+                            self._codex_gap(row)
                         return
                     explicit.append(value)
             if len(set(explicit)) > 1:
+                if row.get('origin') == 'peer':
+                    self._codex_gap(row)
                 return
             turn = explicit[0] if explicit else row['current_turn']
-            if row.get('origin') == 'peer' and p.get('role') == 'user' and text != outgoing_message(row):
+            if row.get('origin') == 'peer' and p.get('role') == 'user' and not matches_envelope:
                 if turn and turn == row.get('bound_turn'):
                     row['peer_mixed_input'] = True
                 foreign = row.setdefault('peer_foreign_turns', [])
@@ -892,7 +891,21 @@ class MessagingStore:
                     if len(foreign) >= 128:
                         row['peer_context_overflow'] = True
                     foreign[:] = foreign[-127:] + [turn]
-            if p.get('role') == 'user' and text == outgoing_message(row) and turn:
+            if p.get('role') == 'user' and matches_envelope and turn:
+                if row.get('origin') == 'peer' and row.get('bound_turn') and row['bound_turn'] != turn:
+                    # A second native turn is not the original dispatch receipt.
+                    # Preserve its immutable binding instead of crashing durable
+                    # reconciliation or publishing a later turn's reply.
+                    row.update(state='unknown', peer_mixed_input=True, capture_disposition='withheld',
+                               tracking_stopped=True, error='The peer envelope appeared in another native turn; recovery is needed.')
+                    return
+                # An unreadable record can hide a turn boundary. Only an explicit
+                # post-gap envelope binding (or a fresh task_started) restores
+                # execution evidence. Capture remains permanently withheld.
+                if row.get('codex_gap_needs_envelope'):
+                    if not explicit and row.get('codex_post_gap_start') != turn:
+                        return
+                    row['codex_gap_needs_envelope'] = False
                 if row.get('origin') == 'peer':
                     if (turn not in row.get('peer_turn_starts', []) or turn in row.get('peer_foreign_turns', [])
                             or row.get('peer_context_overflow') or row.get('bound_turn') == turn):
@@ -904,6 +917,8 @@ class MessagingStore:
             elif p.get('role') == 'assistant' and p.get('phase') == 'final_answer' and turn and turn == row['bound_turn']:
                 row['final'], row['final_turn'] = text[:16000], turn
         elif typ == 'event_msg' and p.get('type') == 'task_complete' and p.get('turn_id') and p['turn_id'] == row['bound_turn']:
+            if row.get('codex_gap_needs_envelope'):
+                return
             answer = p.get('last_agent_message') or (row['final'] if row.get('final_turn') == row['bound_turn'] else '')
             marker = 'WATCH_REPLY ' + row['request_id']
             if row.get('origin') == 'peer':
@@ -912,11 +927,18 @@ class MessagingStore:
                 if markers != [marker]:
                     row.update(state='unknown', reply='', tracking_stopped=True, error='Peer reply has missing or ambiguous correlation markers.')
                     return
-                row.update(state='quarantined', complete_offset=row['cursor'], quarantined_at=time.time(),
+                row.update(state='quarantined', complete_offset=codex_transcript.segment(row)['cursor'],
+                           complete_segment=list(codex_transcript.segment_key(row)), quarantined_at=time.time(),
                            candidate_reply='\n'.join(line for line in answer.splitlines() if line != marker).strip()[:16000], error='')
                 return
             if isinstance(answer, str) and marker in answer.splitlines():
                 row.update(state='answered', reply='\n'.join(line for line in answer.splitlines() if line != marker).strip()[:16000], error='')
+
+    @staticmethod
+    def _codex_gap(row):
+        row.update(peer_mixed_input=True, capture_disposition='withheld',
+                   codex_gap_needs_envelope=True, codex_post_gap_start='', current_turn='', state='unknown',
+                   error='An unreadable transcript record was skipped; reply content will be withheld.')
 
     def _poll(self, row):
         if row.get('transport') == claude_mod.TRANSPORT:
@@ -924,32 +946,54 @@ class MessagingStore:
         if row.get('runtime') == 'claude':
             return self._poll_claude(row)
         try:
-            st = self._metadata(row['path'], row['agent'][2:])
-            if (st.st_ino, st.st_dev) != (row['inode'], row['device']) or st.st_size < row['cursor']:
-                row.update(state='unknown', error='The transcript changed. Delivery is unknown; WATCH will not resend.')
+            opened = codex_transcript.tracking_source(self.sessions_dir, row, MAX_READ)
+            if opened is None:
                 return
-            with open(row['path'], 'rb') as f:
-                f.seek(row['cursor'])
+            f, st, current = opened
+            with f:
+                f.seek(current['cursor'])
                 data = f.read(MAX_READ)
+            if row.get('codex_discard_record'):
+                if tuple(row['codex_discard_record']) != codex_transcript.segment_key(row):
+                    raise codex_transcript.Unavailable('An incomplete oversized record belongs to another Codex segment.')
+                end = data.find(b'\n')
+                consumed = len(data) if end < 0 else end + 1
+                current['cursor'] += consumed
+                if end < 0:
+                    return
+                row.pop('codex_discard_record', None)
+                data = data[consumed:]
             lines = data.split(b'\n')
+            stopped = False
             for raw in lines[:-1]:
-                row['cursor'] += len(raw) + 1
+                current['cursor'] += len(raw) + 1
                 if len(raw) > MAX_LINE:
                     if row.get('origin') == 'peer':
-                        row['peer_mixed_input'] = True
+                        self._codex_gap(row)
                     continue
                 try:
                     event = json.loads(raw)
                     if isinstance(event, dict):
                         self._consume(row, event)
+                    elif row.get('origin') == 'peer':
+                        self._codex_gap(row)
                 except (ValueError, TypeError):
                     if row.get('origin') == 'peer':
-                        row['peer_mixed_input'] = True
+                        self._codex_gap(row)
                 if row['state'] in ('answered', 'quarantined') or row.get('tracking_stopped'):
+                    stopped = True
                     break
-            if len(lines[-1]) > MAX_LINE:
-                row.update(state='unknown', error='A transcript record exceeded the safe limit; reply tracking stopped.')
-                row['tracking_stopped'] = True
+            if not stopped and len(lines[-1]) > MAX_LINE:
+                if row.get('origin') == 'peer':
+                    self._codex_gap(row)
+                    current['cursor'] += len(lines[-1])
+                    row['codex_discard_record'] = list(codex_transcript.segment_key(row))
+                    row.update(state='unknown', error='An oversized transcript record is being skipped; reply content will be withheld.')
+                else:
+                    row.update(state='unknown', error='A transcript record exceeded the safe limit; reply tracking stopped.')
+                    row['tracking_stopped'] = True
+        except codex_transcript.Unavailable as error:
+            row.update(state='unknown', error=str(error))
         except (OSError, MessagingError):
             row['error'] = 'The transcript is unavailable; WATCH will keep checking for a reply.'
         if row['state'] in ('queued', 'awaiting_reply') and time.time() - row['created'] > TTL:

@@ -75,6 +75,96 @@ class ClaudePeerBackendTests(unittest.TestCase):
         data.update(extras)
         return self.http('/claude-mod/event',data,token=self.token)
 
+    def enable_lifecycle(self):
+        self.setup_global()
+        self.body = dict(self.body, connection_seq=1, lifecycle_protocol=2)
+        status, registration = self.http('/claude-mod/register', self.body, token=self.grant['grant'])
+        self.assertEqual(status, 200, registration)
+        self.generation, self.token = registration['generation'], registration['token']
+        self.assertEqual(registration['supported_lifecycle_protocol'], 2)
+        self.assertEqual(registration['lifecycle_protocol'], 2)
+
+    def completion(self, claim, outcome='unusable', **extra):
+        fields = dict(turn_id='fictional-turn', outcome=outcome, answer='', event_id=uid(), occurred_at=100000)
+        if outcome == 'answered': fields['answer'] = 'WATCH_REPLY '+claim['request_id']+'\nFictional reply.'
+        fields.update(extra)
+        return self.event(claim, 'completed', **fields)
+
+    def test_v2_terminal_execution_releases_capacity_and_cannot_regress(self):
+        import peer_lifecycle
+        self.enable_lifecycle(); sent = self.send()
+        claim = self.global_poll(self.body['client_id'])[1]['claim']
+        self.assertEqual(claim['lifecycle_protocol'], 2)
+        self.assertEqual(self.event(claim, 'started', turn_id='fictional-turn')[0], 200)
+        self.assertEqual(self.completion(claim)[0], 200)
+        row = self.peer_row(sent['request_id'])
+        self.assertEqual(row['state'], 'unknown'); self.assertTrue(row['settled'])
+        followup = self.send('A separately authorized follow-up.')
+        for kind, extra in [('unknown', {}), ('started', {'turn_id':'fictional-turn'})]:
+            self.assertEqual(self.event(claim, kind, **extra)[0], 200)
+        self.assertEqual(peer_lifecycle.get(self.store.db, claim['request_id'])['execution'], 'completed')
+        self.assertEqual(self.peer_row(sent['request_id'])['state'], 'unknown')
+        self.assertEqual(self.global_poll(self.body['client_id'])[1]['claim']['request_id'], self.peer_row(followup['request_id'])['request_id'])
+
+    def test_v2_answer_ack_idempotency_conflict_and_withholding(self):
+        self.enable_lifecycle(); sent = self.send(); claim = self.global_poll(self.body['client_id'])[1]['claim']
+        event_id = uid()
+        self.assertEqual(self.completion(claim, 'answered', event_id=event_id)[0], 200)
+        self.assertEqual(self.completion(claim, 'answered', event_id=event_id)[0], 200)
+        self.assertEqual(self.completion(claim, 'aborted', event_id=event_id)[0], 409)
+        with self.store.lock, self.store.db:
+            self.store.db.execute('DELETE FROM peer_execution_events')
+        self.assertEqual(self.completion(claim, 'aborted', event_id=event_id)[0], 409)
+        self.assertEqual(self.store.shared.result(sent['request_id'])['reply'], 'Fictional reply.')
+        other = self.send(); claim = self.global_poll(self.body['client_id'])[1]['claim']
+        self.assertEqual(self.completion(claim, 'withheld')[0], 200)
+        self.assertEqual(self.event(claim)[0], 200)
+        result = self.store.shared.result(other['request_id'])
+        self.assertEqual(result['state'], 'unknown'); self.assertEqual(result['reply'], '')
+        self.assertIn('withheld', result['error'])
+
+    def test_v2_original_completion_after_payload_pruning_releases_without_republishing(self):
+        import peer_lifecycle
+        self.enable_lifecycle(); sent = self.send(); claim = self.global_poll(self.body['client_id'])[1]['claim']
+        self.assertEqual(self.event(claim, 'started', turn_id='fictional-turn')[0], 200)
+        with self.store.lock, self.store.db:
+            row = self.peer_row(sent['request_id']); row['created'] -= 86410
+            self.store.db.execute('UPDATE shared_bridge_requests SET created=? WHERE client_id=?', (row['created'], sent['request_id']))
+            self.store.mods.put(row)
+            self.store._prune(self.store._rows(), time.time())
+        self.assertIsNone(self.store.db.execute('SELECT data FROM requests WHERE id=?', (claim['request_id'],)).fetchone())
+        with self.assertRaisesRegex(peer_bridge.PeerError, 'recovery'):
+            self.send()
+        self.assertEqual(self.completion(dict(claim, attempt_id=uid()))[0], 409)
+        self.assertEqual(self.completion(claim, 'answered')[0], 200)
+        self.assertEqual(peer_lifecycle.get(self.store.db, claim['request_id'])['execution'], 'completed')
+        self.assertIsNone(self.store.db.execute('SELECT data FROM requests WHERE id=?', (claim['request_id'],)).fetchone())
+        self.assertEqual(self.store.shared.result(sent['request_id'])['reply'], '')
+        self.send()
+
+    def test_dropped_execution_rejects_v1_and_v2_contradictory_answers(self):
+        import peer_lifecycle
+        self.enable_lifecycle(); sent = self.send()
+        claim = self.global_poll(self.body['client_id'])[1]['claim']
+        self.assertEqual(self.event(claim, 'dropped')[0], 200)
+        self.assertEqual(self.event(claim)[0], 409)
+        self.assertEqual(self.completion(claim, 'answered')[0], 409)
+        record = peer_lifecycle.get(self.store.db, claim['request_id'])
+        self.assertEqual(record['execution'], 'dropped')
+        self.assertNotEqual(record['capture'], 'captured')
+        self.assertEqual(self.store.shared.result(sent['request_id'])['state'], 'failed')
+        self.assertEqual(self.store.shared.result(sent['request_id'])['reply'], '')
+
+    def test_v2_protocol_requires_negotiation_and_downgrade_preflight(self):
+        import peer_lifecycle
+        self.setup_global(); sent = self.send(); claim = self.global_poll(self.body['client_id'])[1]['claim']
+        self.assertEqual(self.completion(claim)[0], 409)
+        self.assertEqual(self.event(claim)[0], 200)
+        self.enable_lifecycle(); self.send(); claim = self.global_poll(self.body['client_id'])[1]['claim']
+        self.assertFalse(peer_lifecycle.downgrade_ready(self.store.db))
+        self.assertEqual(self.completion(claim)[0], 200)
+        self.assertTrue(peer_lifecycle.downgrade_ready(self.store.db))
+
     def test_consent_protocol_and_old_manual_or_global_clients_are_independent(self):
         self.enroll()
         self.assertEqual(self.store.mods.authenticate(self.token)['peer_protocol'],0)

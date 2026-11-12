@@ -46,7 +46,7 @@ try{
  const request={agent_id:target.agent_id,identity_revision:target.identity_revision,text:'Fictional check: Cedar is blue. What color is Cedar? No tools, files or forwarding.',declared_sender:'UNVERIFIED fictional caller',request_id:crypto.randomUUID()};
  const sent=await rpc('send_message',request);assert.equal(sent.duplicate,false);
  const duplicate=await rpc('send_message',request);assert.equal(duplicate.duplicate,true);assert.equal(duplicate.request_id,sent.request_id);
- await until(async()=>runtimes[0].submissions.length===1&&[...storage.values()].some(v=>v?.requests&&Object.values(v.requests).some(r=>r.phase==='answered'&&r.events.length===0)));
+ await until(async()=>runtimes[0].submissions.length===1&&[...storage.values()].some(v=>v?.requests&&Object.values(v.requests).some(r=>r.phase==='completed'&&r.capture==='answered'&&r.completed===true&&r.events.length===0)));
  const reply=await rpc('get_reply',{request_id:sent.request_id});assert.equal(reply.state,'answered');assert.equal(reply.reply,'Cedar is blue.');
  assert.deepEqual(runtimes.map(r=>r.submissions.length),[1,0],'same-project sibling never receives the peer question');
  const hidden=await fetch(url+'/agent-messages',{headers:{'X-Live-Room-Key':config.owner_key}});assert.deepEqual((await hidden.json()).requests,[],'peer text is absent from owner history');

@@ -107,8 +107,8 @@ class PeerTests(unittest.TestCase):
         self.send(rid=rid)
         row = self.row()
         row['created'] -= p.RETENTION + 1
-        self.store._save(row)
         self.store.db.execute('UPDATE peer_requests SET created=?', (row['created'],))
+        self.store._save(row)
         self.store.db.commit()
         self.tick()
         self.assertEqual(self.send(rid=rid)['state'], 'expired')
@@ -288,7 +288,7 @@ class PeerTests(unittest.TestCase):
         with self.assertRaises(p.PeerError):
             self.send(text='😀' * 2001)
         row = self.row()
-        row.update(state='answered')
+        row.update(state='failed', settled=True)  # Never dispatched; isolate rate accounting.
         self.store._save(row)
         with patch.object(p, 'MAX_TOMBSTONES', 1):
             with self.assertRaises(p.PeerError) as error:
@@ -297,7 +297,7 @@ class PeerTests(unittest.TestCase):
         for _ in range(9):
             self.send()
             row = self.store._rows()[-1]
-            row.update(state='answered')
+            row.update(state='failed', settled=True)  # Never dispatched; isolate rate accounting.
             self.store._save(row)
         with self.assertRaises(p.PeerError) as error:
             self.send()
@@ -368,6 +368,7 @@ class PeerTests(unittest.TestCase):
         self.tick()
         row = self.row()
         row.update(created=time.time() - p.TTL - 60, state='expired')
+        self.store.db.execute('UPDATE peer_requests SET created=? WHERE transport_id=?', (row['created'], row['request_id']))
         self.store._save(row)
         self.answer(row)
         self.tick()
@@ -395,9 +396,10 @@ class PeerTests(unittest.TestCase):
         with self.assertRaises(p.PeerError):
             self.send(target=targets[4])
         for row in self.store._rows():
+            self.bridge.authorize(row)
             row.update(state='unknown', launched=True, created=time.time() - p.TTL - 60)
-            self.store._save(row)
             self.store.db.execute('UPDATE peer_requests SET created=? WHERE transport_id=?', (row['created'], row['request_id']))
+            self.store._save(row)
         self.store.db.commit()
         with self.assertRaises(p.PeerError):
             self.send(target=targets[0])
@@ -499,6 +501,7 @@ class PeerTests(unittest.TestCase):
         self.assertEqual(self.tick().call_count, 0)
         row = self.row()
         row['created'] -= p.TTL + 60
+        self.store.db.execute('UPDATE peer_requests SET created=? WHERE transport_id=?', (row['created'], row['request_id']))
         self.store._save(row)
         self.assertEqual(self.tick().call_count, 0)
         self.assertEqual(self.row()['state'], 'failed')

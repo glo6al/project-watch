@@ -5430,7 +5430,8 @@ def shared_directory_snapshot(store):
     desktop = False
     if ready and sys.platform == 'darwin':
         try:
-            proc = subprocess.run(['/usr/bin/pgrep', '-f', r'^/Applications/(ChatGPT|Codex)\.app/Contents/MacOS/'],
+            # macOS excludes ancestors by default; WATCH may be launched by Codex.
+            proc = subprocess.run(['/usr/bin/pgrep', '-a', '-f', r'^/Applications/(ChatGPT|Codex)\.app/Contents/MacOS/'],
                                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=1)
             desktop = proc.returncode == 0
         except (OSError, subprocess.SubprocessError):

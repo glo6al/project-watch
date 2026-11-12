@@ -1,6 +1,6 @@
 # Shared WATCH chat bridge
 
-The optional WATCH MCP connection exposes a directory of existing named Codex and Claude chats. Configure the connection once in each client. Chats do not need separate bridge credentials or enrollment. There is no new dashboard panel.
+The optional WATCH MCP connection exposes a directory of existing named Codex and Claude chats. Configure the connection once in each client. Chats do not need separate bridge credentials or enrollment. The bridge is the provider-to-provider messaging service; the WATCH room and desks are its separate user interface. Bridge delivery and reply tracking do not require that interface to be open.
 
 Agent-to-agent routing uses native tools within a provider and WATCH only between providers:
 
@@ -88,7 +88,32 @@ A queued or transport-written result does not prove the recipient acted. Busy Co
 
 Request content expires after 24 hours. Permanent, bounded deduplication tombstones prevent expired operations from being sent again, including across service credential rotation. Old endpoint-prototype history is not exposed as shared history.
 
-Peer capacity remains separate from the Officer's reserved capacity. Limits allow up to 100 requests per day service-wide, 10 per target per hour, and four unsettled requests in the current 15-minute window; declared sender names do not create independent quotas. Completed turns with unusable replies release their slots. A genuinely uncertain delivery may block its destination until retention cleanup. Late replies can still be recovered within retention.
+Peer capacity remains separate from the Officer's reserved capacity. Limits allow up to 100 requests per day service-wide, 10 per target per hour, and four unsettled requests in the current 15-minute window; declared sender names do not create independent quotas. Completed turns with unusable replies release their slots. A genuinely uncertain execution keeps a small reservation for its destination until completion can be verified; deleting expired message content does not release it. A rejected follow-up explicitly says it was not accepted and identifies the earlier request needing recovery. The bridge does not grow a second queue behind that request or resend it. Late replies can still be recovered within content retention; a verified completion received afterward may release execution capacity without restoring expired answer content.
+
+
+### Resumed Codex chats
+
+For new messages, the bridge verifies Codex’s current transcript pointer and the transcript’s native chat identity. A rollover filename is not a new chat, and an older file is not selected merely because its filename ends with the chat ID.
+
+An already-submitted request can follow a verified immediate continuation without sending the question again. Tracking validates the predecessor’s history boundary and reads its remaining records before moving to the new segment. Mixed or ambiguous input remains withheld. Missing segments, ambiguous history, or unsupported multi-hop continuations remain recovery-needed; the bridge does not choose a file by modification time or extract an answer solely because its marker appears there.
+
+### Completion and reconnects
+
+Before upgrading or considering rollback, inspect a read-only, in-memory migration preview:
+
+```sh
+python3 scripts/watch_bridge_preflight.py
+```
+
+It reports execution counts without changing the source database or printing message content. A server-side downgrade check alone is insufficient: loaded plugins must also have acknowledged their pending completion receipts. The command deliberately reports that client receipts were not checked.
+
+Acceptance, execution, answer capture, and return notification are separate facts. A successful send means the bridge accepted the request. Native queue acceptance does not prove execution, and a completion notice does not prove the asking agent has read the answer.
+
+Claude plugin 0.5.0 negotiates lifecycle reporting with a compatible bridge. A reconnect in the same runtime preserves the original bound request and turn. The plugin saves completion reports before sending them; retries report that same completion, never submit the original question again. Confirmed execution cannot be undone by a delayed “started” or “unknown” report. A completed turn can release capacity even when its answer is malformed or withheld because other input entered the turn.
+
+Old plugins and servers keep their existing wire format. New completion features are enabled only after negotiation, and incompatible local receipt formats are stored separately. Upgrade the bridge before the plugin. Do not downgrade with unresolved lifecycle-v2 work: retain the compatible installation until those attempts have settled or an explicit recovery procedure has been agreed. Reloading a plugin does not reconstruct a missing native completion event.
+
+Diagnostic history is local, bounded, and contains event metadata rather than prompts, answers, filesystem paths, or credentials. Uncertain historical attempts are not silently converted into success during migration. Existing attempts with missing evidence may require recovery before that recipient can accept another request.
 
 ## Installation and rollout
 
@@ -147,7 +172,7 @@ Owner Officer messages to a WATCH-launched Claude process retain their existing 
 
 A peer envelope identifies its origin, labels any declared sender as unverified, quotes the message, and requests one correlated final reply. The receiver does not start a forwarding chain. Claude and Codex use their existing conversation model, sign-in, project context, tools and permissions.
 
-WATCH reserves the shared request and native submission attempt before returning input to the plugin. Duplicate requests recover the same record; uncertain submissions are not replayed. A received/queued message is not a completed answer. Claude replies require the entire original envelope and its corresponding completed main turn with one matching `WATCH_REPLY` marker. This is not a guarantee that later native steering or mixed input was absent; Codex's separate transcript quarantine checks are not claimed for Claude.
+WATCH reserves the shared request and native submission attempt before returning input to the plugin. Duplicate requests recover the same record; uncertain submissions are not replayed. A received/queued message is not a completed answer. Claude replies require the entire original envelope and its corresponding completed main turn with one matching `WATCH_REPLY` marker. Lifecycle-v2 Claude completion conservatively withholds a reply when the plugin observes additional main input during the bound turn. Older protocol versions retain their earlier limitations. Codex independently checks its transcript for mixed input before publishing a reply.
 
 A Claude envelope is limited to 4,000 Unicode code points, including routing instructions and JSON escaping. Some messages within the MCP's 2,000-character text limit can exceed that envelope bound. WATCH rejects them before reservation instead of truncating or submitting them.
 

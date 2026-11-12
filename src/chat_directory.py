@@ -15,6 +15,7 @@ import stat
 import threading
 import time
 import uuid
+import codex_transcript
 
 MAX_LINE = 262144
 _SKIP_STRING = re.compile(rb'["\\\n]')
@@ -297,7 +298,7 @@ class ChatDirectory:
                                     if item.name not in ('subagents', 'archived_sessions', 'archived', 'exec', 'review') and depth < (3 if provider == 'codex' else 1):
                                         stack.append((item.path, depth + 1))
                                 elif item.is_file(follow_symlinks=False) and item.name.endswith('.jsonl'):
-                                    ident = item.name[:-6] if provider == 'claude' else item.name[-42:-6]
+                                    ident = item.name[:-6] if provider == 'claude' else codex_transcript.filename_id(item.name)
                                     recent = (self.policy['history_days'] == 'all' or item.stat(follow_symlinks=False).st_mtime >=
                                               self.now() - self.policy['history_days'] * 86400)
                                     if (recent or include_old) and _uuid(ident) and (provider != 'claude' or depth == 1):
@@ -652,6 +653,12 @@ class ChatDirectory:
 
     def _publish(self, live):
         entries, duplicates = {}, set()
+        native_error = False
+        try:
+            native = (codex_transcript.index(self.codex_root, limit=self.max_entries)
+                      if 'codex' in self.policy['providers'] else None)
+        except codex_transcript.Unavailable:
+            native, native_error = {}, True
         for number, (path, s) in enumerate(self._files.items()):
             if number and number % 128 == 0:
                 # Let pinned validation complete its short filesystem syscalls
@@ -660,8 +667,22 @@ class ChatDirectory:
             provider, ident = s.get('provider'), s.get('ident')
             if not provider:
                 continue
+            selection_problem = None
+            if provider == 'codex' and native is not None and not native_error:
+                try:
+                    chosen = codex_transcript.selected(native.get(ident))
+                    if chosen != path:
+                        if chosen in self._files:
+                            continue
+                        selection_problem = 'This chat’s active native rollout is unavailable or has not been verified yet.'
+                    elif native[ident]['cwd'] != s['meta'].get('project'):
+                        selection_problem = 'This chat’s native rollout project does not match its selected identity.'
+                except codex_transcript.Unavailable:
+                    continue
             entry = self._entry(provider, path, ident, s, live)
             if entry:
+                if selection_problem:
+                    entry.update(capability='unavailable', reason=selection_problem)
                 if entry['agent_id'] in entries:
                     duplicates.add(entry['agent_id'])
                 else:
@@ -669,6 +690,18 @@ class ChatDirectory:
         for aid in duplicates:
             entries[aid]['capability'] = 'unavailable'
             entries[aid]['reason'] = 'Multiple local metadata files claim this native chat identity.'
+        try:
+            if 'codex' in self.policy['providers']:
+                native_error |= native != codex_transcript.index(self.codex_root, limit=self.max_entries)
+        except codex_transcript.Unavailable:
+            native_error = True
+        if native_error:
+            self._complete = False
+            self.work_pending = True
+            self._reasons = ['Codex native rollout metadata changed or cannot be verified; discovery is incomplete.']
+            for entry in entries.values():
+                if entry['provider'] == 'codex':
+                    entry.update(capability='unavailable', reason=self._reasons[0])
         labels = {}
         for e in entries.values():
             labels.setdefault(e['project_label'], set()).add(e['project_id'])
@@ -843,6 +876,22 @@ class ChatDirectory:
             raise DirectoryError(409, 'Selected chat identity changed; discover and select it again.')
         _, index_done = self._read_index(self.max_bytes)
         path = old['identity']['path']
+        if old['reason'].startswith('Multiple local metadata'):
+            raise DirectoryError(409, old['reason'])
+        if old['provider'] == 'codex':
+            try:
+                current_path, source, st, _ = codex_transcript.open_pinned(self.codex_sessions, path, old['native_id'], old['project'])
+                source.close()
+                if (current_path != path or (st.st_dev, st.st_ino) !=
+                        (old['identity']['device'], old['identity']['inode'])):
+                    raise codex_transcript.Unavailable('Selected native rollout changed.')
+            except (OSError, codex_transcript.Unavailable):
+                with self.lock:
+                    self._last_attempt = None
+                    self._complete = False
+                    self.work_pending = True
+                    self._published_status = {'complete': False, 'reasons': ['Selected native rollout changed; discover and select it again.'], 'refreshed_at': self._refreshed}
+                raise DirectoryError(409, 'Selected native rollout identity changed; discover and select it again.') from None
         with self._file_lock(path):
             # Local validation cannot wait behind a whole-directory publish, nor
             # mutate the scanner's parser/offset snapshot midway through a record.
@@ -861,6 +910,14 @@ class ChatDirectory:
                 raise DirectoryError(409, 'Selected chat identity changed or is not verified; discover and select it again.')
             if old['reason'].startswith('Multiple local metadata'):
                 raise DirectoryError(409, old['reason'])
+            if old['provider'] == 'codex':
+                try:
+                    _, source, st, _ = codex_transcript.open_pinned(self.codex_sessions, path, old['native_id'], old['project'])
+                    source.close()
+                    if (st.st_dev, st.st_ino) != (fresh['identity']['device'], fresh['identity']['inode']):
+                        raise codex_transcript.Unavailable('Codex transcript was replaced.')
+                except (OSError, codex_transcript.Unavailable):
+                    raise DirectoryError(409, 'Selected native rollout identity changed during validation.') from None
             if fresh['project_id'] == old['project_id']:
                 fresh['project_label'] = old['project_label']
             if require_reachable and fresh['capability'] != 'reachable':

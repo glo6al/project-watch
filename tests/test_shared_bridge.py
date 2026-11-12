@@ -252,8 +252,8 @@ class SharedTests(unittest.TestCase):
         self.assertEqual(duplicate['created_at'], result['created_at'])
         with self.assertRaises(p.PeerError):
             self.send(self.b, rid=rid, auth=auth)
-        row = self.row(rid); row['created'] -= p.RETENTION+1; self.store._save(row)
-        self.store.db.execute('UPDATE shared_bridge_requests SET created=?', (row['created'],)); self.store.db.commit()
+        row = self.row(rid); row['created'] -= p.RETENTION+1
+        self.store.db.execute('UPDATE shared_bridge_requests SET created=?', (row['created'],)); self.store._save(row)
         self.tick()
         duplicate = self.send(original, rid=rid, auth=auth)
         self.assertEqual((duplicate['state'], duplicate['text_preview']), ('expired', ''))
@@ -379,8 +379,8 @@ class SharedTests(unittest.TestCase):
 
     def test_late_reply_is_polled_without_resend(self):
         result = self.send(); self.tick(); row = self.row(result['request_id'])
-        row['created'] -= p.TTL+10; self.store._save(row)
-        self.store.db.execute('UPDATE shared_bridge_requests SET created=?', (row['created'],)); self.store.db.commit()
+        row['created'] -= p.TTL+10
+        self.store.db.execute('UPDATE shared_bridge_requests SET created=?', (row['created'],)); self.store._save(row)
         self.assertEqual(self.tick().call_count, 0)
         self.assertEqual(self.bridge.result(result['request_id'])['state'], 'expired')
         with self.assertRaises(p.PeerError): self.send()
@@ -413,6 +413,14 @@ class SharedTests(unittest.TestCase):
         with patch.object(self.directory, 'resolve', side_effect=resolve):
             self.send(); self.tick()
 
+    def test_admission_uses_current_execution_index_without_full_history_migration(self):
+        import peer_lifecycle
+        with patch.object(peer_lifecycle, 'migrate', side_effect=AssertionError('Admission must not rewrite retained history')):
+            first = self.send()
+            row = self.row(first['request_id']); row.update(state='failed', settled=True)
+            self.store._save(row)
+            self.send()
+
     def test_per_target_hourly_and_global_daily_limits(self):
         def settle(result):
             row = self.row(result['request_id']); row.update(state='failed', settled=True)
@@ -429,6 +437,19 @@ class SharedTests(unittest.TestCase):
         second = self.bridge.list_requests(first['next_cursor']); self.assertEqual(len(second['requests']), 50)
         self.assertIsNone(second['next_cursor'])
         self.assertFalse(set(r['request_id'] for r in first['requests']) & set(r['request_id'] for r in second['requests']))
+
+    def test_corrupt_completion_payload_never_publishes_reply_from_mutable_json(self):
+        result = self.send(); self.tick(); row = self.row(result['request_id'])
+        self.answer(row, 'Fictional validated answer.'); self.tick()
+        self.assertEqual(self.bridge.result(result['request_id'])['reply'], 'Fictional validated answer.')
+        baseline = self.row(result['request_id'])
+        for corruption in ({'request_id':uid()}, {'settled':'false'}, {'origin':'owner'}, {'bound_turn':''}):
+            with self.subTest(corruption=corruption):
+                broken = dict(baseline, **corruption)
+                self.store.db.execute('UPDATE requests SET data=? WHERE id=?', (json.dumps(broken), baseline['request_id']))
+                response = self.bridge.result(result['request_id'])
+                self.assertEqual(response['state'], 'unknown')
+                self.assertEqual(response['reply'], '')
 
     def test_corrupt_origin_or_version_never_becomes_owner_history(self):
         result = self.send(); row = self.row(result['request_id'])
@@ -463,9 +484,31 @@ class SharedTests(unittest.TestCase):
         self.assertEqual(snapshot[self.a['agent_id']]['capability'], 'unavailable')
         self.assertEqual(snapshot['__codex_transport__']['capability'], 'unavailable')
 
+    def test_desktop_ancestor_counts_on_macos_only(self):
+        def ancestor_only(args, **kwargs):
+            # macOS pgrep omits its ancestors unless -a is supplied.
+            self.assertEqual(args[0], '/usr/bin/pgrep')
+            self.assertIn('-f', args)
+            self.assertEqual(args[-1], r'^/Applications/(ChatGPT|Codex)\.app/Contents/MacOS/')
+            return Mock(returncode=0 if '-a' in args else 1)
+        with patch.object(server, 'AGENTS', {self.a['agent_id']: {'runtime': 'Codex'}}), \
+                patch.object(server.sys, 'platform', 'darwin'), \
+                patch.object(server.subprocess, 'run', side_effect=ancestor_only) as probe:
+            snapshot = server.shared_directory_snapshot(self.store)
+        probe.assert_called_once()
+        self.assertEqual(snapshot[self.a['agent_id']]['capability'], 'reachable')
+        self.assertEqual(snapshot['__codex_transport__']['capability'], 'unverified')
+        with patch.object(server, 'AGENTS', {self.a['agent_id']: {'runtime': 'Codex'}}), \
+                patch.object(server.sys, 'platform', 'linux'), \
+                patch.object(server.subprocess, 'run') as probe:
+            snapshot = server.shared_directory_snapshot(self.store)
+        probe.assert_not_called()
+        self.assertEqual(snapshot[self.a['agent_id']]['capability'], 'unavailable')
+
     def test_reply_wire_limit_preserves_complete_answers_only(self):
         result = self.send(); row = self.row(result['request_id'])
-        row.update(state='answered', reply='😀' * 16000, settled=True); self.store._save(row)
+        self.bridge.authorize(row)
+        row.update(state='answered', reply='😀' * 16000, settled=True, bound_turn='fictional-wire-turn'); self.store._save(row)
         reply = self.bridge.result(result['request_id'])
         self.assertEqual((reply['state'], reply['reply']), ('unknown', ''))
         self.assertLess(len(json.dumps(reply).encode()), 65536)

@@ -7,6 +7,7 @@ from contextlib import contextmanager
 import hashlib
 import hmac
 import json
+import peer_lifecycle
 import os
 import re
 import secrets
@@ -17,6 +18,7 @@ import threading
 import uuid
 
 import claude_channel
+import codex_transcript
 
 RETENTION = 86400
 TTL = 900
@@ -188,20 +190,24 @@ class PeerBridge:
         if endpoint['runtime'] == 'claude':
             raise PeerError(409, claude_channel.PEER_IDENTITY_REASON)
         identity = endpoint['identity']
-        st = self.store._metadata(identity['path'], endpoint['session'])
+        try:
+            st = self.store._metadata(identity['path'], endpoint['session'])
+        except Exception:
+            raise PeerError(409, 'Peer transcript identity is unavailable or changed.') from None
         if (st.st_ino, st.st_dev) != (identity['inode'], identity['device']):
             raise PeerError(409, 'Peer transcript identity changed.')
-        with open(identity['path'], 'rb') as f:
-            opened = os.fstat(f.fileno())
+        try:
+            source, opened = codex_transcript.open_regular(self.store.sessions_dir, identity['path'])
+        except (OSError, codex_transcript.Unavailable):
+            raise PeerError(409, 'Peer transcript identity changed.') from None
+        with source as f:
             if (opened.st_ino, opened.st_dev) != (identity['inode'], identity['device']):
                 raise PeerError(409, 'Peer transcript identity changed.')
-            event = json.loads(f.readline(1000001))
-            meta = event['payload']
-            if (event.get('type') != 'session_meta' or meta.get('id') != endpoint['session']
-                    or meta.get('parent_thread_id') or meta.get('agent_path') not in (None, '', '/root')
-                    or meta.get('originator') == 'codex_exec' or meta.get('source') == 'exec'
-                    or meta.get('thread_source') == 'guardian_review'):
-                raise PeerError(409, 'Peer transcript session changed.')
+            st = opened
+            try:
+                meta = codex_transcript.header(f, endpoint['session'])
+            except codex_transcript.Unavailable:
+                raise PeerError(409, 'Peer transcript session changed.') from None
             if os.path.realpath(meta.get('cwd', '')) != endpoint['project'] or not meta.get('cwd'):
                 raise PeerError(409, 'Peer transcript project changed.')
             if require_tail and st.st_size:
@@ -284,13 +290,9 @@ class PeerBridge:
                 try:
                     self._preflight(p)
                     with self.store.lock:
-                        pending = self.store.db.execute('SELECT r.data FROM peer_requests p JOIN requests r ON r.id=p.transport_id WHERE p.target=?', (p['id'],)).fetchall()
-                    for (raw,) in pending:
-                        row = json.loads(raw)
-                        if (not row.get('settled') and row.get('state') in ('sending', 'queued', 'awaiting_reply', 'quarantined', 'unknown', 'expired')
-                                and time.time() - row['created'] < RETENTION):
-                            reachable, reason = False, 'An earlier peer delivery is unresolved.'
-                            break
+                        blocked = peer_lifecycle.blockers(self.store.db, ('c:' if p['runtime'] == 'claude' else 'x:') + p['session'])
+                    if blocked:
+                        reachable, reason = False, 'An earlier peer execution is active or requires recovery.'
                 except Exception:
                     reachable, reason = False, 'The enrolled endpoint is not reachable.'
             result.append({k: p[k] for k in ('id', 'label', 'runtime', 'binding')} | {'receive': bool(p['receive']), 'reachable': reachable, 'reason': reason})
@@ -303,6 +305,10 @@ class PeerBridge:
         raw = self.store.db.execute('SELECT data FROM requests WHERE id=?', (item[1],)).fetchone()
         try:
             row = json.loads(raw[0]) if raw and time.time() - item[2] <= RETENTION else {'state': 'expired'}
+            if raw and time.time() - item[2] <= RETENTION:
+                meta = peer_lifecycle.metadata(self.store.db, item[1]).get(item[1])
+                if meta is None or not peer_lifecycle.valid_payload(item[1], row, meta):
+                    raise ValueError()
             if (not isinstance(row, dict) or not isinstance(row.get('state'), str)
                     or (raw and row.get('state') != 'expired' and row.get('origin') != 'peer')):
                 raise ValueError()
@@ -359,23 +365,26 @@ class PeerBridge:
                 raise PeerError(429, 'Peer request tombstone storage is full; owner maintenance is required.')
             rows = db.execute('SELECT p.sender,p.target,p.created,r.data FROM peer_requests p LEFT JOIN requests r ON p.transport_id=r.id WHERE p.created>?', (now - RETENTION,)).fetchall()
             pending = []
-            unresolved = []
             for source, dest, created, raw in rows:
                 if raw:
-                    r = json.loads(raw)
-                    if not r.get('settled') and r.get('state') in ('sending', 'queued', 'awaiting_reply', 'quarantined', 'unknown', 'expired'):
-                        unresolved.append((source, dest, created))
+                    try:
+                        r = json.loads(raw)
+                        if not isinstance(r, dict): r = {}
+                    except (ValueError, TypeError):
+                        r = {}
                     if not r.get('settled') and r.get('state') in ('sending', 'queued', 'awaiting_reply', 'quarantined') and created > now - TTL:
                         pending.append((source, dest))
             if any(dest == sender['id'] for _, dest in pending):
                 raise PeerError(409, 'Answer the pending inbound peer request before sending another.')
-            if sum(created > now - TTL for _, _, created in unresolved) >= 4 or any(dest == target_id for _, dest, _ in unresolved):
-                raise PeerError(429, 'Peer delivery capacity is full.')
+            capacity = peer_lifecycle.capacity_error(db, row['agent'], now, TTL)
+            if capacity:
+                raise PeerError(429, capacity)
             if (sum(source == sender['id'] and created > now - 3600 for source, _, created, _ in rows) >= 10
                     or sum({source, dest} == {sender['id'], target_id} for source, dest, _, _ in rows) >= 30 or len(rows) >= 100):
                 raise PeerError(429, 'Peer message rate limit exceeded.')
             db.execute('INSERT INTO peer_requests VALUES (?,?,?,?,?,?,NULL)', (sender['id'], client_id, target_id, payload_hash, transport_id, now))
             db.execute('INSERT INTO requests VALUES (?,?)', (transport_id, json.dumps(row)))
+            peer_lifecycle.reconcile(db, row)
         with self.store.lock:
             return self.result(sender['id'], client_id)
 
@@ -414,6 +423,12 @@ class PeerBridge:
 
     def reconcile(self, rows):
         """Publish only a complete, isolated peer turn after owner cursors catch up."""
+        import codex_transcript
+        def caught_up(owner, peer):
+            # Byte offsets are meaningful only within the same pinned segment.
+            target = tuple(peer.get('complete_segment') or codex_transcript.segment_key(peer))
+            return (codex_transcript.segment_key(owner) == target
+                    and codex_transcript.segment(owner).get('cursor', 0) >= peer.get('complete_offset', float('inf')))
         controls = [json.loads(raw) for (raw,) in self.store.db.execute('SELECT data FROM controls')]
         for row in rows:
             if row.get('origin') != 'peer' or row.get('runtime') != 'codex' or row.get('state') != 'quarantined':
@@ -426,10 +441,10 @@ class PeerBridge:
                 row.update(state='unknown', reply='', candidate_reply='', tracking_stopped=True, settled=True,
                            error='Peer reply withheld because its turn included other input or could not be isolated.')
             elif any(o.get('tracking_stopped') and o.get('state') not in ('answered', 'failed')
-                     and o.get('cursor', 0) < row.get('complete_offset', float('inf')) for o in owners):
+                     and not caught_up(o, row) for o in owners):
                 row.update(state='unknown', reply='', candidate_reply='', tracking_stopped=True, settled=True,
                            error='Reply received but withheld because earlier owner-message tracking stopped before this turn could be isolated.')
-            elif all(o.get('state') in ('answered', 'failed') or o.get('cursor', 0) >= row.get('complete_offset', float('inf')) for o in owners):
+            elif all(o.get('state') in ('answered', 'failed') or caught_up(o, row) for o in owners):
                 row.update(state='answered', reply=row.pop('candidate_reply', ''), error='', settled=True)
             elif time.time() - row.get('quarantined_at', row['created']) > TTL:
                 row.update(state='unknown', reply='', candidate_reply='', tracking_stopped=True, settled=True,
@@ -503,6 +518,8 @@ def shared_schema(db):
         client_id TEXT PRIMARY KEY, target TEXT NOT NULL, target_snapshot TEXT NOT NULL,
         payload_hash TEXT NOT NULL, transport_id TEXT NOT NULL UNIQUE,
         credential_id TEXT NOT NULL, created REAL NOT NULL, launched REAL, preview TEXT NOT NULL)''')
+    peer_lifecycle.schema(db)
+    peer_lifecycle.migrate(db)
     db.execute('CREATE TABLE IF NOT EXISTS peer_reply_admissions (request_id TEXT PRIMARY KEY,args_sha256 TEXT NOT NULL)')
     db.execute('CREATE INDEX IF NOT EXISTS shared_bridge_requests_target ON shared_bridge_requests(target,created)')
     db.execute('CREATE INDEX IF NOT EXISTS shared_bridge_requests_created ON shared_bridge_requests(created)')
@@ -884,26 +901,15 @@ class SharedBridge:
                 raise PeerError(429, 'Shared request history is full; owner maintenance is required.')
             metadata = transport_metadata(db, since=now - RETENTION)
             recent = [meta for meta in metadata.values() if meta['created'] > now - RETENTION]
-            unresolved = []
-            for old_tid, meta in metadata.items():
-                if meta['created'] <= now - RETENTION:
-                    continue
-                raw = db.execute('SELECT data FROM requests WHERE id=?', (old_tid,)).fetchone()
-                try:
-                    previous = json.loads(raw[0]) if raw else {}
-                    uncertain = not previous.get('settled') and previous.get('state') not in ('answered', 'failed')
-                except (ValueError, TypeError, AttributeError):
-                    uncertain = True
-                if uncertain:
-                    unresolved.append(meta)
-            if (sum(meta['created'] > now - TTL for meta in unresolved) >= 4
-                    or any(meta['agent_id'] == target['agent_id'] for meta in unresolved)):
-                raise PeerError(429, 'Shared delivery capacity is full.')
+            capacity = peer_lifecycle.capacity_error(db, target['agent_id'], now, TTL)
+            if capacity:
+                raise PeerError(429, capacity)
             if len(recent) >= 100 or sum(meta['agent_id'] == target['agent_id'] and meta['created'] > now - 3600 for meta in recent) >= 10:
                 raise PeerError(429, 'Shared message rate limit exceeded.')
             db.execute('INSERT INTO shared_bridge_requests VALUES (?,?,?,?,?,?,?,NULL,?)',
                        (request_id, agent_id, json.dumps(snapshot), payload_hash, tid, credential['id'], now, text[:160]))
             db.execute('INSERT INTO requests VALUES (?,?)', (tid, json.dumps(row)))
+            peer_lifecycle.reconcile(db, row)
             db.execute('INSERT INTO peer_reply_admissions VALUES (?,?)',
                        (request_id, receipt_fingerprint(agent_id, identity_revision, text, declared_sender)))
             return self.result(request_id)
@@ -924,6 +930,10 @@ class SharedBridge:
             raise PeerError(503, 'Shared target metadata is unavailable.') from None
         try:
             row = json.loads(raw[0]) if raw and not expired else {'state': 'expired'}
+            if raw and not expired:
+                meta = peer_lifecycle.metadata(self.store.db, item[2]).get(item[2])
+                if meta is None or not peer_lifecycle.valid_payload(item[2], row, meta):
+                    raise ValueError()
             if (not isinstance(row, dict) or row.get('state') not in
                     ('sending', 'queued', 'awaiting_reply', 'quarantined', 'unknown', 'expired', 'failed', 'answered')
                     or not isinstance(row.get('error', ''), str) or len(row.get('error', '')) > 2000
@@ -998,8 +1008,8 @@ class SharedBridge:
                 or ledger[4] != row['created'] or json.loads(ledger[3]) != snapshot):
             raise PeerError(409, 'Shared Claude claim metadata is unavailable or already launched.')
         service_credential(db, ledger[1])
-        if any(r['request_id'] != row['request_id'] and r.get('mod_enrollment') == entry['id']
-               and r.get('launched') and r['state'] in ('queued', 'awaiting_reply') for r in self.store.mods.rows()):
+        if peer_lifecycle.blockers(db, row['agent'], excluding=row['request_id']) or any(r['request_id'] != row['request_id'] and r.get('mod_enrollment') == entry['id']
+               and r.get('launched') and not r.get('settled') and r['state'] in ('queued', 'awaiting_reply', 'unknown', 'expired') for r in self.store.mods.rows()):
             raise PeerError(409, 'The Claude conversation already has an active WATCH claim.')
         db.execute('UPDATE shared_bridge_requests SET launched=? WHERE transport_id=?',
                    (time.time(), row['request_id']))

@@ -1,9 +1,10 @@
-import {UUID, LIMITATION, TRANSITIONS, pairing, sessionResponse, validClaim, matchingPrompt, matchingAnswer, publicStatus, globalConfiguration, receiptRecord, surfaceRoster, validNoticeClaim, noticeReceipt} from './protocol.js';
+import {UUID, LIMITATION, TRANSITIONS, pairing, sessionResponse, validClaim, matchingPrompt, matchingAnswer, publicStatus, globalConfiguration, receiptRecord, surfaceRoster, validNoticeClaim, noticeReceipt, lifecycleReceipt} from './protocol.js';
 
 const GLOBAL_KEY = 'watch-owner-global-v1';
 const legacyKey = id => 'watch-owner-v1:' + id;
 const preferenceKey = id => 'watch-owner-preferences-v1:' + id;
-const shardPrefix = id => 'watch-owner-runtime-v2:' + id + ':';
+const legacyShardPrefix = id => 'watch-owner-runtime-v2:' + id + ':';
+const shardPrefix = id => 'watch-owner-runtime-v3:' + id + ':';
 const noticePrefix = id => 'watch-reply-notice-runtime-v1:' + id + ':';
 const MAX_DATA = 4 * 1024 * 1024;
 const copy = value => JSON.parse(JSON.stringify(value));
@@ -13,7 +14,7 @@ function trimHistory(state, data) {
   let excess = Object.keys(data.requests).length - 32;
   for (const request of Object.values(data.requests)) {
     if (excess <= 0) break;
-    if (request !== state.flight && !request.events.length && ['answered','dropped','unknown'].includes(request.phase)) {
+    if (request !== state.flight && !request.events.length && (request.execution_completed || ['answered','dropped'].includes(request.phase))) {
       delete data.requests[request.request_id]; excess -= 1;
     }
   }
@@ -68,6 +69,7 @@ function stop(state) {
   state.connected = false;
   state.peerProtocol = 0;
   state.noticeProtocol = 0;
+  state.lifecycleProtocol = 0;
   state.epoch += 1;
 }
 
@@ -91,13 +93,20 @@ async function fingerprint(value) {
   return Array.from(new Uint8Array(digest), byte => byte.toString(16).padStart(2,'0')).join('');
 }
 
-async function event($, state, request, kind, extras = {}) {
-  const data = state.data;
+async function event($, state, request, kind, extras = {}, reason = '') {
+  const data = state.data, at = await $.clock.now();
+  if (state.data !== data || data.requests[request.request_id] !== request) throw Error('WATCH receipt identity changed.');
   await save($, state, () => {
-    if (request.completed && kind !== 'answered') return;
+    if (request.execution_completed || (request.completed && kind !== 'answered')) return;
     if (kind === 'submitted' && ['started','answered','unknown','dropped'].includes(request.phase)) return;
-    if (kind === 'answered') request.completed = true;
+    if (kind === 'answered') {request.completed = true; request.execution_completed = true; request.capture = 'answered';}
+    if (kind === 'dropped') request.execution_completed = true;
+    if (kind === 'completed') {
+      request.execution_completed = true; request.capture = extras.outcome;
+      request.completed = extras.outcome === 'answered';
+    }
     request.phase = kind;
+    request.journal = [...(request.journal || []),{at,kind,reason:kind==='completed'?extras.outcome:reason}].slice(-16);
     const value = {request_id:request.request_id,attempt_id:request.attempt_id,kind,...extras};
     if (!request.events.some(item => JSON.stringify(item) === JSON.stringify(value))) request.events.push(value);
   });
@@ -112,6 +121,7 @@ async function flush($, state) {
     for (const request of Object.values(data.requests)) {
       while (request.events.length && state.connected && state.data === data && state.epoch === epoch) {
         const value = request.events[0];
+        if (value.kind === 'completed' && state.lifecycleProtocol !== 2) throw Error('WATCH lifecycle recovery requires a compatible bridge.');
         await post($, state, 'event', {...value,...identityBody(state)});
         if (state.data !== data || state.epoch !== epoch) return;
         const hash = data.mode === 'derived' ? await fingerprint(value) : null;
@@ -132,19 +142,21 @@ async function recover($, state) {
   let total = JSON.stringify(data).length;
   const shards = [];
   for (const key of keys) {
-    if (typeof key !== 'string' || key === state.key || !key.startsWith(shardPrefix(data.native_id))) continue;
-    if (!UUID.test(key.slice(shardPrefix(data.native_id).length))) throw Error('Invalid WATCH receipt namespace.');
+    if (typeof key !== 'string' || key === state.key) continue;
+    const prefix = [shardPrefix(data.native_id),legacyShardPrefix(data.native_id)].find(prefix=>key.startsWith(prefix));
+    if (!prefix) continue;
+    if (!UUID.test(key.slice(prefix.length))) throw Error('Invalid WATCH receipt namespace.');
     const shard = await $.store.get(key);
     total += JSON.stringify(shard ?? null).length;
     if (total > MAX_DATA) throw Error('WATCH recovery data limit.');
     if (!shard || shard.mode !== 'derived' || shard.native_id !== data.native_id ||
         shard.project !== data.project || shard.grant_id !== data.grant_id || shard.enrollment_id !== data.enrollment_id) continue;
     if (!shard.requests || typeof shard.requests !== 'object' || Array.isArray(shard.requests)) throw Error('Invalid WATCH receipt data.');
-    shards.push(shard);
+    shards.push({...shard, legacy:prefix===legacyShardPrefix(data.native_id)});
   }
   // Validate before writing; foreign runtime keys are read-only, even after lease takeover.
   for (const shard of shards) for (const [id,record] of Object.entries(shard.requests)) {
-    if (!receiptRecord(record,id)) throw Error('Invalid WATCH receipt data.');
+    if (!(shard.legacy?receiptRecord(record,id):lifecycleReceipt(record,id))) throw Error('Invalid WATCH receipt data.');
     const current = data.requests[id];
     if (current && (current.attempt_id !== record.attempt_id || current.envelope_digest !== record.envelope_digest)) throw Error('Conflicting WATCH receipt identity.');
     if (current?.completed && record.completed) {
@@ -156,17 +168,18 @@ async function recover($, state) {
   for (const shard of shards) for (const [id,record] of Object.entries(shard.requests)) {
     let current = data.requests[id];
     if (!current) {
-      current = {...copy(record),events:[],phase:record.completed?'answered':'unknown'};
+      current = {...copy(record),events:[],phase:record.execution_completed?'completed':record.completed?'answered':'unknown'};
       data.requests[id] = current;
     }
-    if (record.completed) {current.completed = true; current.phase = 'answered';}
+    if (record.execution_completed && !current.execution_completed) {current.execution_completed=true; current.capture=record.capture; current.phase='completed';}
+    if (record.completed && current.capture!=='withheld') {current.completed = true; current.phase = record.lifecycle_protocol===2?'completed':'answered';}
     for (const value of record.events) {
       const hash = await fingerprint(value);
       if (data.acknowledged[hash] || current.events.some(item => JSON.stringify(item) === JSON.stringify(value))) continue;
-      if (current.completed && value.kind !== 'answered') continue;
+      if ((current.execution_completed || current.completed) && !['answered','completed'].includes(value.kind)) continue;
       current.events.push(copy(value));
     }
-    if (!current.completed && !['dropped','unknown'].includes(record.phase)) {
+    if (!current.execution_completed && !current.completed && current !== state.flight && !['dropped','unknown'].includes(record.phase)) {
       const value = {request_id:id,attempt_id:record.attempt_id,kind:'unknown'};
       const hash = await fingerprint(value);
       if (!data.acknowledged[hash] && !current.events.some(item => item.kind === 'unknown')) current.events.push(value);
@@ -268,7 +281,7 @@ async function submit($, state, request, envelope, epoch) {
   } catch {await failRequest($,state,request);}
   finally {
     state.submitting = false;
-    if (['answered','dropped','unknown'].includes(request.phase)) {state.flight = null; state.envelope = null;}
+    if (state.flight === request && (request.execution_completed || ['answered','dropped','unknown'].includes(request.phase))) {state.flight = null; state.envelope = null;}
   }
 }
 
@@ -287,7 +300,7 @@ async function poll($, state) {
     state.submitting=true;submitNotice($,state,request,claim.envelope,epoch).catch(()=>{});return;
   }
   if (state.data.requests[claim.request_id]) {await failRequest($,state,state.data.requests[claim.request_id]); return;}
-  const request = {request_id:claim.request_id,attempt_id:claim.attempt_id,expires_at:claim.expires_at,
+  const request = {request_id:claim.request_id,attempt_id:claim.attempt_id,expires_at:claim.expires_at,lifecycle_protocol:state.lifecycleProtocol,origin:claim.origin??'owner',
     generation:state.generation,attempted:false,phase:'claimed',events:[]};
   if (!validClaim(claim,{...state.data,generation:state.generation,peer_protocol:state.peerProtocol},await $.clock.now())) {
     if (UUID.test(claim.request_id) && UUID.test(claim.attempt_id)) {
@@ -315,15 +328,16 @@ async function activate($, state, response, eligibilityEpoch) {
   state.noticeProtocol = state.data.mode==='derived' && response.reply_notice_protocol===1 ? 1 : 0;
   state.noticeData=null;state.noticeKey=null;
   state.peerProtocol = state.data.mode === 'derived' && response.peer_protocol === 1 ? 1 : 0;
+  state.lifecycleProtocol = state.data.mode === 'derived' && response.lifecycle_protocol === 2 ? 2 : 0;
   await save($,state,data=>{checkEligibility(state,eligibilityEpoch); data.active = true; data.generation = response.generation; data.peer_protocol = state.peerProtocol;});
   checkEligibility(state,eligibilityEpoch);
   state.connected = true; state.error = ''; state.failures = 0; state.retryAt = 0;
   if (state.data.mode === 'derived') await recover($,state);
   checkEligibility(state,eligibilityEpoch);
   for (const request of Object.values(state.data.requests)) {
-    if (!['answered','dropped','unknown'].includes(request.phase)) await event($,state,request,'unknown');
+    if (request !== state.flight && !request.execution_completed && !['answered','dropped','unknown'].includes(request.phase)) await event($,state,request,'unknown',{},'reconnect');
   }
-  if (!state.submitting && state.flight && ['unknown','dropped','answered'].includes(state.flight.phase)) {state.flight = null; state.envelope = null;}
+  if (!state.submitting && state.flight && (state.flight.execution_completed || ['dropped','answered'].includes(state.flight.phase))) {state.flight = null; state.envelope = null;}
   state.recoverAt = (await $.clock.now()) + 10000;
   await flush($,state);
   if(state.noticeProtocol===1)await recoverNotices($,state);
@@ -331,20 +345,21 @@ async function activate($, state, response, eligibilityEpoch) {
 
 async function connectDerived($, state, id, project, config, eligibilityEpoch) {
   state.config = config;
-  async function registration(notices=false){
+  async function registration(notices=false,lifecycle=false){
     // Reserve before I/O, including while not connected: lost commits never reuse a tuple's episode.
     if(!Number.isSafeInteger(state.sequence+1))throw Error('WATCH connection sequence exhausted.');
     const sequence=++state.sequence;
-    const body={native_id:id,project,client_id:state.clientId,connection_seq:sequence,peer_protocol:1,...notices?{reply_notice_protocol:1}:{}};
+    const body={native_id:id,project,client_id:state.clientId,connection_seq:sequence,peer_protocol:1,...notices?{reply_notice_protocol:1}:{},...lifecycle?{lifecycle_protocol:2}:{}};
     const response=await post($,state,'register',body,{port:config.port,token:config.grant});
     checkEligibility(state,eligibilityEpoch);
     if(!sessionResponse(response,id)||response.grant_id!==config.grant_id||!UUID.test(response.enrollment_id)||
        !/^[a-f0-9]{64}$/.test(response.token)||response.client_id!==state.clientId||response.connection_seq!==sequence)throw Error('Invalid WATCH registration.');
     if(notices && response.reply_notice_protocol!==1)throw Error('Invalid WATCH notice negotiation.');
+    if(lifecycle && response.lifecycle_protocol!==2)throw Error('Invalid WATCH lifecycle negotiation.');
     return response;
   }
   let response=await registration();
-  if(response.supported_reply_notice_protocol===1)response=await registration(true);
+  if(response.supported_reply_notice_protocol===1 || response.supported_lifecycle_protocol===2)response=await registration(response.supported_reply_notice_protocol===1,response.supported_lifecycle_protocol===2);
   if (await $.session.id() !== id || await $.session.cwd() !== project) throw Error('Native conversation changed.');
   checkEligibility(state,eligibilityEpoch);
   const same = state.data?.mode === 'derived' && state.data.native_id === id && state.data.project === project && state.data.enrollment_id === response.enrollment_id;
@@ -360,12 +375,12 @@ async function connectDerived($, state, id, project, config, eligibilityEpoch) {
         stored.grant_id === config.grant_id && stored.enrollment_id === response.enrollment_id) {
       if (JSON.stringify(stored).length > MAX_DATA || !stored.requests || typeof stored.requests !== 'object' || Array.isArray(stored.requests) ||
           !stored.acknowledged || typeof stored.acknowledged !== 'object' || Array.isArray(stored.acknowledged) ||
-          !Object.entries(stored.requests).every(([requestId,record])=>receiptRecord(record,requestId)) ||
+          !Object.entries(stored.requests).every(([requestId,record])=>lifecycleReceipt(record,requestId)) ||
           !Object.entries(stored.acknowledged).every(([hash,value])=>/^[a-f0-9]{64}$/.test(hash) && value === true)) throw Error('Invalid WATCH receipt data.');
       requests = copy(stored.requests); acknowledged = copy(stored.acknowledged);
     }
     state.key = key;
-    state.data = {version:2,mode:'derived',native_id:id,project,port:config.port,grant_id:config.grant_id,
+    state.data = {version:3,mode:'derived',native_id:id,project,port:config.port,grant_id:config.grant_id,
       enrollment_id:response.enrollment_id,token:response.token,requests,acknowledged,active:true};
     // Persisted receipts are recovery evidence, never a restored native flight.
     state.flight = null; state.envelope = null;
@@ -419,7 +434,7 @@ async function supervisor($, state) {
       if (state.flight) await failRequest($,state,state.flight);
       checkEligibility(state,eligibilityEpoch);
       state.flight = null; state.envelope = null;
-      state.data = null; state.key = null;
+      state.data = null; state.key = null; state.bound.clear();
       state.retryAt = 0; state.failures = 0;
       if (preference?.disconnected === true || !UUID.test(id)) return;
     }
@@ -491,9 +506,23 @@ async function explicitDisconnect($, state) {
   } finally {state.disconnecting -= 1;}
 }
 
+async function observeInput($,state,e) {
+  if (e.agentId !== undefined || !state.data || !state.bound.size) return;
+  const id=state.data.native_id, project=state.data.project;
+  for (const bound of state.bound.values()) {
+    const request=bound.request;
+    if (bound.native_id!==id || bound.project!==project || state.data.native_id!==id || state.data.project!==project ||
+        state.data.requests[request.request_id]!==request || request.origin!=='peer' || request.execution_completed || request.mixed_input) continue;
+    // Native admissions can be queued or steer the running turn. Conservatively withhold
+    // its peer answer in either case; never expose owner input to another provider.
+    request.mixed_input=true;
+    await save($,state);
+  }
+}
+
 export function register(on) {
   const state = {clientId:crypto.randomUUID(),sequence:-1,data:null,key:null,config:null,generation:null,connected:false,epoch:0,eligibilityEpoch:0,desktopBinding:null,disconnecting:0,
-    timer:null,peerProtocol:0,noticeProtocol:0,noticeData:null,noticeKey:null,noticeFlushing:false,writes:Promise.resolve(),network:Promise.resolve(),networkBusy:false,flushing:false,supervising:false,
+    timer:null,peerProtocol:0,lifecycleProtocol:0,bound:new Map(),noticeProtocol:0,noticeData:null,noticeKey:null,noticeFlushing:false,writes:Promise.resolve(),network:Promise.resolve(),networkBusy:false,flushing:false,supervising:false,
     submitting:false,flight:null,envelope:null,error:'',connecting:false,interactive:false,failures:0,retryAt:0,recoverAt:0,
     rejectedGrant:'',rejectedIdentity:'',startSeen:false,startupInteractive:null,startupSurface:null,timerTicks:0,currentSurfaces:null};
   on('session.start',async($,e,next)=>{
@@ -573,11 +602,20 @@ export function register(on) {
     } catch {stop(state); return {text:'WATCH connection failed. If setup was interrupted, get a fresh setup command. No request was resubmitted.'};}
     finally {state.connecting = false;}
   }).catch(($,e,next)=>{stop(state); return ['watch-connect','watch-disconnect','watch-status','watch-setup'].includes(e.command)?{text:'WATCH command failed; no automatic request retry.'}:next(e);});
+  on('prompt.submit',async($,e,next)=>{
+    try {await observeInput($,state,e);} catch { /* Native input is never blocked. */ }
+    return next(e);
+  });
+  on('session.receive',async($,e,next)=>{
+    try {await observeInput($,state,e);} catch { /* Native input is never blocked. */ }
+    return next(e);
+  });
   on('turn.start',async($,e,next)=>{
     try {
       const request = state.flight;
       if (request && request.kind!=='peer_reply_notice' && !request.turn_id && e.agentId === undefined && matchingPrompt(e.text,state.envelope) && await $.session.id() === state.data.native_id) {
         request.turn_id = e.turnId;
+        state.bound.set(e.turnId,{request,native_id:state.data.native_id,project:state.data.project,enrollment_id:state.data.enrollment_id});
         await event($,state,request,'started',{turn_id:e.turnId});
       }
     } catch { /* WATCH cannot block native admission. */ }
@@ -585,11 +623,20 @@ export function register(on) {
   });
   on('turn.complete',async($,e,next)=>{
     try {
-      const request = state.flight;
-      if (request && request.kind!=='peer_reply_notice' && e.agentId === undefined && e.turnId === request.turn_id && await $.session.id() === state.data.native_id) {
-        if (!e.isAborted && e.reason === 'answer' && matchingAnswer(e.answer,request.request_id)) await event($,state,request,'answered',{turn_id:e.turnId,answer:e.answer});
-        else await event($,state,request,'unknown');
-        if (!state.submitting) {state.flight = null; state.envelope = null;}
+      const bound = state.bound.get(e.turnId), request = bound?.request, data=state.data, eligibility=state.eligibilityEpoch;
+      const native=await $.session.id(), project=await $.session.cwd();
+      if (state.data!==data || state.eligibilityEpoch!==eligibility) return next(e);
+      if (request && !request.execution_completed && e.agentId === undefined && state.data && state.data.requests[request.request_id] === request &&
+          bound.native_id === state.data.native_id && bound.project === state.data.project && bound.enrollment_id === state.data.enrollment_id &&
+          native === bound.native_id && project === bound.project) {
+        const outcome = request.mixed_input ? 'withheld' : e.isAborted ? 'aborted' :
+          e.reason === 'answer' && matchingAnswer(e.answer,request.request_id) ? 'answered' : 'unusable';
+        if (request.lifecycle_protocol === 2) {
+          await event($,state,request,'completed',{turn_id:e.turnId,outcome,answer:outcome==='answered'?e.answer:'',event_id:crypto.randomUUID(),occurred_at:await $.clock.now()});
+        } else if (outcome === 'answered') await event($,state,request,'answered',{turn_id:e.turnId,answer:e.answer});
+        else {await event($,state,request,'unknown'); await save($,state,()=>{request.execution_completed=true;request.capture=outcome;});}
+        state.bound.delete(e.turnId);
+        if (!state.submitting && state.flight === request) {state.flight = null; state.envelope = null;}
       }
     } catch { /* Retained completion can replay without a new prompt. */ }
     return next(e);

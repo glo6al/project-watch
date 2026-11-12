@@ -13,7 +13,9 @@ export function sessionResponse(value, nativeId) {
     value.heartbeat_interval_ms === 2000 && value.lease_seconds === 12 &&
     [undefined, 0, 1].includes(value.peer_protocol) &&
     [undefined, 0, 1].includes(value.supported_reply_notice_protocol) &&
-    [undefined, 0, 1].includes(value.reply_notice_protocol);
+    [undefined, 0, 1].includes(value.reply_notice_protocol) &&
+    [undefined, 0, 2].includes(value.supported_lifecycle_protocol) &&
+    [undefined, 0, 2].includes(value.lifecycle_protocol);
 }
 
 export function validClaim(value, state, now) {
@@ -75,6 +77,27 @@ export function receiptRecord(value,id) {
     if (fields.includes('turn_id') && (typeof event.turn_id !== 'string' || !event.turn_id.length || event.turn_id.length > 128 || /[\x00-\x1f]/.test(event.turn_id))) return false;
     return event.kind !== 'answered' || matchingAnswer(event.answer,id);
   });
+}
+
+// Kept in a distinct runtime namespace: old plugins reject new event shapes.
+export function lifecycleReceipt(value,id) {
+  if (!value || !['claimed','pending','submitted','started','answered','unknown','dropped','completed'].includes(value.phase)) return false;
+  const legacy = {...value,phase:value.phase==='completed'?'unknown':value.phase,
+    events:Array.isArray(value.events)?value.events.filter(event=>event?.kind!=='completed'):value.events};
+  if (!receiptRecord(legacy,id) || !Array.isArray(value.events) || value.events.length>8 ||
+      ![undefined,0,2].includes(value.lifecycle_protocol)) return false;
+  if (value.execution_completed!==undefined && typeof value.execution_completed!=='boolean') return false;
+  if (value.capture!==undefined && !['answered','unusable','aborted','withheld'].includes(value.capture)) return false;
+  if (value.journal!==undefined && (!Array.isArray(value.journal) || value.journal.length>16 || !value.journal.every(e=>
+    e && Number.isSafeInteger(e.at) && e.at>=0 && ['submitted','started','answered','unknown','dropped','completed'].includes(e.kind) &&
+    ['','reconnect','report_failed','answered','unusable','aborted','withheld'].includes(e.reason) && Object.keys(e).sort().join(',')==='at,kind,reason'))) return false;
+  return value.events.every(event=>event.kind!=='completed' || (
+    value.lifecycle_protocol===2 && event.request_id===id && event.attempt_id===value.attempt_id &&
+    Object.keys(event).sort().join(',')==='answer,attempt_id,event_id,kind,occurred_at,outcome,request_id,turn_id' &&
+    UUID.test(event.event_id) && Number.isSafeInteger(event.occurred_at) && event.occurred_at>=0 &&
+    typeof event.turn_id==='string' && event.turn_id.length>0 && event.turn_id.length<=128 && !/[\x00-\x1f]/.test(event.turn_id) &&
+    ['answered','unusable','aborted','withheld'].includes(event.outcome) &&
+    (event.outcome==='answered'?matchingAnswer(event.answer,id):event.answer==='')));
 }
 
 export function replyNoticeText(id) {
